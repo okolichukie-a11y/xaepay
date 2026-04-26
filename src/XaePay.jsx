@@ -2119,17 +2119,30 @@ function BDCLiquidity() {
   );
 }
 
+// Current best LP USDT/NGN rate — drives Triple-A's effective NGN cost basis (BDC pays Triple-A in USDT).
+// In production this would come from the Liquidity tab's live LP feed.
+const LP_USDT_NGN = 1388;
+
 function BDCRailQuotes() {
   const { push } = useToast();
-  const [direction, setDirection] = useState("on-ramp"); // on-ramp = NGN→USD outbound; off-ramp = USD→NGN diaspora inbound
+  const [direction, setDirection] = useState("off-ramp"); // off-ramp = NGN customer → foreign supplier (outbound); on-ramp = foreign sender → NGN beneficiary (diaspora inbound)
   const [amount, setAmount] = useState("50000");
-  const [destination, setDestination] = useState("China");
-  const [urgency, setUrgency] = useState("standard"); // standard | priority
+  const [destinationCcy, setDestinationCcy] = useState("USD");
+  const [destinationCorridor, setDestinationCorridor] = useState("China");
+  const [urgency, setUrgency] = useState("standard");
   const [markupPct, setMarkupPct] = useState("1.80");
   const [tick, setTick] = useState(0);
+
+  // Customer + approval state
+  const [customerName, setCustomerName] = useState("");
+  const [customerPhone, setCustomerPhone] = useState("");
+  const [beneficiary, setBeneficiary] = useState("");
+  const [approvalStatus, setApprovalStatus] = useState("idle"); // idle | sent | approved | declined
+  const [chosenRail, setChosenRail] = useState(null); // "Triple-A" | "Cedar Money"
+
   const [orders, setOrders] = useState([
-    { id: "ORD-2218", rail: "Cedar Money", amount: 32000, customerRate: 1421.40, ts: "12 min ago", status: "filled" },
-    { id: "ORD-2217", rail: "Triple-A", amount: 128000, customerRate: 1422.10, ts: "47 min ago", status: "settling" },
+    { id: "ORD-2218", rail: "Cedar Money", customer: "Sahara Foods Import", amount: 32000, customerRate: 1421.40, ts: "12 min ago", status: "filled" },
+    { id: "ORD-2217", rail: "Triple-A", customer: "Novus Trading Ltd", amount: 128000, customerRate: 1422.10, ts: "47 min ago", status: "settling" },
   ]);
 
   useEffect(() => {
@@ -2137,70 +2150,127 @@ function BDCRailQuotes() {
     return () => clearInterval(i);
   }, []);
 
-  // Simulated live mid-market — small jitter to feel real
   const wobble = (base, ampBps) => base + (Math.sin(tick * 0.7) + Math.cos(tick * 0.3)) * 0.5 * (base * ampBps / 10000);
-  const baseMid = direction === "on-ramp" ? 1395.00 : 1395.00; // simplified — same base both ways
 
-  const tripleA = {
-    name: "Triple-A",
-    sublabel: "Singapore · MAS-licensed",
-    midRate: wobble(baseMid, 6),
-    feeBps: urgency === "priority" ? 22 : 18,
-    settlement: urgency === "priority" ? "T+0 · 90 min" : "T+0 · 4 hrs",
-    minTicket: 5000,
-    chains: "USD wire (SWIFT MT103)",
-  };
-  tripleA.allInRate = tripleA.midRate + (tripleA.midRate * tripleA.feeBps / 10000);
-
+  // ── Cedar Money — NGN-native quotes (both directions). ─────────────────
+  const cedarMid = wobble(1394.40, 4);
+  const cedarFeeBps = urgency === "priority" ? 18 : 12;
   const cedar = {
     name: "Cedar Money",
-    sublabel: "US/NG · stablecoin (USDT)",
-    midRate: wobble(baseMid - 2.4, 4),
-    feeBps: 12,
+    sublabel: direction === "off-ramp" ? "NGN-native · off-ramp (NG → abroad)" : "NGN-native · on-ramp (abroad → NG)",
+    quoteCurrency: "NGN",
+    rateLine: `₦${cedarMid.toFixed(2)} / $`,
+    feeBps: cedarFeeBps,
+    feeLine: `${cedarFeeBps} bps · ${(cedarFeeBps / 100).toFixed(2)}%`,
     settlement: urgency === "priority" ? "T+0 · 25 min" : "T+0 · 90 min",
+    network: direction === "off-ramp" ? "BDC funds Cedar in NGN → wire/payout abroad" : "Foreign sender → Cedar → BDC NGN account",
     minTicket: 1000,
-    chains: "TRC-20 / ERC-20",
+    nativeCostNGN: cedarMid * (1 + cedarFeeBps / 10000),
+    note: "Cedar quotes natively in naira because they operate locally in Nigeria.",
   };
-  cedar.allInRate = cedar.midRate + (cedar.midRate * cedar.feeBps / 10000);
+
+  // ── Triple-A — USDT-based (off-ramp Singapore) or USD-based (on-ramp via US arm). ──
+  const tripleAFeeBps = urgency === "priority" ? 28 : 22;
+  let tripleA;
+  if (direction === "off-ramp") {
+    // Off-ramp: BDC sends USDT (TRC-20) to Triple-A Singapore; Triple-A pays beneficiary in foreign fiat.
+    const usdtPerUsd = 1 + tripleAFeeBps / 10000;
+    const ngnPerUsd = usdtPerUsd * LP_USDT_NGN; // BDC has to source the USDT at current LP rate
+    tripleA = {
+      name: "Triple-A",
+      sublabel: "Singapore (MAS) · off-ramp · settles in foreign fiat",
+      quoteCurrency: "USDT",
+      rateLine: `${usdtPerUsd.toFixed(4)} USDT / $`,
+      feeBps: tripleAFeeBps,
+      feeLine: `${tripleAFeeBps} bps · ${(tripleAFeeBps / 100).toFixed(2)}%`,
+      settlement: urgency === "priority" ? "T+0 · 90 min" : "T+0 · 4 hrs",
+      network: "BDC sends USDT TRC-20 → Triple-A wires foreign fiat (SWIFT MT103)",
+      minTicket: 5000,
+      nativeCostNGN: ngnPerUsd,
+      note: `BDC pays in USDT (TRC-20). Effective NGN cost uses your current best LP USDT rate (₦${LP_USDT_NGN.toLocaleString()}/USDT).`,
+    };
+  } else {
+    // On-ramp via Triple-A US arm: foreign sender → Triple-A US → BDC's USD partner bank → BDC settles NGN to beneficiary.
+    const ngnPerUsd = wobble(1395.40, 5) * (1 + tripleAFeeBps / 10000); // Triple-A US returns USD; BDC handles NGN side at BDC's own internal rate
+    tripleA = {
+      name: "Triple-A (US)",
+      sublabel: "US arm · on-ramp · receives foreign fiat",
+      quoteCurrency: "USD",
+      rateLine: `${(tripleAFeeBps / 100).toFixed(2)}% on USD received`,
+      feeBps: tripleAFeeBps,
+      feeLine: `${tripleAFeeBps} bps · ${(tripleAFeeBps / 100).toFixed(2)}%`,
+      settlement: urgency === "priority" ? "T+0 · 2 hrs" : "T+1 · same business day",
+      network: "Foreign sender → Triple-A US → BDC's USD partner bank → BDC settles NGN locally",
+      minTicket: 2000,
+      nativeCostNGN: ngnPerUsd,
+      note: "Triple-A US handles diaspora/foreign-business inbound. BDC's banking partner receives USD; BDC then pays NGN beneficiary.",
+    };
+  }
 
   const eligibleRails = [tripleA, cedar].filter((r) => parseFloat(amount) >= r.minTicket);
-  const cheapest = eligibleRails.length > 0 ? eligibleRails.reduce((a, b) => (a.allInRate < b.allInRate ? a : b)) : null;
-  const customerRate = cheapest ? cheapest.allInRate * (1 + parseFloat(markupPct || 0) / 100) : 0;
-  const grossMarginPerUSD = cheapest ? customerRate - cheapest.allInRate : 0;
+  const cheapest = eligibleRails.length > 0 ? eligibleRails.reduce((a, b) => (a.nativeCostNGN < b.nativeCostNGN ? a : b)) : null;
+  const customerRate = cheapest ? cheapest.nativeCostNGN * (1 + parseFloat(markupPct || 0) / 100) : 0;
+  const grossMarginPerUSD = cheapest ? customerRate - cheapest.nativeCostNGN : 0;
   const grossMarginTotal = grossMarginPerUSD * parseFloat(amount || 0);
+  const ngnTotal = customerRate * parseFloat(amount || 0);
 
-  const submitOrder = (rail) => {
+  // Default chosenRail to cheapest when it changes
+  useEffect(() => {
+    if (cheapest && !chosenRail) setChosenRail(cheapest.name);
+  }, [cheapest, chosenRail]);
+
+  const sendQuoteOnWhatsApp = () => {
+    if (!customerPhone) { push("Enter a customer WhatsApp number first.", "warn"); return; }
+    const phoneDigits = customerPhone.replace(/[^\d]/g, "");
+    const message =
+      `Hello ${customerName || "there"},%0A%0A` +
+      `Trade payment quote via XaePay:%0A` +
+      `• Send: $${parseFloat(amount).toLocaleString()} ${destinationCcy} to ${beneficiary || destinationCorridor}%0A` +
+      `• Rate: ₦${customerRate.toFixed(2)} / $%0A` +
+      `• Total naira: ₦${Math.round(ngnTotal).toLocaleString()}%0A` +
+      `• Settlement: ${cheapest?.settlement || "—"}%0A%0A` +
+      `Quote valid for 4 minutes. Reply YES to confirm.`;
+    window.open(`https://wa.me/${phoneDigits}?text=${message}`, "_blank");
+    setApprovalStatus("sent");
+    push(`Quote sent to ${customerName || phoneDigits} on WhatsApp`, "success");
+  };
+
+  const submitOrder = () => {
+    if (!chosenRail || approvalStatus !== "approved") return;
     const newOrder = {
       id: `ORD-${2200 + Math.floor(Math.random() * 100)}`,
-      rail: rail.name,
+      rail: chosenRail,
+      customer: customerName || "Unnamed",
       amount: parseFloat(amount),
-      customerRate: customerRate,
+      customerRate,
       ts: "just now",
       status: "submitted",
     };
-    setOrders((o) => [newOrder, ...o].slice(0, 6));
-    push(`Order ${newOrder.id} submitted to ${rail.name}`, "success");
+    setOrders((o) => [newOrder, ...o].slice(0, 8));
+    push(`Order ${newOrder.id} submitted to ${chosenRail}`, "success");
+    setApprovalStatus("idle"); setCustomerName(""); setCustomerPhone(""); setBeneficiary("");
   };
 
   return (
     <div className="space-y-5">
+      {/* Quote inputs */}
       <div className="rounded-2xl p-5" style={{ background: "var(--bone)", border: "1px solid var(--line)" }}>
         <div className="grid gap-4 sm:grid-cols-4">
           <Field label="Direction">
-            <Select value={direction} onChange={(e) => setDirection(e.target.value)}>
-              <option value="on-ramp">On-ramp · NGN → USD (outbound)</option>
-              <option value="off-ramp">Off-ramp · USD → NGN (diaspora inbound)</option>
+            <Select value={direction} onChange={(e) => { setDirection(e.target.value); setChosenRail(null); }}>
+              <option value="off-ramp">Off-ramp · NGN customer → foreign supplier</option>
+              <option value="on-ramp">On-ramp · Foreign sender → NGN beneficiary</option>
             </Select>
           </Field>
-          <Field label="Amount (USD)">
+          <Field label={`Amount (${destinationCcy})`}>
             <div className="focus-ring flex items-center rounded-xl transition" style={{ background: "white", border: "1px solid var(--line)" }}>
               <span className="pl-3.5 text-sm font-mono" style={{ color: "var(--muted)" }}>$</span>
               <input type="text" value={amount} onChange={(e) => setAmount(e.target.value)} className="w-full bg-transparent px-2 py-3 text-sm outline-none font-mono" />
             </div>
           </Field>
-          <Field label="Destination corridor">
-            <Select value={destination} onChange={(e) => setDestination(e.target.value)}>
-              <option>China</option><option>USA</option><option>UAE</option><option>UK</option><option>India</option><option>Germany</option>
+          <Field label="Settle currency">
+            <Select value={destinationCcy} onChange={(e) => setDestinationCcy(e.target.value)}>
+              <option>USD</option><option>GBP</option><option>EUR</option><option>CNY</option><option>AED</option>
             </Select>
           </Field>
           <Field label="Urgency">
@@ -2210,19 +2280,22 @@ function BDCRailQuotes() {
             </Select>
           </Field>
         </div>
-        <div className="mt-3 flex items-center gap-3 text-xs">
+        <div className="mt-3 flex flex-wrap items-center gap-3 text-xs">
           <div className="flex items-center gap-1.5"><div className="h-1.5 w-1.5 rounded-full pulse-dot" style={{ background: "var(--emerald)", boxShadow: "0 0 6px var(--emerald)" }} /><span className="font-mono uppercase tracking-wider" style={{ color: "var(--muted)" }}>Live · refreshes every 4s</span></div>
           <span style={{ color: "var(--muted)" }}>·</span>
-          <span className="font-mono" style={{ color: "var(--muted)" }}>Quote tick #{tick}</span>
+          <span className="font-mono" style={{ color: "var(--muted)" }}>Best LP USDT rate: ₦{LP_USDT_NGN}/USDT</span>
+          <span style={{ color: "var(--muted)" }}>·</span>
+          <span className="font-mono" style={{ color: "var(--muted)" }}>Tick #{tick}</span>
         </div>
       </div>
 
+      {/* Rail comparison cards (view-only) */}
       <div className="grid gap-4 lg:grid-cols-2">
         {[tripleA, cedar].map((rail) => {
           const isCheapest = cheapest && rail.name === cheapest.name;
           const ineligible = parseFloat(amount) < rail.minTicket;
           return (
-            <div key={rail.name} className="card-soft rounded-2xl p-6 relative overflow-hidden" style={isCheapest ? { background: "var(--ink)", color: "var(--bone)", border: "1px solid var(--ink)" } : { background: "white", border: "1px solid var(--line)" }}>
+            <div key={rail.name} className="card-soft rounded-2xl p-6 relative overflow-hidden" style={isCheapest ? { background: "var(--ink)", color: "var(--bone)", border: "1px solid var(--ink)" } : { background: "white", border: "1px solid var(--line)", opacity: ineligible ? 0.55 : 1 }}>
               {isCheapest && (<><div className="absolute -right-16 -top-16 h-40 w-40 rounded-full opacity-30 blur-2xl" style={{ background: "var(--lime)" }} /><div className="absolute right-4 top-4 rounded-full px-2 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-wider" style={{ background: "var(--lime)", color: "var(--ink)" }}>Cheapest</div></>)}
               <div className="relative">
                 <div className="flex items-start gap-3">
@@ -2233,30 +2306,33 @@ function BDCRailQuotes() {
                   </div>
                 </div>
                 <dl className="mt-5 space-y-2.5 text-sm">
-                  <div className="flex items-baseline justify-between"><dt style={isCheapest ? { color: "rgba(247,245,240,0.6)" } : { color: "var(--muted)" }}>Mid-market rate</dt><dd className="font-mono font-semibold">₦{rail.midRate.toFixed(2)} / $</dd></div>
-                  <div className="flex items-baseline justify-between"><dt style={isCheapest ? { color: "rgba(247,245,240,0.6)" } : { color: "var(--muted)" }}>Rail fee</dt><dd className="font-mono font-semibold">{rail.feeBps} bps · {(rail.feeBps / 100).toFixed(2)}%</dd></div>
+                  <div className="flex items-baseline justify-between"><dt style={isCheapest ? { color: "rgba(247,245,240,0.6)" } : { color: "var(--muted)" }}>Quote ({rail.quoteCurrency})</dt><dd className="font-mono font-semibold">{rail.rateLine}</dd></div>
+                  <div className="flex items-baseline justify-between"><dt style={isCheapest ? { color: "rgba(247,245,240,0.6)" } : { color: "var(--muted)" }}>Rail fee</dt><dd className="font-mono font-semibold">{rail.feeLine}</dd></div>
                   <div className="flex items-baseline justify-between pt-2.5" style={{ borderTop: `1px solid ${isCheapest ? "rgba(255,255,255,0.08)" : "var(--line)"}` }}>
-                    <dt className="font-semibold">All-in cost basis</dt>
-                    <dd className="font-display text-2xl font-[500]" style={isCheapest ? { color: "var(--lime)" } : {}}>₦{rail.allInRate.toFixed(2)}</dd>
+                    <dt className="font-semibold">Effective NGN cost / $</dt>
+                    <dd className="font-display text-2xl font-[500]" style={isCheapest ? { color: "var(--lime)" } : {}}>₦{rail.nativeCostNGN.toFixed(2)}</dd>
                   </div>
                   <div className="flex items-baseline justify-between"><dt style={isCheapest ? { color: "rgba(247,245,240,0.6)" } : { color: "var(--muted)" }}>Settlement</dt><dd className="font-mono text-xs">{rail.settlement}</dd></div>
-                  <div className="flex items-baseline justify-between"><dt style={isCheapest ? { color: "rgba(247,245,240,0.6)" } : { color: "var(--muted)" }}>Rail / network</dt><dd className="font-mono text-xs">{rail.chains}</dd></div>
                   <div className="flex items-baseline justify-between"><dt style={isCheapest ? { color: "rgba(247,245,240,0.6)" } : { color: "var(--muted)" }}>Min ticket</dt><dd className="font-mono text-xs">${rail.minTicket.toLocaleString()}</dd></div>
                 </dl>
-                <button onClick={() => submitOrder(rail)} disabled={ineligible} className="mt-5 w-full rounded-xl px-4 py-2.5 text-sm font-semibold transition disabled:opacity-40 disabled:cursor-not-allowed inline-flex items-center justify-center gap-2" style={isCheapest ? { background: "var(--lime)", color: "var(--ink)" } : { background: "var(--ink)", color: "var(--bone)" }}>
-                  {ineligible ? `Below ${rail.name} minimum` : <>Submit order to {rail.name} <ArrowRight size={14} /></>}
-                </button>
+                <div className="mt-4 rounded-lg p-3 text-[11px] leading-relaxed" style={isCheapest ? { background: "rgba(197,242,74,0.06)", color: "rgba(247,245,240,0.75)" } : { background: "var(--bone)", color: "var(--muted)" }}>
+                  <div className="font-mono text-[9px] uppercase tracking-wider mb-1" style={isCheapest ? { color: "var(--lime)" } : { color: "var(--emerald)" }}>How money moves</div>
+                  {rail.network}
+                  <div className="mt-1.5 italic">{rail.note}</div>
+                </div>
+                {ineligible && <div className="mt-3 font-mono text-[10px] uppercase tracking-wider" style={{ color: "#92400e" }}>Below minimum ticket — adjust amount</div>}
               </div>
             </div>
           );
         })}
       </div>
 
+      {/* Customer rate calculator */}
       <div className="card-soft rounded-2xl p-6" style={{ background: "white", border: "1px solid var(--line)" }}>
-        <div className="flex items-start justify-between gap-4">
+        <div className="flex items-start justify-between gap-4 flex-wrap">
           <div>
             <h3 className="font-display text-lg font-semibold">Customer rate calculator</h3>
-            <p className="mt-1 text-sm" style={{ color: "var(--muted)" }}>Set your spread on top of the cheapest rail's all-in cost. This is the rate you quote your customer.</p>
+            <p className="mt-1 text-sm" style={{ color: "var(--muted)" }}>Set your spread on top of the cheapest rail's NGN cost. This is the rate you quote your customer.</p>
           </div>
           {cheapest && <div className="rounded-full px-2.5 py-1 font-mono text-[10px] font-semibold uppercase tracking-wider whitespace-nowrap" style={{ background: "var(--bone-2)", color: "var(--emerald)" }}>Basis · {cheapest.name}</div>}
         </div>
@@ -2275,14 +2351,15 @@ function BDCRailQuotes() {
                 </div>
               </Field>
               <div className="space-y-1.5 rounded-xl p-4 text-sm" style={{ background: "var(--bone)", border: "1px solid var(--line)" }}>
-                <div className="flex items-baseline justify-between"><span style={{ color: "var(--muted)" }}>Cost basis ({cheapest.name})</span><span className="font-mono font-semibold">₦{cheapest.allInRate.toFixed(2)}</span></div>
-                <div className="flex items-baseline justify-between"><span style={{ color: "var(--muted)" }}>+ Your markup ({markupPct}%)</span><span className="font-mono font-semibold">₦{(customerRate - cheapest.allInRate).toFixed(2)}</span></div>
+                <div className="flex items-baseline justify-between"><span style={{ color: "var(--muted)" }}>Cost basis ({cheapest.name})</span><span className="font-mono font-semibold">₦{cheapest.nativeCostNGN.toFixed(2)}</span></div>
+                <div className="flex items-baseline justify-between"><span style={{ color: "var(--muted)" }}>+ Your markup ({markupPct}%)</span><span className="font-mono font-semibold">₦{(customerRate - cheapest.nativeCostNGN).toFixed(2)}</span></div>
               </div>
             </div>
             <div className="rounded-xl p-5 relative overflow-hidden" style={{ background: "var(--ink)", color: "var(--bone)" }}>
               <div className="absolute -right-12 -top-12 h-32 w-32 rounded-full opacity-30 blur-3xl" style={{ background: "var(--lime)" }} />
               <div className="relative font-mono text-[10px] uppercase tracking-wider" style={{ color: "rgba(247,245,240,0.5)" }}>Quote to customer</div>
               <div className="relative font-display mt-1 text-4xl font-[500] tracking-tight" style={{ color: "var(--lime)" }}>₦{customerRate.toFixed(2)}<span className="font-mono text-base ml-1.5" style={{ color: "rgba(247,245,240,0.6)" }}>/ $</span></div>
+              <div className="relative mt-1.5 font-mono text-[11px]" style={{ color: "rgba(247,245,240,0.6)" }}>Total: ₦{Math.round(ngnTotal).toLocaleString()} for ${parseFloat(amount).toLocaleString()}</div>
               <div className="relative mt-3 grid grid-cols-2 gap-3 text-xs pt-3" style={{ borderTop: "1px solid rgba(255,255,255,0.08)" }}>
                 <div>
                   <div className="font-mono uppercase tracking-wider" style={{ color: "rgba(247,245,240,0.5)" }}>Margin / $1</div>
@@ -2296,10 +2373,69 @@ function BDCRailQuotes() {
             </div>
           </div>
         ) : (
-          <div className="mt-5 rounded-xl p-5 text-sm" style={{ background: "var(--bone)", color: "var(--muted)" }}>Amount is below the minimum ticket on every rail. Increase amount or change urgency.</div>
+          <div className="mt-5 rounded-xl p-5 text-sm" style={{ background: "var(--bone)", color: "var(--muted)" }}>Amount is below the minimum ticket on every rail. Increase amount or adjust urgency.</div>
         )}
       </div>
 
+      {/* Customer approval + rail submission */}
+      {cheapest && (
+        <div className="card-soft rounded-2xl p-6" style={{ background: "white", border: "1px solid var(--line)" }}>
+          <div className="flex items-start justify-between gap-4 flex-wrap mb-5">
+            <div>
+              <h3 className="font-display text-lg font-semibold">Customer approval & rail submission</h3>
+              <p className="mt-1 text-sm" style={{ color: "var(--muted)" }}>Send the rate to your customer on WhatsApp. They reply YES. Then submit to the rail.</p>
+            </div>
+            <ApprovalBadge status={approvalStatus} />
+          </div>
+
+          <div className="grid gap-4 sm:grid-cols-3">
+            <Field label="Customer name"><Input value={customerName} onChange={(e) => setCustomerName(e.target.value)} placeholder="Adeyemi Okafor" /></Field>
+            <Field label="Customer WhatsApp"><Input value={customerPhone} onChange={(e) => setCustomerPhone(e.target.value)} placeholder="+234 803 ..." /></Field>
+            <Field label="Beneficiary / supplier"><Input value={beneficiary} onChange={(e) => setBeneficiary(e.target.value)} placeholder="Shenzhen Electronics Co." /></Field>
+          </div>
+
+          <div className="mt-5 grid gap-3 sm:grid-cols-2">
+            <button onClick={sendQuoteOnWhatsApp} disabled={!customerPhone || approvalStatus === "approved"} className="inline-flex items-center justify-center gap-2 rounded-xl px-5 py-3 text-sm font-semibold transition disabled:opacity-40 disabled:cursor-not-allowed" style={{ background: "var(--ink)", color: "var(--bone)" }}>
+              <MessageCircle size={14} /> {approvalStatus === "sent" ? "Re-send quote on WhatsApp" : "Send quote on WhatsApp"}
+            </button>
+            <div className="flex gap-2">
+              <button onClick={() => { setApprovalStatus("approved"); push("Customer approved · ready to submit", "success"); }} disabled={approvalStatus !== "sent"} className="flex-1 inline-flex items-center justify-center gap-2 rounded-xl px-5 py-3 text-sm font-semibold transition disabled:opacity-40 disabled:cursor-not-allowed" style={{ background: "var(--emerald)", color: "var(--lime)" }}>
+                <CheckCircle2 size={14} /> Mark customer approved
+              </button>
+              <button onClick={() => { setApprovalStatus("declined"); push("Marked declined.", "info"); }} disabled={approvalStatus !== "sent"} className="rounded-xl px-4 py-3 text-sm font-semibold transition disabled:opacity-40 disabled:cursor-not-allowed" style={{ background: "white", border: "1px solid var(--line)" }} title="Customer declined / no reply">
+                <X size={14} />
+              </button>
+            </div>
+          </div>
+
+          {approvalStatus === "sent" && <p className="mt-3 text-xs" style={{ color: "var(--muted)" }}>Waiting on customer reply. (Real WhatsApp Business API webhook would auto-detect "YES" — for now, mark approved manually once they confirm.)</p>}
+          {approvalStatus === "declined" && <p className="mt-3 text-xs" style={{ color: "#92400e" }}>Quote declined. Adjust markup or re-send a fresh quote.</p>}
+
+          {approvalStatus === "approved" && (
+            <div className="mt-6 pt-5" style={{ borderTop: "1px solid var(--line)" }}>
+              <Label>Choose rail to execute on</Label>
+              <div className="grid gap-2 sm:grid-cols-2 mb-4">
+                {[tripleA, cedar].filter((r) => parseFloat(amount) >= r.minTicket).map((r) => (
+                  <button key={r.name} onClick={() => setChosenRail(r.name)} className="rounded-xl p-3 text-left transition" style={chosenRail === r.name ? { background: "var(--ink)", color: "var(--bone)", border: "1px solid var(--ink)" } : { background: "white", border: "1px solid var(--line)" }}>
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <div className="text-sm font-semibold">{r.name}</div>
+                        <div className="font-mono text-[10px] mt-0.5" style={chosenRail === r.name ? { color: "rgba(247,245,240,0.6)" } : { color: "var(--muted)" }}>₦{r.nativeCostNGN.toFixed(2)}/$ · {r.settlement}</div>
+                      </div>
+                      {chosenRail === r.name && <CheckCircle2 size={16} style={{ color: "var(--lime)" }} />}
+                    </div>
+                  </button>
+                ))}
+              </div>
+              <button onClick={submitOrder} disabled={!chosenRail} className="w-full inline-flex items-center justify-center gap-2 rounded-xl px-5 py-3 text-sm font-semibold transition disabled:opacity-40 glow-lime" style={{ background: "var(--lime)", color: "var(--ink)" }}>
+                <Send size={14} /> Submit order to {chosenRail || "rail"} · ₦{Math.round(ngnTotal).toLocaleString()}
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Recent orders */}
       <Card padding="none">
         <div className="p-4" style={{ borderBottom: "1px solid var(--line)" }}>
           <h3 className="font-display text-lg font-semibold">Recent orders</h3>
@@ -2310,12 +2446,13 @@ function BDCRailQuotes() {
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
-              <thead><tr style={{ background: "var(--bone)", borderBottom: "1px solid var(--line)" }}>{["Order ID", "Rail", "Amount", "Customer rate", "When", "Status"].map((h, i) => (<th key={i} className={`px-4 py-3 text-left font-mono text-[10px] font-semibold uppercase tracking-wider ${["Amount", "Customer rate"].includes(h) ? "text-right" : ""}`} style={{ color: "var(--muted)" }}>{h}</th>))}</tr></thead>
+              <thead><tr style={{ background: "var(--bone)", borderBottom: "1px solid var(--line)" }}>{["Order ID", "Customer", "Rail", "Amount", "Customer rate", "When", "Status"].map((h, i) => (<th key={i} className={`px-4 py-3 text-left font-mono text-[10px] font-semibold uppercase tracking-wider ${["Amount", "Customer rate"].includes(h) ? "text-right" : ""}`} style={{ color: "var(--muted)" }}>{h}</th>))}</tr></thead>
               <tbody>
                 {orders.map((o) => (
                   <tr key={o.id} className="transition hover:bg-[color:var(--bone)]" style={{ borderBottom: "1px solid var(--line)" }}>
                     <td className="px-4 py-3.5 font-mono text-xs font-semibold">{o.id}</td>
-                    <td className="px-4 py-3.5 font-medium">{o.rail}</td>
+                    <td className="px-4 py-3.5 font-medium">{o.customer}</td>
+                    <td className="px-4 py-3.5">{o.rail}</td>
                     <td className="px-4 py-3.5 text-right font-mono font-semibold">${o.amount.toLocaleString()}</td>
                     <td className="px-4 py-3.5 text-right font-mono">₦{o.customerRate.toFixed(2)}</td>
                     <td className="px-4 py-3.5 font-mono text-xs" style={{ color: "var(--muted)" }}>{o.ts}</td>
@@ -2329,6 +2466,16 @@ function BDCRailQuotes() {
       </Card>
     </div>
   );
+}
+
+function ApprovalBadge({ status }) {
+  const map = {
+    idle: { label: "No quote sent yet", bg: "var(--bone-2)", color: "var(--muted)" },
+    sent: { label: "Awaiting customer reply", bg: "#fef3c7", color: "#92400e" },
+    approved: { label: "Approved · ready to submit", bg: "var(--emerald)", color: "var(--lime)" },
+    declined: { label: "Declined", bg: "#fee2e2", color: "#991b1b" },
+  }[status];
+  return <span className="rounded-full px-2.5 py-1 font-mono text-[10px] font-semibold uppercase tracking-wider whitespace-nowrap" style={{ background: map.bg, color: map.color }}>{map.label}</span>;
 }
 
 function BDCPaymentAgent() {
