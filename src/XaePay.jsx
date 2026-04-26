@@ -1,0 +1,3092 @@
+import React, { useState, useEffect, createContext, useContext } from "react";
+import {
+  MessageCircle, Shield, FileText, CheckCircle2, AlertTriangle, ArrowRight,
+  ArrowUpRight, Upload, Search, Bell, ChevronRight, Menu, X, Package, Receipt,
+  BarChart3, Zap, Eye, Download, Send, Filter, Plus, History, LogIn,
+  ExternalLink, Sparkles, User, Building2, Briefcase, Coins, Lock, Unlock,
+  ArrowLeft, Loader2, Layers, TrendingUp, Wallet, DollarSign, Mail,
+} from "lucide-react";
+
+// ─── Editable in one place ────────────────────────────────────────────────
+// Swap these when you have real values. Search for "TODO:" to find them.
+const WHATSAPP_NUMBER_NG = "2348149571908"; // Nigeria — primary brand number
+const WHATSAPP_NUMBER_US = "12673618234"; // US — used in diaspora-specific surfaces
+const WHATSAPP_NUMBER = WHATSAPP_NUMBER_NG;
+const WAITLIST_FORMSPREE_ENDPOINT = "https://formspree.io/f/mjgjzpqr"; // Live — submissions land in Chukie's Formspree inbox
+const CONTACT_EMAIL = "okoli.chukie@gmail.com"; // TODO: change to a hello@xaepay.com once domain + email are live
+const WHATSAPP_URL = `https://wa.me/${WHATSAPP_NUMBER}`;
+const WHATSAPP_URL_US = `https://wa.me/${WHATSAPP_NUMBER_US}`;
+
+function GlobalStyles() {
+  return (
+    <style>{`
+      @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Inter+Tight:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+      :root {
+        --ink: #0a0b0d; --ink-2: #18191c;
+        --bone: #f7f5f0; --bone-2: #efeae0;
+        --paper: #fcfbf7; --line: #e5e1d6;
+        --emerald: #0f5f3f; --emerald-deep: #074030;
+        --lime: #c5f24a; --amber: #d4a82c;
+        --muted: #6b6a65;
+      }
+
+      html, body, #root { background: var(--paper); }
+      .font-display { font-family: 'Fraunces', Georgia, serif; font-feature-settings: 'ss01', 'ss02'; letter-spacing: -0.02em; }
+      .font-ui { font-family: 'Inter Tight', -apple-system, sans-serif; letter-spacing: -0.01em; }
+      .font-mono { font-family: 'JetBrains Mono', ui-monospace, monospace; }
+
+      @keyframes rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+      @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
+      @keyframes pulse-dot { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+      @keyframes spin { to { transform: rotate(360deg); } }
+      @keyframes scan { 0% { transform: translateX(-100%); } 100% { transform: translateX(100%); } }
+      .rise { animation: rise 0.7s cubic-bezier(0.16, 1, 0.3, 1) both; }
+      .fade-in { animation: fade-in 0.5s ease both; }
+      .pulse-dot { animation: pulse-dot 2s ease-in-out infinite; }
+      .spin { animation: spin 1s linear infinite; }
+
+      .hero-mesh { background: radial-gradient(ellipse 80% 60% at 20% 20%, rgba(197,242,74,0.10), transparent 60%), radial-gradient(ellipse 70% 50% at 80% 30%, rgba(15,95,63,0.35), transparent 60%), radial-gradient(ellipse 100% 80% at 50% 100%, rgba(212,168,44,0.08), transparent 70%), linear-gradient(180deg, #0a0b0d 0%, #131418 100%); }
+      .hero-grid { background-image: linear-gradient(rgba(255,255,255,0.025) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.025) 1px, transparent 1px); background-size: 56px 56px; mask-image: radial-gradient(ellipse 80% 60% at 50% 30%, black 30%, transparent 80%); }
+      .card-soft { box-shadow: 0 1px 1px rgba(10,11,13,0.02), 0 2px 4px rgba(10,11,13,0.03), 0 8px 24px rgba(10,11,13,0.04); }
+      .card-lift { transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.3s ease; }
+      .card-lift:hover { transform: translateY(-2px); box-shadow: 0 2px 2px rgba(10,11,13,0.03), 0 6px 12px rgba(10,11,13,0.05), 0 16px 40px rgba(10,11,13,0.08); }
+      .border-gradient-dark { background: linear-gradient(var(--ink), var(--ink)) padding-box, linear-gradient(135deg, rgba(197,242,74,0.6), rgba(15,95,63,0.2)) border-box; border: 1px solid transparent; }
+      .glow-lime:hover { box-shadow: 0 0 0 1px rgba(197,242,74,0.5), 0 8px 24px rgba(197,242,74,0.15); }
+      .noise::before { content: ''; position: absolute; inset: 0; background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3CfeColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0.5 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E"); opacity: 0.4; pointer-events: none; mix-blend-mode: overlay; }
+      input:focus, select:focus, textarea:focus { outline: none; }
+      .focus-ring:focus-within { box-shadow: 0 0 0 3px rgba(15,95,63,0.12); border-color: var(--emerald); }
+      html { scroll-behavior: smooth; }
+      ::selection { background: rgba(197,242,74,0.35); color: var(--ink); }
+      .scan-line { position: relative; overflow: hidden; }
+      .scan-line::after { content: ''; position: absolute; inset: 0; background: linear-gradient(90deg, transparent, rgba(197,242,74,0.4), transparent); animation: scan 1.4s ease-in-out infinite; }
+    `}</style>
+  );
+}
+
+const ToastContext = createContext({ push: () => {} });
+const useToast = () => useContext(ToastContext);
+
+function ToastProvider({ children }) {
+  const [toasts, setToasts] = useState([]);
+  const push = (message, tone = "success") => {
+    const id = Math.random().toString(36).slice(2);
+    setToasts((t) => [...t, { id, message, tone }]);
+    setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 3400);
+  };
+  return (
+    <ToastContext.Provider value={{ push }}>
+      {children}
+      <div className="pointer-events-none fixed bottom-5 right-5 z-[100] flex flex-col gap-2 font-ui">
+        {toasts.map((t) => (
+          <div key={t.id} className="pointer-events-auto flex max-w-sm items-start gap-2.5 rounded-xl border px-4 py-3 shadow-2xl"
+            style={{ animation: "rise 0.4s cubic-bezier(0.16, 1, 0.3, 1)",
+              background: t.tone === "success" ? "var(--ink)" : t.tone === "warn" ? "#fef3c7" : "var(--paper)",
+              color: t.tone === "success" ? "var(--bone)" : "var(--ink)",
+              borderColor: t.tone === "success" ? "var(--ink)" : t.tone === "warn" ? "#fcd34d" : "var(--line)",
+            }}>
+            {t.tone === "success" && <div className="mt-0.5 flex h-4 w-4 flex-shrink-0 items-center justify-center rounded-full" style={{ background: "var(--lime)" }}><CheckCircle2 size={12} style={{ color: "var(--ink)" }} strokeWidth={2.5} /></div>}
+            {t.tone === "info" && <Bell size={14} className="mt-0.5 flex-shrink-0" />}
+            {t.tone === "warn" && <AlertTriangle size={14} className="mt-0.5 flex-shrink-0" />}
+            <span className="text-sm leading-snug">{t.message}</span>
+          </div>
+        ))}
+      </div>
+    </ToastContext.Provider>
+  );
+}
+
+function Modal({ open, onClose, title, children, size = "md" }) {
+  useEffect(() => {
+    const onKey = (e) => e.key === "Escape" && onClose();
+    if (open) window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open, onClose]);
+  if (!open) return null;
+  const width = size === "lg" ? "max-w-3xl" : size === "sm" ? "max-w-md" : "max-w-lg";
+  return (
+    <div className="fixed inset-0 z-[90] flex items-center justify-center p-4 font-ui fade-in">
+      <div className="absolute inset-0 backdrop-blur-md" style={{ background: "rgba(10,11,13,0.45)" }} onClick={onClose} />
+      <div className={`relative w-full ${width} max-h-[90vh] overflow-hidden rounded-2xl bg-white shadow-2xl flex flex-col`} style={{ animation: "rise 0.45s cubic-bezier(0.16, 1, 0.3, 1)" }}>
+        <div className="flex items-start justify-between px-6 py-5 flex-shrink-0" style={{ borderBottom: "1px solid var(--line)" }}>
+          <h3 className="font-display text-xl font-semibold" style={{ color: "var(--ink)" }}>{title}</h3>
+          <button onClick={onClose} className="text-stone-400 transition hover:text-stone-900"><X size={18} /></button>
+        </div>
+        <div className="overflow-y-auto px-6 py-5">{children}</div>
+      </div>
+    </div>
+  );
+}
+
+function Drawer({ open, onClose, title, children }) {
+  if (!open) return null;
+  return (
+    <div className="fixed inset-0 z-[90] flex font-ui fade-in">
+      <div className="absolute inset-0 backdrop-blur-md" style={{ background: "rgba(10,11,13,0.45)" }} onClick={onClose} />
+      <div className="ml-auto flex h-full w-full max-w-md flex-col bg-white shadow-2xl sm:w-[480px]" style={{ animation: "rise 0.5s cubic-bezier(0.16, 1, 0.3, 1)" }}>
+        <div className="flex items-start justify-between px-6 py-5" style={{ borderBottom: "1px solid var(--line)" }}>
+          <h3 className="font-display text-xl font-semibold" style={{ color: "var(--ink)" }}>{title}</h3>
+          <button onClick={onClose} className="text-stone-400 transition hover:text-stone-900"><X size={18} /></button>
+        </div>
+        <div className="flex-1 overflow-y-auto px-6 py-5">{children}</div>
+      </div>
+    </div>
+  );
+}
+
+export default function XaePay() {
+  return (<><GlobalStyles /><ToastProvider><AppShell /></ToastProvider></>);
+}
+
+function AppShell() {
+  const [view, setView] = useState("landing");
+  const [mobileOpen, setMobileOpen] = useState(false);
+  const [accessOpen, setAccessOpen] = useState(false);
+  const [signInOpen, setSignInOpen] = useState(false);
+  const [waitlistOpen, setWaitlistOpen] = useState(false);
+  const [onboardingOpen, setOnboardingOpen] = useState(false);
+  const [onboardingType, setOnboardingType] = useState(null);
+  const [session, setSession] = useState({ type: null, tier: 0, name: null, company: null });
+
+  const startOnboarding = (type) => { setOnboardingType(type); setOnboardingOpen(true); setAccessOpen(false); };
+  const completeOnboarding = (data) => {
+    setSession(data); setOnboardingOpen(false);
+    if (data.type === "business" || data.type === "individual") setView("customer");
+    else if (data.type === "bdc" || data.type === "agent") setView("bdc");
+    else if (data.type === "lp") setView("lp");
+    else if (data.type === "diaspora") setView("diaspora");
+  };
+
+  return (
+    <div className="min-h-screen font-ui" style={{ background: "var(--paper)", color: "var(--ink)" }}>
+      <PreviewBanner onWaitlist={() => setWaitlistOpen(true)} />
+      <TopBar view={view} setView={setView} mobileOpen={mobileOpen} setMobileOpen={setMobileOpen} onSignIn={() => setSignInOpen(true)} onRequestAccess={() => setAccessOpen(true)} onWaitlist={() => setWaitlistOpen(true)} session={session} />
+      {view === "landing" && <Landing setView={setView} onRequestAccess={() => setAccessOpen(true)} onWaitlist={() => setWaitlistOpen(true)} />}
+      {view === "customer" && <CustomerApp session={session} />}
+      {view === "bdc" && <BDCDashboard session={session} />}
+      {view === "lp" && <LPDashboard session={session} />}
+      {view === "diaspora" && <DiasporaApp session={session} />}
+      <SignInModal open={signInOpen} onClose={() => setSignInOpen(false)} onSuccess={(role) => {
+        setSignInOpen(false);
+        const nameMap = { business: "Adeyemi Okafor", bdc: "Corporate Exchange BDC", agent: "Flutterwave Payment Services", lp: "K. Asante", diaspora: "Chioma Nwosu" };
+        setSession({ type: role, tier: (role === "business" || role === "diaspora") ? 2 : null, name: nameMap[role] || role, company: role === "business" ? "Novus Trading Ltd" : null });
+        setView(role === "bdc" || role === "agent" ? "bdc" : role === "lp" ? "lp" : role === "diaspora" ? "diaspora" : "customer");
+      }} />
+      <RequestAccessModal open={accessOpen} onClose={() => setAccessOpen(false)} onChoose={startOnboarding} onWaitlist={() => { setAccessOpen(false); setWaitlistOpen(true); }} />
+      <WaitlistModal open={waitlistOpen} onClose={() => setWaitlistOpen(false)} />
+      {onboardingOpen && <OnboardingFlow type={onboardingType} onClose={() => setOnboardingOpen(false)} onComplete={completeOnboarding} onSwitchType={(t) => setOnboardingType(t)} />}
+    </div>
+  );
+}
+
+function PreviewBanner({ onWaitlist }) {
+  return (
+    <div className="relative z-[60] w-full px-4 py-2 text-center text-xs sm:text-sm" style={{ background: "var(--ink)", color: "var(--bone)", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
+      <span className="font-mono text-[10px] uppercase tracking-wider mr-2" style={{ color: "var(--lime)" }}>Preview</span>
+      <span style={{ color: "rgba(247,245,240,0.85)" }}>This is a live preview — please do not enter real BVN, NIN, or banking details. </span>
+      <button onClick={onWaitlist} className="font-semibold underline underline-offset-2" style={{ color: "var(--lime)" }}>Join the waitlist →</button>
+    </div>
+  );
+}
+
+function WaitlistModal({ open, onClose }) {
+  const [email, setEmail] = useState("");
+  const [name, setName] = useState("");
+  const [role, setRole] = useState("business");
+  const [submitted, setSubmitted] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState("");
+  const { push } = useToast();
+
+  const submit = async (e) => {
+    e.preventDefault();
+    setSubmitting(true); setError("");
+    try {
+      if (WAITLIST_FORMSPREE_ENDPOINT) {
+        const res = await fetch(WAITLIST_FORMSPREE_ENDPOINT, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Accept: "application/json" },
+          body: JSON.stringify({ email, name, role, source: "xaepay-waitlist" }),
+        });
+        if (!res.ok) throw new Error("Submission failed");
+      } else {
+        const subject = encodeURIComponent("XaePay waitlist signup");
+        const body = encodeURIComponent(`Name: ${name}\nEmail: ${email}\nRole: ${role}\n\n(Sent from xaepay.com waitlist)`);
+        window.location.href = `mailto:${CONTACT_EMAIL}?subject=${subject}&body=${body}`;
+      }
+      setSubmitted(true);
+      push("You're on the waitlist.", "success");
+    } catch (err) {
+      setError("Couldn't submit — please try again or message us on WhatsApp.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const reset = () => { setEmail(""); setName(""); setRole("business"); setSubmitted(false); setError(""); };
+  const closeAndReset = () => { reset(); onClose(); };
+
+  if (submitted) {
+    return (
+      <Modal open={open} onClose={closeAndReset} title="You're on the list" size="sm">
+        <div className="text-center py-2">
+          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full" style={{ background: "var(--lime)" }}>
+            <CheckCircle2 size={24} strokeWidth={2.5} style={{ color: "var(--ink)" }} />
+          </div>
+          <h3 className="font-display mt-4 text-xl font-semibold" style={{ color: "var(--ink)" }}>Thanks, {name || "friend"}.</h3>
+          <p className="mt-2 text-sm" style={{ color: "var(--muted)" }}>We'll reach out at <span className="font-mono">{email}</span> when XaePay opens to your tier. Want to talk now?</p>
+          <a href={WHATSAPP_URL} target="_blank" rel="noreferrer" className="mt-5 inline-flex items-center justify-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold transition" style={{ background: "var(--ink)", color: "var(--bone)" }}>
+            <MessageCircle size={14} /> Chat on WhatsApp
+          </a>
+        </div>
+      </Modal>
+    );
+  }
+
+  return (
+    <Modal open={open} onClose={closeAndReset} title="Join the XaePay waitlist" size="sm">
+      <form onSubmit={submit} className="space-y-4">
+        <p className="text-sm" style={{ color: "var(--muted)" }}>We'll let you know the moment your tier opens. No spam — just one email when it's live.</p>
+        <div><Label>Name</Label><Input required value={name} onChange={(e) => setName(e.target.value)} placeholder="Your name" /></div>
+        <div><Label>Email</Label><Input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" /></div>
+        <div>
+          <Label>I am a…</Label>
+          <Select value={role} onChange={(e) => setRole(e.target.value)}>
+            <option value="business">Business paying foreign suppliers</option>
+            <option value="diaspora">Diaspora sender</option>
+            <option value="individual">Individual making trade payments</option>
+            <option value="bdc">CBN-licensed BDC</option>
+            <option value="agent">Payment Agent (IMTO/SCUML)</option>
+            <option value="lp">USDT Liquidity Provider</option>
+            <option value="other">Other / just curious</option>
+          </Select>
+        </div>
+        {error && <div className="rounded-lg p-3 text-xs" style={{ background: "#fee2e2", color: "#991b1b" }}>{error}</div>}
+        <PrimaryBtn type="submit" full disabled={submitting}>
+          {submitting ? <><Loader2 size={14} className="spin" /> Submitting…</> : <><Mail size={14} /> Join waitlist</>}
+        </PrimaryBtn>
+        <p className="text-center text-[11px]" style={{ color: "var(--muted)" }}>Or message us directly: <a href={WHATSAPP_URL} target="_blank" rel="noreferrer" className="font-semibold underline" style={{ color: "var(--emerald)" }}>WhatsApp</a></p>
+      </form>
+    </Modal>
+  );
+}
+
+function TopBar({ view, setView, mobileOpen, setMobileOpen, onSignIn, onRequestAccess, onWaitlist, session }) {
+  const onLanding = view === "landing";
+  return (
+    <div className="sticky top-0 z-50 backdrop-blur-xl" style={{ background: onLanding ? "rgba(10,11,13,0.72)" : "rgba(252,251,247,0.85)", borderBottom: `1px solid ${onLanding ? "rgba(255,255,255,0.06)" : "var(--line)"}`, color: onLanding ? "var(--bone)" : "var(--ink)" }}>
+      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+        <div className="flex h-16 items-center justify-between">
+          <button onClick={() => setView("landing")} className="group flex items-center gap-2.5">
+            <div className="relative flex h-8 w-8 items-center justify-center rounded-lg" style={{ background: "linear-gradient(135deg, var(--emerald), var(--emerald-deep))" }}>
+              <span className="font-display text-lg font-semibold" style={{ color: "var(--lime)" }}>X</span>
+            </div>
+            <span className="font-display text-[22px] font-semibold tracking-tight">XaePay</span>
+          </button>
+          <nav className="hidden items-center gap-0.5 md:flex">
+            <NavBtn active={view === "landing"} onLanding={onLanding} onClick={() => setView("landing")}>Overview</NavBtn>
+            <NavBtn active={view === "customer"} onLanding={onLanding} onClick={() => setView("customer")}>For Businesses</NavBtn>
+            <NavBtn active={view === "diaspora"} onLanding={onLanding} onClick={() => setView("diaspora")}>For Diaspora</NavBtn>
+            <NavBtn active={view === "bdc"} onLanding={onLanding} onClick={() => setView("bdc")}>For BDCs</NavBtn>
+            <NavBtn active={view === "lp"} onLanding={onLanding} onClick={() => setView("lp")}>For LPs <Phase2Pill onLanding={onLanding} /></NavBtn>
+          </nav>
+          <div className="hidden items-center gap-2 md:flex">
+            {session.type && (
+              <div className="flex items-center gap-2 rounded-lg px-2.5 py-1" style={{ background: onLanding ? "rgba(255,255,255,0.06)" : "var(--bone-2)" }}>
+                {(session.type === "business" || session.type === "individual") && <TierBadge tier={session.tier} small dark={onLanding} />}
+                <span className="font-mono text-[10px] uppercase tracking-wider" style={{ color: onLanding ? "rgba(247,245,240,0.7)" : "var(--muted)" }}>{session.type}</span>
+              </div>
+            )}
+            <button onClick={onRequestAccess} className={`rounded-lg px-3 py-1.5 text-sm font-medium transition ${onLanding ? "text-stone-300 hover:text-white" : "text-stone-600 hover:text-stone-900"}`}>See preview</button>
+            <a href={WHATSAPP_URL} target="_blank" rel="noreferrer" className={`hidden lg:inline-flex items-center gap-1 rounded-lg px-3 py-1.5 text-sm font-medium transition ${onLanding ? "text-stone-300 hover:text-white" : "text-stone-600 hover:text-stone-900"}`}><MessageCircle size={13} /> WhatsApp</a>
+            <button onClick={onWaitlist} className="rounded-lg px-4 py-1.5 text-sm font-medium transition" style={onLanding ? { background: "var(--lime)", color: "var(--ink)" } : { background: "var(--ink)", color: "var(--bone)" }}>Join waitlist</button>
+          </div>
+          <button onClick={() => setMobileOpen(!mobileOpen)} className="md:hidden">{mobileOpen ? <X size={22} /> : <Menu size={22} />}</button>
+        </div>
+        {mobileOpen && (
+          <div className="py-4 md:hidden" style={{ borderTop: `1px solid ${onLanding ? "rgba(255,255,255,0.06)" : "var(--line)"}` }}>
+            <div className="flex flex-col gap-1">
+              <MobileNavBtn onLanding={onLanding} onClick={() => { setView("landing"); setMobileOpen(false); }}>Overview</MobileNavBtn>
+              <MobileNavBtn onLanding={onLanding} onClick={() => { setView("customer"); setMobileOpen(false); }}>For Businesses</MobileNavBtn>
+              <MobileNavBtn onLanding={onLanding} onClick={() => { setView("diaspora"); setMobileOpen(false); }}>For Diaspora</MobileNavBtn>
+              <MobileNavBtn onLanding={onLanding} onClick={() => { setView("bdc"); setMobileOpen(false); }}>For BDCs</MobileNavBtn>
+              <MobileNavBtn onLanding={onLanding} onClick={() => { setView("lp"); setMobileOpen(false); }}>For LPs · Phase 2</MobileNavBtn>
+              <div className="mt-3 flex flex-col gap-2 pt-3" style={{ borderTop: `1px solid ${onLanding ? "rgba(255,255,255,0.06)" : "var(--line)"}` }}>
+                <a href={WHATSAPP_URL} target="_blank" rel="noreferrer" className="inline-flex items-center justify-center gap-2 w-full rounded-lg px-4 py-2.5 text-sm font-medium" style={{ border: `1px solid ${onLanding ? "rgba(255,255,255,0.1)" : "var(--line)"}`, color: onLanding ? "var(--bone)" : "var(--ink)" }}><MessageCircle size={14} /> Chat on WhatsApp</a>
+                <button onClick={() => { onRequestAccess(); setMobileOpen(false); }} className="w-full rounded-lg px-4 py-2.5 text-sm font-medium" style={{ border: `1px solid ${onLanding ? "rgba(255,255,255,0.1)" : "var(--line)"}`, color: onLanding ? "var(--bone)" : "var(--ink)" }}>See preview</button>
+                <button onClick={() => { onWaitlist(); setMobileOpen(false); }} className="w-full rounded-lg px-4 py-2.5 text-sm font-medium" style={onLanding ? { background: "var(--lime)", color: "var(--ink)" } : { background: "var(--ink)", color: "var(--bone)" }}>Join waitlist</button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function NavBtn({ active, onLanding, onClick, children }) {
+  return <button onClick={onClick} className="rounded-lg px-3 py-1.5 text-sm font-medium transition flex items-center gap-1" style={active ? onLanding ? { background: "rgba(255,255,255,0.08)", color: "var(--bone)" } : { background: "var(--ink)", color: "var(--bone)" } : onLanding ? { color: "rgba(247,245,240,0.7)" } : { color: "var(--muted)" }}>{children}</button>;
+}
+function MobileNavBtn({ onLanding, onClick, children }) {
+  return <button onClick={onClick} className="w-full rounded-lg px-3 py-3 text-left text-sm font-medium transition" style={{ color: onLanding ? "var(--bone)" : "var(--ink)" }}>{children}</button>;
+}
+function Phase2Pill({ onLanding }) {
+  return <span className="rounded-full px-1.5 py-0.5 font-mono text-[8px] font-semibold uppercase tracking-wider" style={{ background: onLanding ? "rgba(197,242,74,0.15)" : "var(--bone-2)", color: onLanding ? "var(--lime)" : "var(--emerald)" }}>P2</span>;
+}
+function TierBadge({ tier, small, dark }) {
+  const labels = ["Tier 0", "Tier 1", "Tier 2", "Tier 3"];
+  const limits = ["No limit set", "$0 – $5K", "$5K – $50K", "$50K+ unlocked"];
+  if (small) return <span className="inline-flex items-center gap-1 font-mono text-[10px] font-semibold" style={{ color: dark ? "var(--lime)" : "var(--emerald)" }}>{tier === 3 ? <Unlock size={9} /> : <Lock size={9} />}{labels[tier]}</span>;
+  return <div className="inline-flex items-center gap-2 rounded-full px-3 py-1" style={{ background: "var(--emerald)", color: "var(--lime)" }}>{tier === 3 ? <Unlock size={12} /> : <Lock size={12} />}<span className="font-mono text-[10px] font-semibold uppercase tracking-wider">{labels[tier]} · {limits[tier]}</span></div>;
+}
+
+function SignInModal({ open, onClose, onSuccess }) {
+  const [role, setRole] = useState("business");
+  const [email, setEmail] = useState("");
+  const { push } = useToast();
+  const submit = (e) => { e.preventDefault(); push("Signed in.", "success"); onSuccess(role); setEmail(""); };
+  return (
+    <Modal open={open} onClose={onClose} title="Sign in" size="sm">
+      <form onSubmit={submit} className="space-y-4">
+        <div>
+          <Label>Sign in as</Label>
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+            <RoleBtn active={role === "business"} onClick={() => setRole("business")}>Business</RoleBtn>
+            <RoleBtn active={role === "diaspora"} onClick={() => setRole("diaspora")}>Diaspora</RoleBtn>
+            <RoleBtn active={role === "bdc"} onClick={() => setRole("bdc")}>BDC</RoleBtn>
+            <RoleBtn active={role === "agent"} onClick={() => setRole("agent")}>Payment Agent</RoleBtn>
+            <RoleBtn active={role === "lp"} onClick={() => setRole("lp")}>LP</RoleBtn>
+          </div>
+        </div>
+        <div><Label>Email</Label><Input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@company.com" /></div>
+        <div><Label>Password</Label><Input type="password" required placeholder="••••••••" /></div>
+        <PrimaryBtn type="submit" full><LogIn size={14} /> Sign in</PrimaryBtn>
+        <p className="text-center text-xs" style={{ color: "var(--muted)" }}>Demo · any email and password</p>
+      </form>
+    </Modal>
+  );
+}
+
+function RequestAccessModal({ open, onClose, onChoose, onWaitlist }) {
+  return (
+    <Modal open={open} onClose={onClose} title="Preview the experience" size="lg">
+      <div className="mb-5 rounded-xl p-4" style={{ background: "rgba(212,168,44,0.08)", border: "1px solid rgba(212,168,44,0.3)" }}>
+        <div className="flex items-start gap-2">
+          <AlertTriangle size={14} className="mt-0.5 flex-shrink-0" style={{ color: "var(--amber)" }} />
+          <div className="text-xs flex-1" style={{ color: "var(--ink)" }}>
+            <span className="font-semibold">This is a simulated preview.</span> Pick a role below to see how the product feels — every check, ID lookup, and payment is faked. Don't enter real BVN/NIN/banking details.
+            <button onClick={onWaitlist} className="ml-2 underline font-semibold" style={{ color: "var(--emerald)" }}>Join waitlist for the real launch →</button>
+          </div>
+        </div>
+      </div>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <RoleCard icon={Building2} title="I run a business" subtitle="CAC-registered company" description="Pay foreign suppliers, manage trade payments, generate compliance docs." time="~4 min" available onClick={() => onChoose("business")} />
+        <RoleCard icon={Send} title="I'm sending from abroad" subtitle="Diaspora · US / UK / EU / CA" description="Pay vendors, family, school fees, or property in Nigeria and Africa." time="~5 min" available onClick={() => onChoose("diaspora")} />
+        <RoleCard icon={User} title="I'm an individual" subtitle="Personal trade payments" description="Pay foreign suppliers via BDC payment-agent service." time="~3 min" phase2 onClick={() => onChoose("individual")} />
+        <RoleCard icon={Briefcase} title="I operate a BDC" subtitle="CBN-licensed BDC" description="Process trade payments, access global rails, generate evidence packs." time="~10 min" available onClick={() => onChoose("bdc")} />
+        <RoleCard icon={Layers} title="I'm a Payment Agent" subtitle="IMTO / SCUML / CAC + BDC partner" description="Licensed Nigerian operators serving trade and remittance flows. Same dashboard as BDCs, different regulatory wrapper." time="~8 min" available onClick={() => onChoose("agent")} />
+        <RoleCard icon={Coins} title="I provide USDT liquidity" subtitle="Diaspora USD holders, exporters" description="Sell USDT to BDCs needing inventory. Receive naira at favorable rates." time="~7 min" phase2 onClick={() => onChoose("lp")} />
+      </div>
+    </Modal>
+  );
+}
+
+function RoleCard({ icon: Icon, title, subtitle, description, time, available, phase2, onClick }) {
+  return (
+    <button onClick={onClick} className="card-lift rounded-xl p-5 text-left transition" style={{ background: "var(--paper)", border: "1px solid var(--line)" }}>
+      <div className="flex items-start justify-between">
+        <div className="flex h-9 w-9 items-center justify-center rounded-lg" style={{ background: "var(--bone-2)", color: "var(--emerald)" }}><Icon size={18} strokeWidth={1.75} /></div>
+        {phase2 && <span className="rounded-full px-2 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-wider" style={{ background: "var(--bone-2)", color: "var(--emerald)" }}>Phase 2</span>}
+        {available && <span className="rounded-full px-2 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-wider" style={{ background: "var(--emerald)", color: "var(--lime)" }}>Live</span>}
+      </div>
+      <h3 className="font-display mt-4 text-lg font-semibold" style={{ color: "var(--ink)" }}>{title}</h3>
+      <p className="font-mono text-[10px] uppercase tracking-wider mt-0.5" style={{ color: "var(--muted)" }}>{subtitle}</p>
+      <p className="mt-2 text-sm leading-relaxed" style={{ color: "var(--muted)" }}>{description}</p>
+      <div className="mt-4 flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-wider" style={{ color: "var(--emerald)" }}>
+        <span>Continue</span><ArrowRight size={11} /> <span className="ml-auto" style={{ color: "var(--muted)" }}>{time}</span>
+      </div>
+    </button>
+  );
+}
+
+function OnboardingFlow({ type, onClose, onComplete }) {
+  return (
+    <div className="fixed inset-0 z-[95] font-ui fade-in overflow-y-auto" style={{ background: "var(--paper)" }}>
+      <div className="sticky top-0 z-10 backdrop-blur-xl" style={{ background: "rgba(252,251,247,0.85)", borderBottom: "1px solid var(--line)" }}>
+        <div className="mx-auto max-w-3xl px-4 sm:px-6 lg:px-8">
+          <div className="flex h-16 items-center justify-between">
+            <div className="flex items-center gap-2.5">
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg" style={{ background: "linear-gradient(135deg, var(--emerald), var(--emerald-deep))" }}>
+                <span className="font-display text-lg font-semibold" style={{ color: "var(--lime)" }}>X</span>
+              </div>
+              <span className="font-display text-[20px] font-semibold tracking-tight">Onboarding</span>
+            </div>
+            <button onClick={onClose} className="rounded-lg p-2 text-stone-400 hover:bg-stone-100 hover:text-stone-900"><X size={18} /></button>
+          </div>
+        </div>
+      </div>
+      <div className="mx-auto max-w-3xl px-4 py-10 sm:px-6 lg:px-8">
+        {type === "business" && <BusinessOnboarding onComplete={onComplete} />}
+        {type === "diaspora" && <DiasporaOnboarding onComplete={onComplete} />}
+        {type === "individual" && <IndividualOnboarding onComplete={onComplete} />}
+        {type === "bdc" && <BDCOnboarding onComplete={onComplete} />}
+        {type === "agent" && <PaymentAgentOnboarding onComplete={onComplete} />}
+        {type === "lp" && <LPOnboarding onComplete={onComplete} />}
+      </div>
+    </div>
+  );
+}
+
+function OnboardingStepper({ step, steps, tiers }) {
+  return (
+    <div className="flex items-center gap-3">
+      {steps.map((label, i) => {
+        const active = i + 1 === step;
+        const done = i + 1 < step;
+        return (
+          <React.Fragment key={label}>
+            <div className="flex min-w-0 items-center gap-2">
+              <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full text-xs font-semibold transition" style={done ? { background: "var(--emerald)", color: "var(--lime)" } : active ? { background: "var(--ink)", color: "var(--lime)" } : { background: "var(--bone-2)", color: "var(--muted)" }}>{done ? <CheckCircle2 size={14} strokeWidth={2.5} /> : i + 1}</div>
+              <div className="hidden sm:block">
+                <div className="text-sm font-medium" style={{ color: active ? "var(--ink)" : "var(--muted)" }}>{label}</div>
+                {tiers && <div className="font-mono text-[9px] uppercase tracking-wider" style={{ color: active ? "var(--emerald)" : "var(--muted)" }}>{tiers[i]}</div>}
+              </div>
+            </div>
+            {i < steps.length - 1 && <div className="h-px flex-1" style={{ background: done ? "var(--emerald)" : "var(--line)" }} />}
+          </React.Fragment>
+        );
+      })}
+    </div>
+  );
+}
+
+function TierUnlockNote({ tier, description }) {
+  return (
+    <div className="mt-5 rounded-xl p-4" style={{ background: "rgba(15,95,63,0.06)", border: "1px solid rgba(15,95,63,0.2)" }}>
+      <div className="flex items-start gap-2">
+        <Unlock size={14} className="mt-0.5 flex-shrink-0" style={{ color: "var(--emerald)" }} />
+        <div className="text-xs"><span className="font-semibold" style={{ color: "var(--emerald)" }}>Tier {tier} unlocks</span><span style={{ color: "var(--muted)" }}> · {description}</span></div>
+      </div>
+    </div>
+  );
+}
+
+function UploadRow({ label, sublabel, done, onClick }) {
+  return (
+    <button onClick={onClick} disabled={done} className="w-full flex items-start justify-between gap-3 rounded-xl p-4 text-left transition" style={{ background: done ? "var(--bone)" : "white", border: `1px solid ${done ? "var(--emerald)" : "var(--line)"}` }}>
+      <div className="flex items-start gap-3 min-w-0 flex-1">
+        <div className="mt-0.5 flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full" style={done ? { background: "var(--emerald)", color: "var(--lime)" } : { background: "var(--bone-2)", color: "var(--muted)" }}>{done ? <CheckCircle2 size={12} strokeWidth={2.5} /> : <Upload size={12} />}</div>
+        <div className="min-w-0">
+          <div className="text-sm font-medium">{label}</div>
+          <div className="font-mono text-[10px] mt-0.5" style={{ color: "var(--muted)" }}>{sublabel}</div>
+        </div>
+      </div>
+      {!done && <span className="font-mono text-[10px] uppercase tracking-wider" style={{ color: "var(--emerald)" }}>Upload →</span>}
+    </button>
+  );
+}
+
+function BusinessOnboarding({ onComplete }) {
+  const [step, setStep] = useState(1);
+  const [data, setData] = useState({ name: "", email: "", phone: "", role: "Founder", cacNumber: "", company: "", directors: [], regDate: "", bdcSponsor: null, directorVerified: false });
+  return (
+    <div className="rise">
+      <SectionEyebrow>Business onboarding</SectionEyebrow>
+      <h1 className="font-display mt-3 text-3xl font-[450] tracking-tight sm:text-4xl">Let's set up your business.</h1>
+      <p className="mt-2 text-sm" style={{ color: "var(--muted)" }}>Four short steps. Tier unlocks as you progress — you can transact at Tier 1.</p>
+      <div className="mt-8"><OnboardingStepper step={step} steps={["Identity", "Business", "Director", "EDD"]} tiers={["T0", "T1", "T2", "T3"]} /></div>
+      <div className="mt-6">
+        {step === 1 && <BizStep1 data={data} setData={setData} onNext={() => setStep(2)} />}
+        {step === 2 && <BizStep2 data={data} setData={setData} onNext={() => setStep(3)} onBack={() => setStep(1)} />}
+        {step === 3 && <BizStep3 data={data} setData={setData} onNext={() => setStep(4)} onBack={() => setStep(2)} onComplete={() => onComplete({ type: "business", tier: 2, name: data.name, company: data.company })} />}
+        {step === 4 && <BizStep4 onBack={() => setStep(3)} onComplete={() => onComplete({ type: "business", tier: 3, name: data.name, company: data.company })} />}
+      </div>
+    </div>
+  );
+}
+
+function BizStep1({ data, setData, onNext }) {
+  return (
+    <Card>
+      <h2 className="font-display text-xl font-semibold">Tell us about you</h2>
+      <p className="mt-1 text-sm" style={{ color: "var(--muted)" }}>This is for your account. We verify the business in the next step.</p>
+      <div className="mt-6 grid gap-4 sm:grid-cols-2">
+        <Field label="Full name" full><Input required value={data.name} onChange={(e) => setData({ ...data, name: e.target.value })} placeholder="Adeyemi Okafor" /></Field>
+        <Field label="Work email"><Input type="email" required value={data.email} onChange={(e) => setData({ ...data, email: e.target.value })} placeholder="you@company.com" /></Field>
+        <Field label="Phone (WhatsApp)"><Input required value={data.phone} onChange={(e) => setData({ ...data, phone: e.target.value })} placeholder="+234 803 123 4567" /></Field>
+        <Field label="Your role" full>
+          <Select value={data.role} onChange={(e) => setData({ ...data, role: e.target.value })}>
+            <option>Founder</option><option>CEO / MD</option><option>CFO / Finance Lead</option><option>Operations</option><option>Other</option>
+          </Select>
+        </Field>
+      </div>
+      <TierUnlockNote tier={1} description="account created, verifies your identity" />
+      <div className="mt-6 flex justify-end"><PrimaryBtn onClick={onNext}>Continue <ArrowRight size={14} /></PrimaryBtn></div>
+    </Card>
+  );
+}
+
+function BizStep2({ data, setData, onNext, onBack }) {
+  const [searching, setSearching] = useState(false);
+  const [found, setFound] = useState(false);
+  const { push } = useToast();
+  const [bdcChoice, setBdcChoice] = useState("none");
+
+  const lookupCAC = () => {
+    if (!data.cacNumber) return;
+    setSearching(true); setFound(false);
+    setTimeout(() => {
+      setSearching(false); setFound(true);
+      setData({ ...data, company: "Novus Trading Ltd", regDate: "March 14, 2019", directors: ["Adeyemi Okafor", "Funmi Adeleke"] });
+      push("CAC verified · company details auto-populated", "success");
+    }, 1400);
+  };
+
+  return (
+    <Card>
+      <h2 className="font-display text-xl font-semibold">Verify your business</h2>
+      <p className="mt-1 text-sm" style={{ color: "var(--muted)" }}>Enter your CAC number — we auto-fetch from the public registry. No upload needed.</p>
+      <div className="mt-6">
+        <Label>CAC registration number</Label>
+        <div className="flex gap-2">
+          <div className="flex-1 focus-ring flex items-center rounded-xl transition" style={{ background: "white", border: "1px solid var(--line)" }}>
+            <span className="pl-3.5 font-mono text-sm" style={{ color: "var(--muted)" }}>RC</span>
+            <input value={data.cacNumber} onChange={(e) => { setData({ ...data, cacNumber: e.target.value }); setFound(false); }} placeholder="1247389" className="w-full bg-transparent px-2 py-3 text-sm outline-none font-mono" />
+          </div>
+          <button onClick={lookupCAC} disabled={searching || !data.cacNumber} className="inline-flex items-center justify-center gap-2 rounded-xl px-5 py-3 text-sm font-semibold transition disabled:opacity-50" style={{ background: "var(--ink)", color: "var(--bone)" }}>
+            {searching ? <><Loader2 size={14} className="spin" /> Verifying</> : <><Search size={14} /> Lookup</>}
+          </button>
+        </div>
+      </div>
+      {searching && (<div className="scan-line mt-4 rounded-xl p-4" style={{ background: "var(--bone)", border: "1px solid var(--line)" }}><div className="font-mono text-[10px] uppercase tracking-wider" style={{ color: "var(--muted)" }}>Searching CAC public registry…</div></div>)}
+      {found && (
+        <div className="mt-4 rise rounded-xl p-5" style={{ background: "var(--ink)", color: "var(--bone)" }}>
+          <div className="flex items-start gap-3">
+            <div className="mt-0.5 flex h-6 w-6 items-center justify-center rounded-full" style={{ background: "var(--lime)" }}><CheckCircle2 size={14} strokeWidth={2.5} style={{ color: "var(--ink)" }} /></div>
+            <div className="flex-1">
+              <div className="font-mono text-[10px] uppercase tracking-wider" style={{ color: "rgba(247,245,240,0.6)" }}>Verified company</div>
+              <div className="font-display mt-1 text-xl font-semibold">{data.company}</div>
+              <div className="mt-2 grid gap-2 text-xs sm:grid-cols-2">
+                <div><span style={{ color: "rgba(247,245,240,0.5)" }}>Registered:</span> <span>{data.regDate}</span></div>
+                <div><span style={{ color: "rgba(247,245,240,0.5)" }}>Directors:</span> <span>{data.directors.join(", ")}</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+      <div className="mt-6">
+        <Label>Are you coming through a BDC?</Label>
+        <p className="text-xs mb-3" style={{ color: "var(--muted)" }}>If a CBN-licensed BDC has already verified you as a customer, they can vouch to skip director KYC.</p>
+        <div className="grid gap-2 sm:grid-cols-2">
+          <RoleBtn active={bdcChoice === "none"} onClick={() => { setBdcChoice("none"); setData({ ...data, bdcSponsor: null }); }}>No, coming directly</RoleBtn>
+          <RoleBtn active={bdcChoice === "bdc"} onClick={() => { setBdcChoice("bdc"); setData({ ...data, bdcSponsor: "Corporate Exchange BDC" }); }}>Yes, via my BDC</RoleBtn>
+        </div>
+        {bdcChoice === "bdc" && (
+          <div className="mt-3 rise">
+            <Select value={data.bdcSponsor || ""} onChange={(e) => setData({ ...data, bdcSponsor: e.target.value })}>
+              <option>Corporate Exchange BDC</option><option>Dula Global BDC (Tier 1)</option><option>Trurate Global BDC (Tier 1)</option><option>Sevenlocks BDC</option><option>Bergpoint BDC</option><option>Brownstone BDC</option>
+            </Select>
+            <p className="mt-2 font-mono text-[10px] uppercase tracking-wider" style={{ color: "var(--emerald)" }}>✓ Your BDC will receive a one-click attestation request. You skip director KYC.</p>
+          </div>
+        )}
+      </div>
+      <TierUnlockNote tier={1} description="business identity verified, you can transact up to $5,000" />
+      <div className="mt-6 flex flex-col justify-between gap-3 sm:flex-row">
+        <SecondaryBtn onClick={onBack}>Back</SecondaryBtn>
+        <PrimaryBtn onClick={onNext}>Continue to {bdcChoice === "bdc" ? "BDC attestation" : "director KYC"} <ArrowRight size={14} /></PrimaryBtn>
+      </div>
+    </Card>
+  );
+}
+
+function BizStep3({ data, setData, onNext, onBack, onComplete }) {
+  const { push } = useToast();
+  const isBDC = !!data.bdcSponsor;
+  const [verified, setVerified] = useState(false);
+  const sendToWhatsApp = () => {
+    push("WhatsApp link sent · check your phone", "info");
+    setTimeout(() => { setVerified(true); push("Director ID verified via WhatsApp", "success"); setData({ ...data, directorVerified: true }); }, 2200);
+  };
+
+  if (isBDC) {
+    return (
+      <Card>
+        <h2 className="font-display text-xl font-semibold">BDC attestation</h2>
+        <p className="mt-1 text-sm" style={{ color: "var(--muted)" }}>{data.bdcSponsor} has been notified. Once they click-attest, you're at Tier 2.</p>
+        <div className="mt-6 rounded-xl p-5" style={{ background: "var(--ink)", color: "var(--bone)" }}>
+          <div className="flex items-start gap-3">
+            <div className="flex h-9 w-9 items-center justify-center rounded-lg" style={{ background: "rgba(197,242,74,0.1)" }}><Briefcase size={16} style={{ color: "var(--lime)" }} /></div>
+            <div className="flex-1">
+              <div className="text-sm font-semibold">{data.bdcSponsor}</div>
+              <div className="font-mono text-[10px] uppercase tracking-wider mt-0.5" style={{ color: "rgba(247,245,240,0.6)" }}>Attestation pending</div>
+              <p className="mt-3 text-xs leading-relaxed" style={{ color: "rgba(247,245,240,0.7)" }}>One-click attestation: (a) identity, (b) relationship history, (c) AML clearance.</p>
+            </div>
+          </div>
+        </div>
+        <TierUnlockNote tier={2} description="BDC attestation grants Tier 2. $5K – $50K corridor unlocked." />
+        <div className="mt-6 flex flex-col justify-between gap-3 sm:flex-row">
+          <SecondaryBtn onClick={onBack}>Back</SecondaryBtn>
+          <div className="flex gap-2">
+            <SecondaryBtn onClick={onComplete}>Finish at Tier 2</SecondaryBtn>
+            <PrimaryBtn onClick={onNext}>Unlock Tier 3 <ArrowRight size={14} /></PrimaryBtn>
+          </div>
+        </div>
+      </Card>
+    );
+  }
+  return (
+    <Card>
+      <h2 className="font-display text-xl font-semibold">Director identity</h2>
+      <p className="mt-1 text-sm" style={{ color: "var(--muted)" }}>One director on the CAC certificate verifies identity. Photo ID + selfie.</p>
+      <div className="mt-6 grid gap-3 sm:grid-cols-2">
+        <button onClick={sendToWhatsApp} disabled={verified} className="card-lift rounded-xl p-5 text-left transition disabled:opacity-50" style={{ background: verified ? "var(--ink)" : "var(--bone)", color: verified ? "var(--bone)" : "var(--ink)", border: `1px solid ${verified ? "var(--ink)" : "var(--line)"}` }}>
+          <div className="flex items-start gap-3">
+            <div className="flex h-9 w-9 items-center justify-center rounded-lg" style={{ background: verified ? "rgba(197,242,74,0.1)" : "white", color: verified ? "var(--lime)" : "var(--emerald)" }}>{verified ? <CheckCircle2 size={16} /> : <MessageCircle size={16} />}</div>
+            <div className="flex-1">
+              <div className="font-display text-base font-semibold">{verified ? "Verified via WhatsApp" : "Continue on WhatsApp"}</div>
+              <p className="mt-1 text-xs leading-relaxed" style={verified ? { color: "rgba(247,245,240,0.7)" } : { color: "var(--muted)" }}>{verified ? "ID + selfie received." : "Easier from your phone — we guide you in chat."}</p>
+              {!verified && <div className="mt-2 font-mono text-[10px] uppercase tracking-wider" style={{ color: "var(--emerald)" }}>Recommended</div>}
+            </div>
+          </div>
+        </button>
+        <div className="card-lift rounded-xl p-5" style={{ background: "white", border: "1px solid var(--line)" }}>
+          <div className="flex items-start gap-3">
+            <div className="flex h-9 w-9 items-center justify-center rounded-lg" style={{ background: "var(--bone-2)", color: "var(--emerald)" }}><Upload size={16} /></div>
+            <div className="flex-1">
+              <div className="font-display text-base font-semibold">Upload here</div>
+              <p className="mt-1 text-xs leading-relaxed" style={{ color: "var(--muted)" }}>Photo of NIN / passport + selfie from laptop.</p>
+              <button className="mt-3 text-xs font-semibold underline" style={{ color: "var(--emerald)" }}>Upload files →</button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <TierUnlockNote tier={2} description="director identity confirmed. $5K – $50K corridor unlocked." />
+      <div className="mt-6 flex flex-col justify-between gap-3 sm:flex-row">
+        <SecondaryBtn onClick={onBack}>Back</SecondaryBtn>
+        <div className="flex gap-2">
+          <SecondaryBtn onClick={onComplete} disabled={!verified}>Finish at Tier 2</SecondaryBtn>
+          <PrimaryBtn onClick={onNext} disabled={!verified}>Unlock Tier 3 <ArrowRight size={14} /></PrimaryBtn>
+        </div>
+      </div>
+    </Card>
+  );
+}
+
+function BizStep4({ onBack, onComplete }) {
+  const { push } = useToast();
+  const [docs, setDocs] = useState({ bankStatement: false, sof: false, bo: false });
+  const allDone = docs.bankStatement && docs.sof && docs.bo;
+  return (
+    <Card>
+      <h2 className="font-display text-xl font-semibold">Enhanced due diligence</h2>
+      <p className="mt-1 text-sm" style={{ color: "var(--muted)" }}>Required for transactions above $50K.</p>
+      <div className="mt-6 space-y-2">
+        <UploadRow label="Bank statements (last 3 months)" sublabel="PDF or image · WhatsApp upload available" done={docs.bankStatement} onClick={() => { setDocs({ ...docs, bankStatement: true }); push("Bank statements received", "success"); }} />
+        <UploadRow label="Source of funds attestation" sublabel="One-page declaration we generate for signing" done={docs.sof} onClick={() => { setDocs({ ...docs, sof: true }); push("Source of funds signed", "success"); }} />
+        <UploadRow label="Beneficial ownership disclosure" sublabel="Anyone owning more than 25%" done={docs.bo} onClick={() => { setDocs({ ...docs, bo: true }); push("Beneficial ownership complete", "success"); }} />
+      </div>
+      <TierUnlockNote tier={3} description="full corporate tier · all rails, no transaction limits, dedicated compliance support." />
+      <div className="mt-6 flex flex-col justify-between gap-3 sm:flex-row">
+        <SecondaryBtn onClick={onBack}>Back</SecondaryBtn>
+        <PrimaryBtn onClick={onComplete} disabled={!allDone}>Finish onboarding <Sparkles size={14} /></PrimaryBtn>
+      </div>
+    </Card>
+  );
+}
+
+function IndividualOnboarding({ onComplete }) {
+  const [step, setStep] = useState(1);
+  const [data, setData] = useState({ name: "", phone: "", email: "", bvn: "", bvnVerified: false, bdc: null, sofSigned: false, authSigned: false });
+  const { push } = useToast();
+  const [verifying, setVerifying] = useState(false);
+  const verifyBVN = () => {
+    if (!data.bvn || data.bvn.length < 5) return;
+    setVerifying(true);
+    setTimeout(() => { setVerifying(false); setData({ ...data, bvnVerified: true, name: "Funmi Adeleke" }); push("BVN verified · NIBSS returned identity match", "success"); }, 1500);
+  };
+  return (
+    <div className="rise">
+      <div className="flex items-center gap-2 mb-2">
+        <SectionEyebrow>Individual onboarding</SectionEyebrow>
+        <span className="rounded-full px-2 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-wider" style={{ background: "var(--bone-2)", color: "var(--emerald)" }}>Phase 2</span>
+      </div>
+      <h1 className="font-display mt-3 text-3xl font-[450] tracking-tight sm:text-4xl">Trade payments via BDC payment-agent.</h1>
+      <p className="mt-2 text-sm" style={{ color: "var(--muted)" }}>Your BDC pays the supplier in their name on your behalf — fully disclosed, fully documented. Per-transaction $2K, monthly $10K limits per CBN rules.</p>
+      <div className="mt-6 rounded-xl p-4" style={{ background: "rgba(212,168,44,0.08)", border: "1px solid rgba(212,168,44,0.3)" }}>
+        <div className="flex items-start gap-2">
+          <Sparkles size={14} className="mt-0.5 flex-shrink-0" style={{ color: "var(--amber)" }} />
+          <div className="text-xs" style={{ color: "var(--ink)" }}>
+            <span className="font-semibold">Doing more than $5K/month repeatedly?</span> Forming a registered business unlocks higher limits. <button className="underline font-semibold" style={{ color: "var(--emerald)" }}>Form your business in 7 days →</button>
+          </div>
+        </div>
+      </div>
+      <div className="mt-8"><OnboardingStepper step={step} steps={["Identity", "BDC", "Authorize", "Done"]} /></div>
+      <div className="mt-6">
+        {step === 1 && (
+          <Card>
+            <h2 className="font-display text-xl font-semibold">Verify your identity</h2>
+            <p className="mt-1 text-sm" style={{ color: "var(--muted)" }}>BVN lookup is instant — no documents needed.</p>
+            <div className="mt-6 space-y-4">
+              <Field label="Phone (WhatsApp)"><Input value={data.phone} onChange={(e) => setData({ ...data, phone: e.target.value })} placeholder="+234 803 123 4567" /></Field>
+              <Field label="Email"><Input type="email" value={data.email} onChange={(e) => setData({ ...data, email: e.target.value })} placeholder="you@example.com" /></Field>
+              <div>
+                <Label>BVN (Bank Verification Number)</Label>
+                <div className="flex gap-2">
+                  <Input value={data.bvn} onChange={(e) => setData({ ...data, bvn: e.target.value, bvnVerified: false })} placeholder="22XXXXXXXXX" />
+                  <button onClick={verifyBVN} disabled={verifying || !data.bvn} className="inline-flex items-center justify-center gap-2 rounded-xl px-5 py-3 text-sm font-semibold transition disabled:opacity-50" style={{ background: "var(--ink)", color: "var(--bone)" }}>{verifying ? <><Loader2 size={14} className="spin" /> Verifying</> : "Verify"}</button>
+                </div>
+                {data.bvnVerified && (
+                  <div className="mt-3 rise rounded-xl p-3" style={{ background: "var(--ink)", color: "var(--bone)" }}>
+                    <div className="flex items-center gap-2"><CheckCircle2 size={14} style={{ color: "var(--lime)" }} strokeWidth={2.5} /><span className="text-sm">Identity confirmed: <span className="font-semibold">{data.name}</span></span></div>
+                  </div>
+                )}
+              </div>
+            </div>
+            <div className="mt-6 flex justify-end"><PrimaryBtn onClick={() => setStep(2)} disabled={!data.bvnVerified}>Continue <ArrowRight size={14} /></PrimaryBtn></div>
+          </Card>
+        )}
+        {step === 2 && (
+          <Card>
+            <h2 className="font-display text-xl font-semibold">Pick your BDC payment agent</h2>
+            <p className="mt-1 text-sm" style={{ color: "var(--muted)" }}>The BDC pays in their name on your behalf with full disclosure.</p>
+            <div className="mt-6 space-y-2">
+              {["Corporate Exchange BDC · Lagos · ₦/$ 1,395", "Sevenlocks BDC · Lagos · ₦/$ 1,397", "Bergpoint BDC · Lagos · ₦/$ 1,396"].map((b) => (
+                <button key={b} onClick={() => setData({ ...data, bdc: b })} className="w-full rounded-xl p-4 text-left transition" style={data.bdc === b ? { background: "var(--ink)", color: "var(--bone)", border: "1px solid var(--ink)" } : { background: "white", border: "1px solid var(--line)" }}>
+                  <div className="flex items-center justify-between"><div className="text-sm font-medium">{b.split("·")[0]}</div><div className="font-mono text-xs">{b.split("·").slice(1).join(" ·").trim()}</div></div>
+                </button>
+              ))}
+            </div>
+            <div className="mt-6 flex justify-between"><SecondaryBtn onClick={() => setStep(1)}>Back</SecondaryBtn><PrimaryBtn onClick={() => setStep(3)} disabled={!data.bdc}>Continue <ArrowRight size={14} /></PrimaryBtn></div>
+          </Card>
+        )}
+        {step === 3 && (
+          <Card>
+            <h2 className="font-display text-xl font-semibold">Sign the authorization</h2>
+            <p className="mt-1 text-sm" style={{ color: "var(--muted)" }}>Authorizes your BDC to make payments on your behalf with full disclosure.</p>
+            <div className="mt-6 space-y-2">
+              <UploadRow label="Source of funds attestation" sublabel="Where the naira comes from · CBN requirement" done={data.sofSigned} onClick={() => { setData({ ...data, sofSigned: true }); push("Source of funds signed", "success"); }} />
+              <UploadRow label="Third-party payment authorization" sublabel="Authorizes BDC as disclosed agent" done={data.authSigned} onClick={() => { setData({ ...data, authSigned: true }); push("Authorization signed", "success"); }} />
+            </div>
+            <div className="mt-5 rounded-xl p-4 text-xs" style={{ background: "rgba(15,95,63,0.06)", border: "1px solid rgba(15,95,63,0.2)" }}>
+              <div className="flex items-start gap-2"><Shield size={14} className="mt-0.5 flex-shrink-0" style={{ color: "var(--emerald)" }} /><p style={{ color: "var(--ink)" }}>Per transaction we generate: updated invoice with your name, third-party authorization letter, disclosed payment letter to receiving bank, MT103 reference. Full audit trail kept.</p></div>
+            </div>
+            <div className="mt-6 flex justify-between"><SecondaryBtn onClick={() => setStep(2)}>Back</SecondaryBtn><PrimaryBtn onClick={() => setStep(4)} disabled={!data.sofSigned || !data.authSigned}>Continue <ArrowRight size={14} /></PrimaryBtn></div>
+          </Card>
+        )}
+        {step === 4 && (
+          <div className="rounded-2xl p-8 relative overflow-hidden" style={{ background: "var(--ink)", color: "var(--bone)" }}>
+            <div className="absolute -right-20 -top-20 h-56 w-56 rounded-full opacity-40 blur-3xl" style={{ background: "radial-gradient(circle, var(--lime), transparent)" }} />
+            <div className="relative">
+              <div className="flex h-12 w-12 items-center justify-center rounded-full" style={{ background: "var(--lime)" }}><CheckCircle2 size={24} strokeWidth={2.5} style={{ color: "var(--ink)" }} /></div>
+              <h2 className="font-display mt-5 text-[28px] font-[450] tracking-tight">You're set up.</h2>
+              <p className="mt-2 text-sm" style={{ color: "rgba(247,245,240,0.7)" }}>Pay foreign suppliers via {data.bdc?.split("·")[0]}. Per-transaction limit: $2,000. Monthly: $10,000.</p>
+              <button onClick={() => onComplete({ type: "individual", tier: 1, name: data.name, company: null })} className="mt-7 inline-flex items-center justify-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold transition glow-lime" style={{ background: "var(--lime)", color: "var(--ink)" }}>Make a payment <ArrowRight size={14} /></button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+const CBN_BDC_LIST = {
+  "BDC/2024/T1/001": { name: "Dula Global BDC Ltd", tier: "Tier 1", location: "Lagos", licenseDate: "Nov 27, 2025" },
+  "BDC/2024/T1/002": { name: "Trurate Global BDC Ltd", tier: "Tier 1", location: "Lagos", licenseDate: "Nov 27, 2025" },
+  "BDC/2024/T2/045": { name: "Corporate Exchange BDC", tier: "Tier 2", location: "Lagos", licenseDate: "Nov 27, 2025" },
+  "BDC/2024/T2/067": { name: "Sevenlocks BDC", tier: "Tier 2", location: "Lagos", licenseDate: "Nov 27, 2025" },
+  "BDC/2024/T2/072": { name: "Bergpoint BDC", tier: "Tier 2", location: "Lagos", licenseDate: "Nov 27, 2025" },
+  "BDC/2024/T2/088": { name: "Brownstone BDC", tier: "Tier 2", location: "Abuja", licenseDate: "Nov 27, 2025" },
+};
+
+function PaymentAgentOnboarding({ onComplete }) {
+  const [step, setStep] = useState(1);
+  const [data, setData] = useState({
+    wrapper: "", licenseNumber: "", verified: null, partnerName: "", partnerLetter: false,
+    operatorName: "", operatorEmail: "", complianceOfficer: "", complianceEmail: "",
+    bankName: "", accountNumber: "",
+  });
+  const { push } = useToast();
+  const [verifying, setVerifying] = useState(false);
+
+  const verifyLicense = () => {
+    if (!data.wrapper) return;
+    setVerifying(true);
+    setTimeout(() => {
+      setVerifying(false);
+      const wrapperLabels = {
+        imto: { name: "IMTO License Verified", body: "Flutterwave Payment Services Ltd", detail: "CBN IMTO/2024/018 · Active · Lagos" },
+        scuml: { name: "SCUML Registration Verified", body: "Sendbox Logistics & Payments Ltd", detail: "SCUML/NG/2023/4421 · DNFBP · Active" },
+        cac: { name: "CAC + Partner Letter Verified", body: "Trinity Trade Facilitation Ltd", detail: "RC 2147289 · Partner: Corporate Exchange BDC (Tier 2)" },
+      };
+      setData({ ...data, verified: wrapperLabels[data.wrapper] });
+      push(`${wrapperLabels[data.wrapper].name}`, "success");
+    }, 1500);
+  };
+
+  return (
+    <div className="rise">
+      <SectionEyebrow>Payment Agent onboarding</SectionEyebrow>
+      <h1 className="font-display mt-3 text-3xl font-[450] tracking-tight sm:text-4xl">Set up your Payment Agent account.</h1>
+      <p className="mt-2 text-sm" style={{ color: "var(--muted)" }}>Same platform as BDCs. Different regulatory wrapper. Nigerian operators launching in Phase 1b — international (US MSB, UK MSB, UAE) available later.</p>
+      <div className="mt-6 rounded-xl p-4" style={{ background: "rgba(212,168,44,0.08)", border: "1px solid rgba(212,168,44,0.3)" }}>
+        <div className="flex items-start gap-2">
+          <Shield size={14} className="mt-0.5 flex-shrink-0" style={{ color: "var(--amber)" }} />
+          <p className="text-xs" style={{ color: "var(--ink)" }}>
+            <span className="font-semibold">Admission criteria strictly enforced.</span> We verify against CBN's published IMTO list, SCUML's register, or require a countersigned partnership letter from a licensed BDC or bank. No exceptions.
+          </p>
+        </div>
+      </div>
+      <div className="mt-8"><OnboardingStepper step={step} steps={["Wrapper", "Verify", "Operator", "Banking", "Done"]} /></div>
+      <div className="mt-6">
+        {step === 1 && (
+          <Card>
+            <h2 className="font-display text-xl font-semibold">Which regulatory wrapper?</h2>
+            <p className="mt-1 text-sm" style={{ color: "var(--muted)" }}>Pick the license or registration under which your agency operates.</p>
+            <div className="mt-6 space-y-3">
+              {[
+                { id: "imto", name: "IMTO-licensed", sub: "CBN International Money Transfer Operator" },
+                { id: "scuml", name: "SCUML-registered DNFBP", sub: "Designated non-financial business under EFCC SCUML" },
+                { id: "cac", name: "CAC-registered + BDC/bank partnership", sub: "Trade facilitation firm with named licensed partner executing payments" },
+              ].map((w) => (
+                <button key={w.id} onClick={() => setData({ ...data, wrapper: w.id })} className="w-full rounded-xl p-5 text-left transition" style={data.wrapper === w.id ? { background: "var(--ink)", color: "var(--bone)", border: "1px solid var(--ink)" } : { background: "white", border: "1px solid var(--line)" }}>
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <div className="font-display text-base font-semibold">{w.name}</div>
+                      <div className="mt-0.5 text-xs" style={data.wrapper === w.id ? { color: "rgba(247,245,240,0.7)" } : { color: "var(--muted)" }}>{w.sub}</div>
+                    </div>
+                    {data.wrapper === w.id && <CheckCircle2 size={16} style={{ color: "var(--lime)" }} />}
+                  </div>
+                </button>
+              ))}
+            </div>
+            <div className="mt-6 flex justify-end"><PrimaryBtn onClick={() => setStep(2)} disabled={!data.wrapper}>Continue <ArrowRight size={14} /></PrimaryBtn></div>
+          </Card>
+        )}
+        {step === 2 && (
+          <Card>
+            <h2 className="font-display text-xl font-semibold">Verify registration</h2>
+            <p className="mt-1 text-sm" style={{ color: "var(--muted)" }}>
+              {data.wrapper === "imto" && "We cross-check against the CBN IMTO register."}
+              {data.wrapper === "scuml" && "We cross-check against SCUML's published DNFBP register."}
+              {data.wrapper === "cac" && "Upload CAC certificate and partnership letter from your named licensed BDC or bank."}
+            </p>
+            <div className="mt-6">
+              <Label>
+                {data.wrapper === "imto" && "IMTO license number"}
+                {data.wrapper === "scuml" && "SCUML registration number"}
+                {data.wrapper === "cac" && "CAC (RC) number"}
+              </Label>
+              <div className="flex gap-2">
+                <Input value={data.licenseNumber} onChange={(e) => setData({ ...data, licenseNumber: e.target.value, verified: null })} placeholder={data.wrapper === "imto" ? "IMTO/2024/018" : data.wrapper === "scuml" ? "SCUML/NG/2023/4421" : "RC 2147289"} />
+                <button onClick={verifyLicense} disabled={verifying || !data.licenseNumber} className="inline-flex items-center justify-center gap-2 rounded-xl px-5 py-3 text-sm font-semibold transition disabled:opacity-50" style={{ background: "var(--ink)", color: "var(--bone)" }}>
+                  {verifying ? <><Loader2 size={14} className="spin" /> Verifying</> : "Verify"}
+                </button>
+              </div>
+            </div>
+            {data.wrapper === "cac" && (
+              <div className="mt-5">
+                <Field label="Named BDC or bank partner"><Input value={data.partnerName} onChange={(e) => setData({ ...data, partnerName: e.target.value })} placeholder="Corporate Exchange BDC" /></Field>
+                <div className="mt-3">
+                  <UploadRow label="Partnership letter (countersigned by partner)" sublabel="PDF · must name XaePay as compliance-infrastructure vendor" done={data.partnerLetter} onClick={() => { setData({ ...data, partnerLetter: true }); push("Partnership letter received", "success"); }} />
+                </div>
+              </div>
+            )}
+            {data.verified && (
+              <div className="mt-5 rise rounded-xl p-5" style={{ background: "var(--ink)", color: "var(--bone)" }}>
+                <div className="flex items-start gap-3">
+                  <div className="mt-0.5 flex h-6 w-6 items-center justify-center rounded-full" style={{ background: "var(--lime)" }}><CheckCircle2 size={14} strokeWidth={2.5} style={{ color: "var(--ink)" }} /></div>
+                  <div className="flex-1">
+                    <div className="font-mono text-[10px] uppercase tracking-wider" style={{ color: "rgba(247,245,240,0.6)" }}>{data.verified.name}</div>
+                    <div className="font-display mt-1 text-xl font-semibold">{data.verified.body}</div>
+                    <div className="mt-2 font-mono text-xs" style={{ color: "rgba(247,245,240,0.7)" }}>{data.verified.detail}</div>
+                  </div>
+                </div>
+              </div>
+            )}
+            <div className="mt-6 flex justify-between">
+              <SecondaryBtn onClick={() => setStep(1)}>Back</SecondaryBtn>
+              <PrimaryBtn onClick={() => setStep(3)} disabled={!data.verified || (data.wrapper === "cac" && !data.partnerLetter)}>Continue <ArrowRight size={14} /></PrimaryBtn>
+            </div>
+          </Card>
+        )}
+        {step === 3 && (
+          <Card>
+            <h2 className="font-display text-xl font-semibold">Operator details</h2>
+            <p className="mt-1 text-sm" style={{ color: "var(--muted)" }}>Principal operator and compliance officer.</p>
+            <div className="mt-6 grid gap-4 sm:grid-cols-2">
+              <Field label="Principal operator name"><Input value={data.operatorName} onChange={(e) => setData({ ...data, operatorName: e.target.value })} placeholder="Olusegun Adeyemi" /></Field>
+              <Field label="Operator email"><Input type="email" value={data.operatorEmail} onChange={(e) => setData({ ...data, operatorEmail: e.target.value })} placeholder="olusegun@agent.ng" /></Field>
+              <Field label="Compliance officer"><Input value={data.complianceOfficer} onChange={(e) => setData({ ...data, complianceOfficer: e.target.value })} placeholder="Folake Bamidele" /></Field>
+              <Field label="Compliance email"><Input type="email" value={data.complianceEmail} onChange={(e) => setData({ ...data, complianceEmail: e.target.value })} placeholder="compliance@agent.ng" /></Field>
+            </div>
+            <div className="mt-6 flex justify-between"><SecondaryBtn onClick={() => setStep(2)}>Back</SecondaryBtn><PrimaryBtn onClick={() => setStep(4)}>Continue <ArrowRight size={14} /></PrimaryBtn></div>
+          </Card>
+        )}
+        {step === 4 && (
+          <Card>
+            <h2 className="font-display text-xl font-semibold">Banking instructions</h2>
+            <p className="mt-1 text-sm" style={{ color: "var(--muted)" }}>Where your rev-share lands monthly.</p>
+            <div className="mt-6 grid gap-4 sm:grid-cols-2">
+              <Field label="Bank name"><Select value={data.bankName} onChange={(e) => setData({ ...data, bankName: e.target.value })}>
+                <option value="">Select bank</option><option>Access Bank</option><option>GTBank</option><option>Zenith Bank</option><option>UBA</option><option>First Bank</option>
+              </Select></Field>
+              <Field label="Account number"><Input value={data.accountNumber} onChange={(e) => setData({ ...data, accountNumber: e.target.value })} /></Field>
+            </div>
+            <div className="mt-6 rounded-xl p-4" style={{ background: "rgba(15,95,63,0.06)", border: "1px solid rgba(15,95,63,0.2)" }}>
+              <div className="flex items-start gap-2">
+                <DollarSign size={14} className="mt-0.5 flex-shrink-0" style={{ color: "var(--emerald)" }} />
+                <div className="text-xs" style={{ color: "var(--ink)" }}>
+                  <span className="font-semibold">Your pricing:</span> $750 / $2,500 / $6,000 per month (uniform Payment Agent tiers). Rev-share: 25% of end-user fees routed through your agency. Volume-positive breakeven at ~240 transactions/month.
+                </div>
+              </div>
+            </div>
+            <div className="mt-6 flex justify-between"><SecondaryBtn onClick={() => setStep(3)}>Back</SecondaryBtn><PrimaryBtn onClick={() => setStep(5)}>Finish onboarding <Sparkles size={14} /></PrimaryBtn></div>
+          </Card>
+        )}
+        {step === 5 && (
+          <div className="rounded-2xl p-8 relative overflow-hidden" style={{ background: "var(--ink)", color: "var(--bone)" }}>
+            <div className="absolute -right-20 -top-20 h-56 w-56 rounded-full opacity-40 blur-3xl" style={{ background: "radial-gradient(circle, var(--lime), transparent)" }} />
+            <div className="relative">
+              <div className="flex h-12 w-12 items-center justify-center rounded-full" style={{ background: "var(--lime)" }}><CheckCircle2 size={24} strokeWidth={2.5} style={{ color: "var(--ink)" }} /></div>
+              <h2 className="font-display mt-5 text-[28px] font-[450] tracking-tight">You're set up.</h2>
+              <p className="mt-2 text-sm" style={{ color: "rgba(247,245,240,0.7)" }}>{data.verified?.body} verified as Payment Agent. Opening your operator dashboard.</p>
+              <button onClick={() => onComplete({ type: "agent", tier: null, name: data.verified?.body, company: data.verified?.body })} className="mt-7 inline-flex items-center justify-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold transition glow-lime" style={{ background: "var(--lime)", color: "var(--ink)" }}>Open dashboard <ArrowRight size={14} /></button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function BDCOnboarding({ onComplete }) {
+  const [step, setStep] = useState(1);
+  const [data, setData] = useState({ licenseNumber: "", verified: null, principalName: "", principalEmail: "", complianceOfficer: "", complianceEmail: "", bankName: "", accountNumber: "", servesIndividuals: false, partnerQ: { tripleA: false, cedar: false } });
+  const { push } = useToast();
+  const [verifying, setVerifying] = useState(false);
+  const verifyLicense = () => {
+    if (!data.licenseNumber) return;
+    setVerifying(true);
+    setTimeout(() => {
+      setVerifying(false);
+      const match = CBN_BDC_LIST[data.licenseNumber] || CBN_BDC_LIST["BDC/2024/T2/045"];
+      setData({ ...data, verified: match });
+      push(`License verified · ${match.tier} · ${match.location}`, "success");
+    }, 1600);
+  };
+  return (
+    <div className="rise">
+      <SectionEyebrow>BDC operator onboarding</SectionEyebrow>
+      <h1 className="font-display mt-3 text-3xl font-[450] tracking-tight sm:text-4xl">Set up your BDC operator account.</h1>
+      <p className="mt-2 text-sm" style={{ color: "var(--muted)" }}>Five steps. Includes Triple-A and Cedar Money partner intake at the end.</p>
+      <div className="mt-8"><OnboardingStepper step={step} steps={["License", "Principal", "Compliance", "Banking", "Partners"]} /></div>
+      <div className="mt-6">
+        {step === 1 && (
+          <Card>
+            <h2 className="font-display text-xl font-semibold">CBN BDC license</h2>
+            <p className="mt-1 text-sm" style={{ color: "var(--muted)" }}>Auto-validated against the CBN published BDC list (82 licensed as of Nov 2025).</p>
+            <div className="mt-6">
+              <Label>License number</Label>
+              <div className="flex gap-2">
+                <Input value={data.licenseNumber} onChange={(e) => setData({ ...data, licenseNumber: e.target.value, verified: null })} placeholder="BDC/2024/T2/045" />
+                <button onClick={verifyLicense} disabled={verifying || !data.licenseNumber} className="inline-flex items-center justify-center gap-2 rounded-xl px-5 py-3 text-sm font-semibold transition disabled:opacity-50" style={{ background: "var(--ink)", color: "var(--bone)" }}>{verifying ? <><Loader2 size={14} className="spin" /> Verifying</> : "Verify"}</button>
+              </div>
+              <p className="mt-2 font-mono text-[10px] uppercase tracking-wider" style={{ color: "var(--muted)" }}>Try BDC/2024/T2/045 (Corporate Exchange) for demo</p>
+            </div>
+            {data.verified && (
+              <div className="mt-5 rise rounded-xl p-5" style={{ background: "var(--ink)", color: "var(--bone)" }}>
+                <div className="flex items-start gap-3">
+                  <div className="mt-0.5 flex h-6 w-6 items-center justify-center rounded-full" style={{ background: "var(--lime)" }}><CheckCircle2 size={14} strokeWidth={2.5} style={{ color: "var(--ink)" }} /></div>
+                  <div className="flex-1">
+                    <div className="font-mono text-[10px] uppercase tracking-wider" style={{ color: "rgba(247,245,240,0.6)" }}>Verified BDC</div>
+                    <div className="font-display mt-1 text-xl font-semibold">{data.verified.name}</div>
+                    <div className="mt-2 grid gap-2 text-xs sm:grid-cols-3">
+                      <div><span style={{ color: "rgba(247,245,240,0.5)" }}>Tier:</span> {data.verified.tier}</div>
+                      <div><span style={{ color: "rgba(247,245,240,0.5)" }}>Location:</span> {data.verified.location}</div>
+                      <div><span style={{ color: "rgba(247,245,240,0.5)" }}>Licensed:</span> {data.verified.licenseDate}</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+            <div className="mt-6 flex justify-end"><PrimaryBtn onClick={() => setStep(2)} disabled={!data.verified}>Continue <ArrowRight size={14} /></PrimaryBtn></div>
+          </Card>
+        )}
+        {step === 2 && (
+          <Card>
+            <h2 className="font-display text-xl font-semibold">Principal director</h2>
+            <p className="mt-1 text-sm" style={{ color: "var(--muted)" }}>The named person responsible for the BDC's CBN license.</p>
+            <div className="mt-6 grid gap-4 sm:grid-cols-2">
+              <Field label="Full name"><Input value={data.principalName} onChange={(e) => setData({ ...data, principalName: e.target.value })} placeholder="Olusegun Adeyemi" /></Field>
+              <Field label="Email"><Input type="email" value={data.principalEmail} onChange={(e) => setData({ ...data, principalEmail: e.target.value })} placeholder="olusegun@yourcorpbdc.com" /></Field>
+              <Field label="NIN" full><Input placeholder="1234567890" /></Field>
+            </div>
+            <UploadRow label="Director ID + selfie" sublabel="WhatsApp upload available · or browse files" done={false} onClick={() => push("Send to +234 700 XAE PAY", "info")} />
+            <div className="mt-6 flex justify-between"><SecondaryBtn onClick={() => setStep(1)}>Back</SecondaryBtn><PrimaryBtn onClick={() => setStep(3)}>Continue <ArrowRight size={14} /></PrimaryBtn></div>
+          </Card>
+        )}
+        {step === 3 && (
+          <Card>
+            <h2 className="font-display text-xl font-semibold">Compliance officer</h2>
+            <p className="mt-1 text-sm" style={{ color: "var(--muted)" }}>Receives sanctions alerts, partner reviews, CBN reporting prompts.</p>
+            <div className="mt-6 grid gap-4 sm:grid-cols-2">
+              <Field label="Compliance officer name"><Input value={data.complianceOfficer} onChange={(e) => setData({ ...data, complianceOfficer: e.target.value })} placeholder="Folake Bamidele" /></Field>
+              <Field label="Compliance email"><Input type="email" value={data.complianceEmail} onChange={(e) => setData({ ...data, complianceEmail: e.target.value })} placeholder="compliance@yourcorpbdc.com" /></Field>
+            </div>
+            <div className="mt-6 rounded-xl p-5" style={{ background: "var(--bone)", border: "1px solid var(--line)" }}>
+              <Label>Will you serve as payment agent for individual customers via XaePay?</Label>
+              <p className="text-xs mb-3" style={{ color: "var(--muted)" }}>Allows individuals to send trade payments through your BDC under disclosed payment-agent structure. You charge service fees, XaePay generates all disclosure docs.</p>
+              <div className="grid gap-2 sm:grid-cols-2">
+                <RoleBtn active={!data.servesIndividuals} onClick={() => setData({ ...data, servesIndividuals: false })}>Business customers only</RoleBtn>
+                <RoleBtn active={data.servesIndividuals} onClick={() => setData({ ...data, servesIndividuals: true })}>Yes, serve individuals too</RoleBtn>
+              </div>
+            </div>
+            <div className="mt-6 flex justify-between"><SecondaryBtn onClick={() => setStep(2)}>Back</SecondaryBtn><PrimaryBtn onClick={() => setStep(4)}>Continue <ArrowRight size={14} /></PrimaryBtn></div>
+          </Card>
+        )}
+        {step === 4 && (
+          <Card>
+            <h2 className="font-display text-xl font-semibold">Banking instructions</h2>
+            <p className="mt-1 text-sm" style={{ color: "var(--muted)" }}>Where your XaePay rev-share lands monthly.</p>
+            <div className="mt-6 grid gap-4 sm:grid-cols-2">
+              <Field label="Bank name"><Select value={data.bankName} onChange={(e) => setData({ ...data, bankName: e.target.value })}>
+                <option value="">Select bank</option><option>Access Bank</option><option>GTBank</option><option>Zenith Bank</option><option>UBA</option><option>First Bank</option>
+              </Select></Field>
+              <Field label="Account number"><Input value={data.accountNumber} onChange={(e) => setData({ ...data, accountNumber: e.target.value })} placeholder="0123456789" /></Field>
+            </div>
+            <div className="mt-6 flex justify-between"><SecondaryBtn onClick={() => setStep(3)}>Back</SecondaryBtn><PrimaryBtn onClick={() => setStep(5)}>Continue <ArrowRight size={14} /></PrimaryBtn></div>
+          </Card>
+        )}
+        {step === 5 && (
+          <Card>
+            <h2 className="font-display text-xl font-semibold">Partner intake</h2>
+            <p className="mt-1 text-sm" style={{ color: "var(--muted)" }}>Triple-A and Cedar Money each have a partnership questionnaire.</p>
+            <div className="mt-6 grid gap-3 sm:grid-cols-2">
+              <button onClick={() => { setData({ ...data, partnerQ: { ...data.partnerQ, tripleA: !data.partnerQ.tripleA } }); push(data.partnerQ.tripleA ? "Triple-A skipped" : "Triple-A questionnaire complete", "success"); }} className="rounded-xl p-5 text-left transition" style={data.partnerQ.tripleA ? { background: "var(--ink)", color: "var(--bone)", border: "1px solid var(--ink)" } : { background: "white", border: "1px solid var(--line)" }}>
+                <div className="flex items-start justify-between">
+                  <div><div className="font-display text-base font-semibold">Triple-A</div><div className="font-mono text-[10px] uppercase tracking-wider mt-0.5" style={data.partnerQ.tripleA ? { color: "rgba(247,245,240,0.6)" } : { color: "var(--muted)" }}>Singapore · MAS-licensed</div></div>
+                  {data.partnerQ.tripleA && <CheckCircle2 size={16} style={{ color: "var(--lime)" }} />}
+                </div>
+                <p className="mt-3 text-xs" style={data.partnerQ.tripleA ? { color: "rgba(247,245,240,0.7)" } : { color: "var(--muted)" }}>Direct USD wires, T+0 to most corridors.</p>
+              </button>
+              <button onClick={() => { setData({ ...data, partnerQ: { ...data.partnerQ, cedar: !data.partnerQ.cedar } }); push(data.partnerQ.cedar ? "Cedar skipped" : "Cedar questionnaire complete", "success"); }} className="rounded-xl p-5 text-left transition" style={data.partnerQ.cedar ? { background: "var(--ink)", color: "var(--bone)", border: "1px solid var(--ink)" } : { background: "white", border: "1px solid var(--line)" }}>
+                <div className="flex items-start justify-between">
+                  <div><div className="font-display text-base font-semibold">Cedar Money</div><div className="font-mono text-[10px] uppercase tracking-wider mt-0.5" style={data.partnerQ.cedar ? { color: "rgba(247,245,240,0.6)" } : { color: "var(--muted)" }}>US/NG · stablecoin rails</div></div>
+                  {data.partnerQ.cedar && <CheckCircle2 size={16} style={{ color: "var(--lime)" }} />}
+                </div>
+                <p className="mt-3 text-xs" style={data.partnerQ.cedar ? { color: "rgba(247,245,240,0.7)" } : { color: "var(--muted)" }}>USDT-backed corridors, cheaper for sub-$50K.</p>
+              </button>
+            </div>
+            <div className="mt-6 flex justify-between"><SecondaryBtn onClick={() => setStep(4)}>Back</SecondaryBtn><PrimaryBtn onClick={() => onComplete({ type: "bdc", tier: null, name: data.verified?.name, company: data.verified?.name })}>Finish onboarding <Sparkles size={14} /></PrimaryBtn></div>
+          </Card>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function LPOnboarding({ onComplete }) {
+  const [step, setStep] = useState(1);
+  const [data, setData] = useState({ name: "", country: "USA", walletAddress: "", chains: [], bankName: "", accountNumber: "", riskAck: false });
+  const { push } = useToast();
+  const toggleChain = (c) => setData({ ...data, chains: data.chains.includes(c) ? data.chains.filter((x) => x !== c) : [...data.chains, c] });
+  return (
+    <div className="rise">
+      <div className="flex items-center gap-2 mb-2">
+        <SectionEyebrow>USDT Liquidity Provider</SectionEyebrow>
+        <span className="rounded-full px-2 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-wider" style={{ background: "var(--bone-2)", color: "var(--emerald)" }}>Phase 2</span>
+      </div>
+      <h1 className="font-display mt-3 text-3xl font-[450] tracking-tight sm:text-4xl">Provide USDT to Nigerian BDCs.</h1>
+      <p className="mt-2 text-sm" style={{ color: "var(--muted)" }}>Sell USDT to BDCs needing inventory. They send naira to your bank. XaePay matches and audits — never custodies.</p>
+      <div className="mt-6 rounded-xl p-4" style={{ background: "rgba(212,168,44,0.08)", border: "1px solid rgba(212,168,44,0.3)" }}>
+        <div className="flex items-start gap-2"><Shield size={14} className="mt-0.5 flex-shrink-0" style={{ color: "var(--amber)" }} /><p className="text-xs" style={{ color: "var(--ink)" }}><span className="font-semibold">XaePay is not a counterparty.</span> Transactions happen directly between your wallet and the BDC's wallet.</p></div>
+      </div>
+      <div className="mt-8"><OnboardingStepper step={step} steps={["Identity", "Wallet", "Banking", "Risk", "Done"]} /></div>
+      <div className="mt-6">
+        {step === 1 && (
+          <Card>
+            <h2 className="font-display text-xl font-semibold">Your identity</h2>
+            <div className="mt-6 grid gap-4 sm:grid-cols-2">
+              <Field label="Full name" full><Input value={data.name} onChange={(e) => setData({ ...data, name: e.target.value })} placeholder="Kwame Asante" /></Field>
+              <Field label="Country of residence"><Select value={data.country} onChange={(e) => setData({ ...data, country: e.target.value })}>
+                <option>USA</option><option>UK</option><option>UAE</option><option>Canada</option><option>Nigeria</option><option>Other</option>
+              </Select></Field>
+              <Field label="Email"><Input type="email" placeholder="you@example.com" /></Field>
+            </div>
+            <UploadRow label="Passport / international ID" sublabel="Required for KYC" done={false} onClick={() => push("Upload simulated", "success")} />
+            <div className="mt-6 flex justify-end"><PrimaryBtn onClick={() => setStep(2)}>Continue <ArrowRight size={14} /></PrimaryBtn></div>
+          </Card>
+        )}
+        {step === 2 && (
+          <Card>
+            <h2 className="font-display text-xl font-semibold">Wallet verification</h2>
+            <p className="mt-1 text-sm" style={{ color: "var(--muted)" }}>We sign-message verify ownership. Your private key never leaves your wallet.</p>
+            <div className="mt-6 space-y-4">
+              <Field label="USDT wallet address"><Input value={data.walletAddress} onChange={(e) => setData({ ...data, walletAddress: e.target.value })} placeholder="0x..." /></Field>
+              <div>
+                <Label>Supported chains</Label>
+                <div className="grid grid-cols-3 gap-2">
+                  {["TRC-20", "ERC-20", "BEP-20"].map((c) => (<RoleBtn key={c} active={data.chains.includes(c)} onClick={() => toggleChain(c)}>{c}</RoleBtn>))}
+                </div>
+              </div>
+            </div>
+            <div className="mt-6 flex justify-between"><SecondaryBtn onClick={() => setStep(1)}>Back</SecondaryBtn><PrimaryBtn onClick={() => setStep(3)} disabled={!data.walletAddress || data.chains.length === 0}>Continue <ArrowRight size={14} /></PrimaryBtn></div>
+          </Card>
+        )}
+        {step === 3 && (
+          <Card>
+            <h2 className="font-display text-xl font-semibold">Banking instructions</h2>
+            <p className="mt-1 text-sm" style={{ color: "var(--muted)" }}>Where naira lands when BDCs buy USDT from you.</p>
+            <div className="mt-6 grid gap-4 sm:grid-cols-2">
+              <Field label="Bank name"><Select value={data.bankName} onChange={(e) => setData({ ...data, bankName: e.target.value })}>
+                <option value="">Select</option><option>Access Bank</option><option>GTBank</option><option>Zenith Bank</option><option>UBA</option><option>First Bank</option>
+              </Select></Field>
+              <Field label="Account number"><Input value={data.accountNumber} onChange={(e) => setData({ ...data, accountNumber: e.target.value })} /></Field>
+            </div>
+            <div className="mt-6 flex justify-between"><SecondaryBtn onClick={() => setStep(2)}>Back</SecondaryBtn><PrimaryBtn onClick={() => setStep(4)}>Continue <ArrowRight size={14} /></PrimaryBtn></div>
+          </Card>
+        )}
+        {step === 4 && (
+          <Card>
+            <h2 className="font-display text-xl font-semibold">Risk acknowledgment</h2>
+            <div className="mt-6 rounded-xl p-5 text-sm leading-relaxed" style={{ background: "var(--bone)", border: "1px solid var(--line)", color: "var(--ink)" }}>
+              <p>I acknowledge that:</p>
+              <ul className="mt-3 space-y-2 list-disc list-inside">
+                <li>I provide USDT liquidity directly to BDC counterparties, not to XaePay.</li>
+                <li>XaePay does not custody, quote, or guarantee any transaction.</li>
+                <li>I assume counterparty risk with the BDC. XaePay screens but does not insure.</li>
+                <li>I am responsible for tax and reporting in my jurisdiction.</li>
+              </ul>
+              <button onClick={() => setData({ ...data, riskAck: !data.riskAck })} className="mt-4 inline-flex items-center gap-2 text-sm font-semibold" style={{ color: data.riskAck ? "var(--emerald)" : "var(--ink)" }}>
+                <div className="flex h-4 w-4 items-center justify-center rounded" style={{ background: data.riskAck ? "var(--emerald)" : "white", border: `1px solid ${data.riskAck ? "var(--emerald)" : "var(--line)"}` }}>{data.riskAck && <CheckCircle2 size={10} style={{ color: "var(--lime)" }} strokeWidth={2.5} />}</div>
+                I acknowledge and accept these terms
+              </button>
+            </div>
+            <div className="mt-6 flex justify-between"><SecondaryBtn onClick={() => setStep(3)}>Back</SecondaryBtn><PrimaryBtn onClick={() => setStep(5)} disabled={!data.riskAck}>Continue <ArrowRight size={14} /></PrimaryBtn></div>
+          </Card>
+        )}
+        {step === 5 && (
+          <div className="rounded-2xl p-8 relative overflow-hidden" style={{ background: "var(--ink)", color: "var(--bone)" }}>
+            <div className="absolute -right-20 -top-20 h-56 w-56 rounded-full opacity-40 blur-3xl" style={{ background: "radial-gradient(circle, var(--lime), transparent)" }} />
+            <div className="relative">
+              <div className="flex h-12 w-12 items-center justify-center rounded-full" style={{ background: "var(--lime)" }}><CheckCircle2 size={24} strokeWidth={2.5} style={{ color: "var(--ink)" }} /></div>
+              <h2 className="font-display mt-5 text-[28px] font-[450] tracking-tight">You're listed.</h2>
+              <p className="mt-2 text-sm" style={{ color: "rgba(247,245,240,0.7)" }}>BDCs needing USDT will see your bid/offer. You'll be notified on every match.</p>
+              <button onClick={() => onComplete({ type: "lp", tier: null, name: data.name, company: null })} className="mt-7 inline-flex items-center justify-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold transition glow-lime" style={{ background: "var(--lime)", color: "var(--ink)" }}>Open dashboard <ArrowRight size={14} /></button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function Landing({ setView, onRequestAccess, onWaitlist }) {
+  return (<div><Hero setView={setView} onRequestAccess={onRequestAccess} onWaitlist={onWaitlist} /><Ticker /><ProblemSection /><RailsSection /><AgentsSection /><SidesSection setView={setView} /><PricingSection onRequestAccess={onRequestAccess} onWaitlist={onWaitlist} /><Footer onWaitlist={onWaitlist} /></div>);
+}
+
+function Hero({ setView, onRequestAccess, onWaitlist }) {
+  return (
+    <section className="relative overflow-hidden hero-mesh" style={{ color: "var(--bone)" }}>
+      <div className="absolute inset-0 hero-grid" />
+      <div className="absolute inset-0 noise" />
+      <div className="relative mx-auto max-w-7xl px-4 py-20 sm:px-6 lg:px-8 lg:py-28">
+        <div className="grid gap-14 lg:grid-cols-12 lg:gap-10">
+          <div className="lg:col-span-7">
+            <h1 className="rise font-display text-[44px] font-[450] leading-[1.02] tracking-tight sm:text-6xl lg:text-[82px]">The intelligence<br /><span className="italic" style={{ color: "var(--lime)" }}>layer</span> for cross-<br />border payments.</h1>
+            <p className="rise mt-8 max-w-xl text-base leading-relaxed sm:text-lg" style={{ color: "rgba(247,245,240,0.65)", animationDelay: "0.16s" }}>The AI compliance and routing infrastructure for Nigerian cross-border payments. Businesses, individuals, BDCs, and liquidity providers — all with full audit trail, fiat or stablecoin.</p>
+            <div className="rise mt-10 flex flex-col gap-3 sm:flex-row" style={{ animationDelay: "0.24s" }}>
+              <button onClick={onWaitlist} className="glow-lime group inline-flex items-center justify-center gap-2 rounded-xl px-6 py-3.5 text-sm font-semibold transition" style={{ background: "var(--lime)", color: "var(--ink)" }}>Join waitlist <ArrowRight size={16} /></button>
+              <a href={WHATSAPP_URL} target="_blank" rel="noreferrer" className="group inline-flex items-center justify-center gap-2 rounded-xl px-6 py-3.5 text-sm font-semibold transition hover:bg-white/5" style={{ border: "1px solid rgba(255,255,255,0.15)", color: "var(--bone)" }}><MessageCircle size={16} /> Talk to us on WhatsApp</a>
+              <button onClick={onRequestAccess} className="group inline-flex items-center justify-center gap-2 rounded-xl px-6 py-3.5 text-sm font-semibold transition hover:bg-white/5" style={{ color: "rgba(247,245,240,0.7)" }}>See preview <ArrowUpRight size={16} /></button>
+            </div>
+          </div>
+          <div className="rise lg:col-span-5" style={{ animationDelay: "0.3s" }}><HeroWidget /></div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function HeroWidget() {
+  const [step, setStep] = useState(0);
+  useEffect(() => { const i = setInterval(() => setStep((s) => (s + 1) % 5), 2200); return () => clearInterval(i); }, []);
+  const steps = [
+    { label: "Invoice received", status: "Parsing metadata…", icon: FileText },
+    { label: "Payer-name validated", status: "Match confirmed", icon: CheckCircle2 },
+    { label: "Sanctions screening", status: "Clear — 0 hits", icon: Shield },
+    { label: "Rate locked · routing", status: "Cedar USDT · ₦18 cheaper", icon: Zap },
+    { label: "Payment executed", status: "MT103 delivered", icon: Send },
+  ];
+  return (
+    <div className="border-gradient-dark relative overflow-hidden rounded-2xl p-5" style={{ background: "var(--ink-2)" }}>
+      <div className="absolute -right-20 -top-20 h-48 w-48 rounded-full opacity-40 blur-3xl" style={{ background: "radial-gradient(circle, rgba(197,242,74,0.25), transparent)" }} />
+      <div className="relative mb-4 flex items-center justify-between">
+        <div className="flex items-center gap-2"><div className="flex h-7 w-7 items-center justify-center rounded-lg" style={{ background: "rgba(197,242,74,0.1)" }}><MessageCircle size={14} style={{ color: "var(--lime)" }} /></div><span className="font-mono text-xs uppercase tracking-wider" style={{ color: "rgba(247,245,240,0.9)" }}>Live · xae.agent</span></div>
+        <span className="font-mono text-[10px]" style={{ color: "rgba(247,245,240,0.4)" }}>01:24 utc+1</span>
+      </div>
+      <div className="relative space-y-2">
+        {steps.map((s, i) => {
+          const Icon = s.icon; const active = i <= step; const current = i === step;
+          return (
+            <div key={i} className="flex items-center gap-3 rounded-xl px-3 py-2.5 transition-all duration-500" style={{ background: current ? "rgba(197,242,74,0.08)" : active ? "rgba(255,255,255,0.03)" : "transparent", opacity: active ? 1 : 0.3 }}>
+              <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg transition" style={{ background: current ? "var(--lime)" : active ? "rgba(255,255,255,0.08)" : "rgba(255,255,255,0.04)", color: current ? "var(--ink)" : "var(--bone)" }}><Icon size={14} /></div>
+              <div className="flex-1 min-w-0"><div className="text-sm font-medium" style={{ color: "var(--bone)" }}>{s.label}</div><div className="font-mono text-[10px]" style={{ color: "rgba(247,245,240,0.5)" }}>{s.status}</div></div>
+              {current && <div className="h-1.5 w-1.5 rounded-full pulse-dot" style={{ background: "var(--lime)", boxShadow: "0 0 6px var(--lime)" }} />}
+            </div>
+          );
+        })}
+      </div>
+      <div className="relative mt-4 flex items-center justify-between pt-4" style={{ borderTop: "1px solid rgba(255,255,255,0.05)" }}>
+        <span className="font-mono text-[10px] uppercase tracking-wider" style={{ color: "rgba(247,245,240,0.5)" }}>Compliance score</span>
+        <span className="font-mono text-sm font-semibold" style={{ color: "var(--lime)" }}>98.4 / 100</span>
+      </div>
+    </div>
+  );
+}
+
+function Ticker() {
+  const data = [
+    { label: "USD / NGN", value: "1,395.00", delta: "BDC quote" },
+    { label: "GBP / NGN", value: "1,852.00", delta: "BDC quote" },
+    { label: "EUR / NGN", value: "1,602.00", delta: "BDC quote" },
+    { label: "USDT / NGN", value: "1,388.40", delta: "LP match" },
+    { label: "Corridors", value: "NGN ↔ USD, GBP, EUR, CNY, AED + diaspora inbound", delta: "" },
+    { label: "Rails", value: "Triple-A · Cedar · USDT", delta: "" },
+    { label: "Rejection rate", value: "0.3%", delta: "vs 7% industry" },
+  ];
+  return (
+    <section className="overflow-hidden" style={{ background: "var(--ink)", color: "var(--bone)", borderBottom: "1px solid var(--line)" }}>
+      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+        <div className="flex items-center gap-8 overflow-x-auto py-4 sm:gap-12">
+          {data.map((d, i) => (
+            <div key={i} className="flex flex-shrink-0 items-baseline gap-2 whitespace-nowrap">
+              <span className="font-mono text-[10px] uppercase tracking-wider" style={{ color: "rgba(247,245,240,0.45)" }}>{d.label}</span>
+              <span className="font-mono text-sm font-semibold">{d.value}</span>
+              {d.delta && <span className="font-mono text-[10px]" style={{ color: "var(--lime)" }}>{d.delta}</span>}
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function ProblemSection() {
+  const problems = [
+    { icon: FileText, title: "Stale invoices", body: "90-day-old invoices that receiving banks reject on review." },
+    { icon: AlertTriangle, title: "Payer-name mismatch", body: "CBN rules require the payer on invoice to match sending account." },
+    { icon: Receipt, title: "Amount reconciliation", body: "Partial payments without documentation get flagged and held." },
+    { icon: Shield, title: "Quarterly rail reviews", body: "Triple-A and Cedar audit evidence packs. Missing docs lose access." },
+  ];
+  return (
+    <section className="mx-auto max-w-7xl px-4 py-20 sm:px-6 lg:px-8 lg:py-28">
+      <div className="grid gap-14 lg:grid-cols-12">
+        <div className="lg:col-span-5">
+          <SectionEyebrow>§01  The problem</SectionEyebrow>
+          <h2 className="font-display mt-4 text-4xl font-[450] leading-[1.05] tracking-tight sm:text-5xl">Cross-border<br />payments fail <span className="italic" style={{ color: "var(--emerald)" }}>where</span><br />the paperwork fails.</h2>
+          <p className="mt-6 max-w-sm text-base leading-relaxed" style={{ color: "var(--muted)" }}>The rails work. The FX works. What breaks a trade wire is the documentation that travels with it — and that's what XaePay owns.</p>
+        </div>
+        <div className="lg:col-span-7">
+          <div className="grid gap-4 sm:grid-cols-2">
+            {problems.map((p, i) => (
+              <div key={i} className="card-soft card-lift rounded-2xl bg-white p-6" style={{ border: "1px solid var(--line)" }}>
+                <div className="mb-4 flex h-9 w-9 items-center justify-center rounded-lg" style={{ background: "var(--bone-2)", color: "var(--emerald)" }}><p.icon size={18} strokeWidth={1.75} /></div>
+                <h3 className="font-display text-lg font-semibold" style={{ color: "var(--ink)" }}>{p.title}</h3>
+                <p className="mt-1.5 text-sm leading-relaxed" style={{ color: "var(--muted)" }}>{p.body}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function RailsSection() {
+  const rails = [
+    { name: "Triple-A Direct USD", desc: "Singapore-licensed, T+0 wire to most corridors", best: "Best for $100K+ corporate" },
+    { name: "Cedar Money Stablecoin", desc: "USDT corridors with USD off-ramp at destination", best: "Best for mid-volume" },
+    { name: "BDC USDT Settlement", desc: "BDC sources USDT directly from listed liquidity providers", best: "Cheapest for sub-$50K" },
+    { name: "Internal USD Inventory", desc: "BDC's existing USD reserves at correspondent banks", best: "Instant settlement" },
+  ];
+  return (
+    <section className="border-y" style={{ borderColor: "var(--line)", background: "var(--bone)" }}>
+      <div className="mx-auto max-w-7xl px-4 py-20 sm:px-6 lg:px-8 lg:py-28">
+        <div className="grid gap-12 lg:grid-cols-12">
+          <div className="lg:col-span-5">
+            <SectionEyebrow>§02  Rail intelligence</SectionEyebrow>
+            <h2 className="font-display mt-4 text-4xl font-[450] leading-[1.05] tracking-tight sm:text-5xl">Four rails.<br />One <span className="italic" style={{ color: "var(--emerald)" }}>routed</span> transaction.</h2>
+            <p className="mt-6 max-w-md text-base leading-relaxed" style={{ color: "var(--muted)" }}>You don't pick the rail. We do — based on amount, destination, urgency, and live pricing. Every choice is disclosed.</p>
+          </div>
+          <div className="lg:col-span-7">
+            <div className="space-y-3">
+              {rails.map((r, i) => (
+                <div key={i} className="card-soft rounded-2xl bg-white p-5 flex items-start gap-4" style={{ border: "1px solid var(--line)" }}>
+                  <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg" style={{ background: "var(--bone-2)", color: "var(--emerald)" }}><Layers size={16} /></div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-baseline justify-between gap-3">
+                      <h3 className="font-display text-base font-semibold">{r.name}</h3>
+                      <span className="font-mono text-[10px] uppercase tracking-wider whitespace-nowrap" style={{ color: "var(--emerald)" }}>{r.best}</span>
+                    </div>
+                    <p className="mt-1 text-sm" style={{ color: "var(--muted)" }}>{r.desc}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function AgentsSection() {
+  const agents = [
+    { n: "01", title: "Invoice Integrity", body: "Validates freshness, amounts, metadata. Auto-requests revisions from suppliers." },
+    { n: "02", title: "Payer-Name Match", body: "Cross-checks invoice payer against sending account. Catches CBN-rejection triggers." },
+    { n: "03", title: "Supplier KYB", body: "Screens suppliers against OFAC, UN, EU, Nigerian watchlists." },
+    { n: "04", title: "Documentation", body: "Generates Form M, MT103 references, third-party authorizations." },
+    { n: "05", title: "Evidence Pack", body: "Collects bills of lading, customs releases, delivery confirmations." },
+    { n: "06", title: "Dispute Resolution", body: "Rejected wires open resolution workflows with full audit trail." },
+  ];
+  return (
+    <section className="border-b" style={{ borderColor: "var(--line)" }}>
+      <div className="mx-auto max-w-7xl px-4 py-20 sm:px-6 lg:px-8 lg:py-28">
+        <div className="mb-14 max-w-2xl">
+          <SectionEyebrow>§03  The agents</SectionEyebrow>
+          <h2 className="font-display mt-4 text-4xl font-[450] leading-[1.05] tracking-tight sm:text-5xl">Six AI agents.<br />One <span className="italic" style={{ color: "var(--emerald)" }}>defensible</span> transaction.</h2>
+        </div>
+        <div className="grid gap-px overflow-hidden rounded-2xl" style={{ background: "var(--line)", border: "1px solid var(--line)" }}>
+          <div className="grid gap-px sm:grid-cols-2 lg:grid-cols-3" style={{ background: "var(--line)" }}>
+            {agents.map((a, i) => (
+              <div key={i} className="group relative overflow-hidden bg-white p-7 transition hover:bg-[color:var(--bone)]">
+                <div className="flex items-start justify-between"><span className="font-mono text-[11px] font-medium" style={{ color: "var(--emerald)" }}>{a.n}</span><Sparkles size={14} className="opacity-0 transition group-hover:opacity-100" style={{ color: "var(--emerald)" }} /></div>
+                <h3 className="font-display mt-8 text-xl font-semibold tracking-tight" style={{ color: "var(--ink)" }}>{a.title}</h3>
+                <p className="mt-2 text-sm leading-relaxed" style={{ color: "var(--muted)" }}>{a.body}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function SidesSection({ setView }) {
+  return (
+    <section className="mx-auto max-w-7xl px-4 py-20 sm:px-6 lg:px-8 lg:py-28">
+      <div className="mb-14 max-w-2xl">
+        <SectionEyebrow>§04  Who it serves</SectionEyebrow>
+        <h2 className="font-display mt-4 text-4xl font-[450] leading-[1.05] tracking-tight sm:text-5xl">Six sides. One<br /><span className="italic" style={{ color: "var(--emerald)" }}>infrastructure</span>.</h2>
+      </div>
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <SideMiniCard icon={Building2} label="Businesses" desc="Pay foreign suppliers. Direct rail access." onClick={() => setView("customer")} live />
+        <SideMiniCard icon={Send} label="Diaspora" desc="Send to Nigeria & Africa from US, UK, EU, CA." onClick={() => setView("diaspora")} live />
+        <SideMiniCard icon={User} label="Individuals" desc="Trade payments via BDC payment-agent." onClick={() => setView("customer")} phase2 />
+        <SideMiniCard icon={Briefcase} label="BDCs" desc="CBN-licensed bureaus. Operate platform, source liquidity." onClick={() => setView("bdc")} live />
+        <SideMiniCard icon={Layers} label="Payment Agents" desc="IMTO / SCUML / CAC+BDC-partner. Same platform, different wrapper." onClick={() => setView("bdc")} live />
+        <SideMiniCard icon={Coins} label="Liquidity Providers" desc="Sell USDT to BDCs. Receive naira." onClick={() => setView("lp")} phase2 />
+      </div>
+    </section>
+  );
+}
+
+function SideMiniCard({ icon: Icon, label, desc, onClick, live, phase2 }) {
+  return (
+    <button onClick={onClick} className="card-soft card-lift rounded-2xl bg-white p-6 text-left" style={{ border: "1px solid var(--line)" }}>
+      <div className="flex items-start justify-between">
+        <div className="flex h-9 w-9 items-center justify-center rounded-lg" style={{ background: "var(--bone-2)", color: "var(--emerald)" }}><Icon size={18} strokeWidth={1.75} /></div>
+        {live && <span className="rounded-full px-2 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-wider" style={{ background: "var(--emerald)", color: "var(--lime)" }}>Live</span>}
+        {phase2 && <span className="rounded-full px-2 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-wider" style={{ background: "var(--bone-2)", color: "var(--emerald)" }}>Phase 2</span>}
+      </div>
+      <h3 className="font-display mt-5 text-lg font-semibold">{label}</h3>
+      <p className="mt-1 text-sm" style={{ color: "var(--muted)" }}>{desc}</p>
+    </button>
+  );
+}
+
+function PricingSection({ onRequestAccess, onWaitlist }) {
+  // Pricing CTAs route to waitlist (real signups), not the simulated onboarding.
+  // eslint-disable-next-line no-param-reassign
+  const cta = onWaitlist || onRequestAccess;
+  const [audience, setAudience] = useState("business");
+  return (
+    <section className="border-y" style={{ borderColor: "var(--line)", background: "var(--bone)" }}>
+      <div className="mx-auto max-w-7xl px-4 py-20 sm:px-6 lg:px-8 lg:py-28">
+        <div className="mb-10 max-w-2xl">
+          <SectionEyebrow>§05  Pricing</SectionEyebrow>
+          <h2 className="font-display mt-4 text-4xl font-[450] leading-[1.05] tracking-tight sm:text-5xl">You pay for the <span className="italic" style={{ color: "var(--emerald)" }}>work</span>.<br />Not for the wire.</h2>
+          <p className="mt-5 max-w-xl text-base leading-relaxed" style={{ color: "var(--muted)" }}>Flat transaction fees, transparent subscriptions. No percentage of your payment. No hidden FX markup. What you see is what you pay.</p>
+        </div>
+        <div className="mb-8 flex gap-1 overflow-x-auto rounded-xl p-1" style={{ background: "white", border: "1px solid var(--line)", width: "fit-content" }}>
+          {[
+            { id: "business", label: "Businesses" },
+            { id: "diaspora", label: "Diaspora" },
+            { id: "bdc", label: "BDCs" },
+            { id: "agent", label: "Payment Agents" },
+            { id: "lp", label: "LPs" },
+          ].map((t) => (
+            <button key={t.id} onClick={() => setAudience(t.id)} className="whitespace-nowrap rounded-lg px-4 py-2 text-sm font-medium transition" style={audience === t.id ? { background: "var(--ink)", color: "var(--bone)" } : { color: "var(--muted)" }}>{t.label}</button>
+          ))}
+        </div>
+        {audience === "business" && <BusinessPricing onRequestAccess={cta} />}
+        {audience === "diaspora" && <DiasporaPricing onRequestAccess={cta} />}
+        {audience === "bdc" && <BDCPricing onRequestAccess={cta} />}
+        {audience === "agent" && <PaymentAgentPricing onRequestAccess={cta} />}
+        {audience === "lp" && <LPPricing onRequestAccess={cta} />}
+        <div className="mt-10 grid gap-4 sm:grid-cols-2">
+          <div className="rounded-2xl p-6" style={{ background: "white", border: "1px solid var(--line)" }}>
+            <div className="flex items-start gap-3">
+              <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg" style={{ background: "var(--bone-2)" }}><Shield size={14} style={{ color: "var(--emerald)" }} /></div>
+              <div className="text-sm">
+                <div className="font-semibold" style={{ color: "var(--ink)" }}>Rejection Protection · 0.15% add-on</div>
+                <div className="mt-1" style={{ color: "var(--muted)" }}>Available on every tier. If a wire XaePay cleared gets rejected, we eat the re-issuance and BDC penalty.</div>
+              </div>
+            </div>
+          </div>
+          <div className="rounded-2xl p-6" style={{ background: "white", border: "1px solid var(--line)" }}>
+            <div className="flex items-start gap-3">
+              <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg" style={{ background: "var(--bone-2)" }}><Sparkles size={14} style={{ color: "var(--emerald)" }} /></div>
+              <div className="text-sm">
+                <div className="font-semibold" style={{ color: "var(--ink)" }}>No FX markup</div>
+                <div className="mt-1" style={{ color: "var(--muted)" }}>BDC spread is disclosed and paid to the BDC. XaePay doesn't touch FX margin.</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function BusinessPricing({ onRequestAccess }) {
+  return (
+    <div>
+      <div className="grid gap-5 lg:grid-cols-3">
+        <PriceCard tier="Core" subtitle="Most businesses" price="$19" priceSuffix="/ transaction" subscription="$99 /month"
+          features={["WhatsApp conversational agent", "Invoice Integrity + Payer-Name Match", "Supplier KYB screening", "Rail access via your BDC", "Transaction ledger & reports"]}
+          min="Billed monthly · cancel anytime" onSelect={onRequestAccess} />
+        <PriceCard tier="Compliance Plus" subtitle="Regular trade flows" price="$39" priceSuffix="/ transaction" subscription="$299 /month"
+          features={["Everything in Core", "Supplier communication automation", "Payment-to-invoice reconciliation", "Advanced sanctions screening", "Full document archive", "Priority WhatsApp support"]}
+          min="Billed monthly · cancel anytime" highlighted onSelect={onRequestAccess} />
+        <PriceCard tier="Compliance Pro" subtitle="High-volume corporate" price="$79" priceSuffix="/ transaction" subscription="$599 /month"
+          features={["Everything in Plus", "Quarterly Evidence Packs", "Dispute & rejection resolution", "Periodic supplier KYB refresh", "Dedicated compliance officer", "SLA-backed response times"]}
+          min="Annual billing available" onSelect={onRequestAccess} />
+      </div>
+      <div className="mt-5 rounded-xl p-4 text-xs" style={{ background: "rgba(15,95,63,0.06)", border: "1px solid rgba(15,95,63,0.2)" }}>
+        <div className="flex items-start gap-2">
+          <CheckCircle2 size={14} className="mt-0.5 flex-shrink-0" style={{ color: "var(--emerald)" }} strokeWidth={2.25} />
+          <p style={{ color: "var(--ink)" }}><span className="font-semibold">Why flat fees:</span> The compliance work is the same whether you send $5,000 or $500,000. We charge for the work, not the wire. A $100K payment costs $39 on Plus — not $500.</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DiasporaPricing({ onRequestAccess }) {
+  return (
+    <div>
+      <div className="grid gap-5 lg:grid-cols-3">
+        <PriceCard tier="Small sends" subtitle="Under $1,000" price="$3.99" priceSuffix="flat"
+          features={["Any African account", "5-minute typical delivery", "Full WhatsApp workflow", "FX rate locked 4 min", "Rates shown before you send"]}
+          min="No subscription · pay per send" onSelect={onRequestAccess} />
+        <PriceCard tier="Regular sends" subtitle="$1,000 – $5,000" price="$9.99" priceSuffix="flat"
+          features={["Everything in Small sends", "Purpose-specific docs (vendor, school, property)", "Multi-currency: USD / GBP / EUR / CAD", "Priority routing on Cedar rail", "Receipt + recipient confirmation"]}
+          min="No subscription · pay per send" highlighted onSelect={onRequestAccess} />
+        <PriceCard tier="Large sends" subtitle="Above $5,000" price="0.40%" priceSuffix="capped at $49"
+          features={["Everything in Regular sends", "Enhanced vendor documentation", "Triple-A fiat rail for $25K+", "Dedicated compliance support", "Volume bonuses above $50K/month"]}
+          min="Tier 2 or 3 account required" onSelect={onRequestAccess} />
+      </div>
+      <div className="mt-5 rounded-xl p-4 text-xs" style={{ background: "rgba(15,95,63,0.06)", border: "1px solid rgba(15,95,63,0.2)" }}>
+        <div className="flex items-start gap-2">
+          <TrendingUp size={14} className="mt-0.5 flex-shrink-0" style={{ color: "var(--emerald)" }} />
+          <p style={{ color: "var(--ink)" }}><span className="font-semibold">Compare:</span> Sending $10,000 home? XaePay charges $40. Wise charges $67. WorldRemit charges $92. And our FX rate is tighter.</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function BDCPricing({ onRequestAccess }) {
+  return (
+    <div>
+      <div className="grid gap-5 lg:grid-cols-3">
+        <PriceCard tier="Operator" subtitle="Under $2M/mo volume" price="$500" priceSuffix="/ month"
+          features={["Full compliance dashboard", "Agent-powered transaction processing", "CBN reporting automation", "Customer KYB management", "Rail access (Triple-A + Cedar)", "25% rev-share on end-user fees"]}
+          min="3-month minimum commitment" onSelect={onRequestAccess} />
+        <PriceCard tier="Scale" subtitle="$2M – $10M/mo volume" price="$2,000" priceSuffix="/ month"
+          features={["Everything in Operator", "USDT Liquidity Marketplace access", "Payment Agent tooling for individuals", "Quarterly partner evidence packs", "Priority compliance support", "25% rev-share on end-user fees"]}
+          min="3-month minimum commitment" highlighted onSelect={onRequestAccess} />
+        <PriceCard tier="Enterprise" subtitle="Over $10M/mo volume" price="$5,000" priceSuffix="/ month"
+          features={["Everything in Scale", "White-label customer portal", "Dedicated compliance engineer", "Custom rail integrations", "Expanded evidence automation", "25% rev-share + volume bonuses"]}
+          min="Annual contracts · custom SLAs" onSelect={onRequestAccess} />
+      </div>
+      <div className="mt-5 rounded-xl p-4 text-xs" style={{ background: "rgba(15,95,63,0.06)", border: "1px solid rgba(15,95,63,0.2)" }}>
+        <div className="flex items-start gap-2">
+          <Briefcase size={14} className="mt-0.5 flex-shrink-0" style={{ color: "var(--emerald)" }} />
+          <p style={{ color: "var(--ink)" }}><span className="font-semibold">How rev-share works:</span> When a customer pays XaePay's transaction fee, 25% flows back to you monthly. A BDC routing 200 Plus-tier transactions sees ~$1,950/month in rev-share — more than covering the Operator subscription.</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function PaymentAgentPricing({ onRequestAccess }) {
+  return (
+    <div>
+      <div className="grid gap-5 lg:grid-cols-3">
+        <PriceCard tier="Operator" subtitle="Under $5M/mo volume" price="$750" priceSuffix="/ month"
+          features={["Full compliance dashboard", "Agent-powered transaction processing", "Regulatory reporting (CBN, SCUML, HMRC, FinCEN as applicable)", "Customer KYB management", "Rail access (Triple-A + Cedar)", "25% rev-share on end-user fees"]}
+          min="3-month minimum commitment" onSelect={onRequestAccess} />
+        <PriceCard tier="Scale" subtitle="$5M – $25M/mo volume" price="$2,500" priceSuffix="/ month"
+          features={["Everything in Operator", "USDT Liquidity Marketplace access", "Multi-wrapper reporting automation", "Quarterly partner evidence packs", "Priority compliance support", "25% rev-share on end-user fees"]}
+          min="3-month minimum commitment" highlighted onSelect={onRequestAccess} />
+        <PriceCard tier="Enterprise" subtitle="Over $25M/mo volume" price="$6,000" priceSuffix="/ month"
+          features={["Everything in Scale", "White-label customer portal", "Dedicated compliance engineer", "Custom rail integrations", "Cross-jurisdiction reporting bundle", "25% rev-share + volume bonuses"]}
+          min="Annual contracts · custom SLAs" onSelect={onRequestAccess} />
+      </div>
+      <div className="mt-5 rounded-xl p-4 text-xs" style={{ background: "rgba(15,95,63,0.06)", border: "1px solid rgba(15,95,63,0.2)" }}>
+        <div className="flex items-start gap-2">
+          <Layers size={14} className="mt-0.5 flex-shrink-0" style={{ color: "var(--emerald)" }} />
+          <p style={{ color: "var(--ink)" }}><span className="font-semibold">Volume bands calibrated to Payment Agent economics.</span> Tiers stretch higher than BDC tiers because Payment Agents typically run multi-corridor books at larger monthly volumes. 25% rev-share unchanged — it's the number that makes the unit economics work for both sides.</p>
+        </div>
+      </div>
+      <div className="mt-4 rounded-xl p-4 text-xs" style={{ background: "var(--bone)", border: "1px solid var(--line)" }}>
+        <div className="flex items-start gap-2">
+          <Shield size={14} className="mt-0.5 flex-shrink-0" style={{ color: "var(--muted)" }} />
+          <p style={{ color: "var(--muted)" }}><span className="font-semibold" style={{ color: "var(--ink)" }}>Admission criteria (Nigerian Phase 1b):</span> IMTO-licensed, SCUML-registered, or CAC-registered with named BDC/bank partner countersigning partnership letter. Verified against CBN and SCUML public registers. International wrappers (US MSB / UK MSB / UAE exchange house) open in next phase.</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function LPPricing({ onRequestAccess }) {
+  return (
+    <div>
+      <div className="max-w-2xl">
+        <div className="card-soft card-lift relative overflow-hidden rounded-2xl p-8" style={{ background: "var(--ink)", color: "var(--bone)", border: "1px solid var(--ink)" }}>
+          <div className="absolute -right-16 -top-16 h-40 w-40 rounded-full opacity-30 blur-2xl" style={{ background: "var(--lime)" }} />
+          <div className="absolute right-5 top-5 rounded-full px-2.5 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-wider" style={{ background: "var(--bone-2)", color: "var(--emerald)" }}>Phase 2</div>
+          <div className="relative">
+            <div className="font-display text-xl font-semibold tracking-tight">Liquidity Provider</div>
+            <div className="mt-0.5 text-sm" style={{ color: "rgba(247,245,240,0.6)" }}>Sell USDT to Nigerian BDCs directly</div>
+            <div className="mt-6 flex items-baseline gap-3">
+              <div>
+                <div className="font-display text-5xl font-[500] tracking-tight">Free</div>
+                <div className="mt-1 font-mono text-[11px] uppercase tracking-wider" style={{ color: "rgba(247,245,240,0.5)" }}>to list</div>
+              </div>
+              <span className="text-2xl" style={{ color: "rgba(247,245,240,0.3)" }}>·</span>
+              <div>
+                <div className="font-display text-5xl font-[500] tracking-tight" style={{ color: "var(--lime)" }}>0.10%</div>
+                <div className="mt-1 font-mono text-[11px] uppercase tracking-wider" style={{ color: "rgba(247,245,240,0.5)" }}>on matched volume</div>
+              </div>
+            </div>
+            <ul className="mt-7 space-y-2.5 pt-6" style={{ borderTop: "1px solid rgba(255,255,255,0.08)" }}>
+              {[
+                "No listing fee, no monthly subscription",
+                "10 bps on matched USDT volume, deducted at settlement",
+                "Multi-chain support: TRC-20, ERC-20, BEP-20",
+                "Direct wallet-to-wallet settlement — XaePay never custodies",
+                "Nigerian bank credit for naira side",
+                "Ratings and match history visible to BDCs",
+              ].map((f, i) => (
+                <li key={i} className="flex items-start gap-2.5 text-sm">
+                  <CheckCircle2 size={14} className="mt-0.5 flex-shrink-0" style={{ color: "var(--lime)" }} strokeWidth={2.25} />
+                  <span style={{ color: "rgba(247,245,240,0.85)" }}>{f}</span>
+                </li>
+              ))}
+            </ul>
+            <button onClick={onRequestAccess} className="mt-7 w-full rounded-xl px-4 py-2.5 text-sm font-semibold transition" style={{ background: "var(--lime)", color: "var(--ink)" }}>List your USDT</button>
+          </div>
+        </div>
+      </div>
+      <div className="mt-5 rounded-xl p-4 text-xs" style={{ background: "rgba(212,168,44,0.08)", border: "1px solid rgba(212,168,44,0.3)" }}>
+        <div className="flex items-start gap-2">
+          <Shield size={14} className="mt-0.5 flex-shrink-0" style={{ color: "var(--amber)" }} />
+          <p style={{ color: "var(--ink)" }}><span className="font-semibold">XaePay is not your counterparty.</span> Matches settle directly between your wallet and the BDC's. The 10 bps fee covers directory, matching, audit trail, and dispute tooling.</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function PriceCard({ tier, subtitle, price, priceSuffix, subscription, unit, features, min, highlighted, onSelect }) {
+  return (
+    <div className="card-soft card-lift relative overflow-hidden rounded-2xl p-7" style={highlighted ? { background: "var(--ink)", color: "var(--bone)", border: "1px solid var(--ink)" } : { background: "white", border: "1px solid var(--line)" }}>
+      {highlighted && (<><div className="absolute -right-16 -top-16 h-40 w-40 rounded-full opacity-30 blur-2xl" style={{ background: "var(--lime)" }} /><div className="absolute right-5 top-5 rounded-full px-2.5 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-wider" style={{ background: "var(--lime)", color: "var(--ink)" }}>Recommended</div></>)}
+      <div className="relative mb-5"><div className="font-display text-xl font-semibold tracking-tight">{tier}</div><div className="mt-0.5 text-sm" style={{ color: highlighted ? "rgba(247,245,240,0.6)" : "var(--muted)" }}>{subtitle}</div></div>
+      <div className="relative">
+        <div className="flex items-baseline gap-2">
+          <div className="font-display text-5xl font-[500] tracking-tight">{price}</div>
+          {priceSuffix && <div className="font-mono text-[11px] uppercase tracking-wider" style={{ color: highlighted ? "rgba(247,245,240,0.6)" : "var(--muted)" }}>{priceSuffix}</div>}
+        </div>
+        {subscription && <div className="mt-2 inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 font-mono text-[10px] font-semibold" style={highlighted ? { background: "rgba(197,242,74,0.12)", color: "var(--lime)" } : { background: "var(--bone-2)", color: "var(--emerald)" }}>+ {subscription}</div>}
+        {unit && !priceSuffix && <div className="mt-1 font-mono text-[11px] uppercase tracking-wider" style={{ color: highlighted ? "rgba(247,245,240,0.5)" : "var(--muted)" }}>{unit}</div>}
+      </div>
+      <ul className="relative mt-6 space-y-2.5 pt-6" style={{ borderTop: `1px solid ${highlighted ? "rgba(255,255,255,0.08)" : "var(--line)"}` }}>
+        {features.map((f, i) => (<li key={i} className="flex items-start gap-2.5 text-sm"><CheckCircle2 size={14} className="mt-0.5 flex-shrink-0" style={{ color: highlighted ? "var(--lime)" : "var(--emerald)" }} strokeWidth={2.25} /><span style={{ color: highlighted ? "rgba(247,245,240,0.85)" : "var(--ink)" }}>{f}</span></li>))}
+      </ul>
+      {min && <div className="relative mt-6 pt-5 font-mono text-[10px] uppercase tracking-wider" style={{ borderTop: `1px solid ${highlighted ? "rgba(255,255,255,0.08)" : "var(--line)"}`, color: highlighted ? "rgba(247,245,240,0.5)" : "var(--muted)" }}>{min}</div>}
+      <button onClick={onSelect} className="relative mt-5 w-full rounded-xl px-4 py-2.5 text-sm font-semibold transition" style={highlighted ? { background: "var(--lime)", color: "var(--ink)" } : { background: "var(--ink)", color: "var(--bone)" }}>Get {tier}</button>
+    </div>
+  );
+}
+
+function Footer({ onWaitlist }) {
+  return (
+    <footer className="relative overflow-hidden" style={{ background: "var(--ink)", color: "var(--bone)" }}>
+      <div className="absolute inset-0 hero-grid opacity-50" />
+      <div className="relative mx-auto max-w-7xl px-4 py-14 sm:px-6 lg:px-8">
+        <div className="grid gap-10 md:grid-cols-12">
+          <div className="md:col-span-6">
+            <div className="flex items-center gap-2.5"><div className="flex h-9 w-9 items-center justify-center rounded-lg" style={{ background: "linear-gradient(135deg, var(--emerald), var(--emerald-deep))" }}><span className="font-display text-xl font-semibold" style={{ color: "var(--lime)" }}>X</span></div><span className="font-display text-2xl font-semibold tracking-tight">XaePay</span></div>
+            <p className="mt-5 max-w-sm text-sm leading-relaxed" style={{ color: "rgba(247,245,240,0.6)" }}>The intelligence layer for cross-border payments. Built. Governed. Optimized.</p>
+            <div className="mt-6 flex flex-wrap gap-3">
+              {onWaitlist && <button onClick={onWaitlist} className="inline-flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold transition" style={{ background: "var(--lime)", color: "var(--ink)" }}><Mail size={14} /> Join waitlist</button>}
+              <a href={WHATSAPP_URL} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold transition hover:bg-white/5" style={{ border: "1px solid rgba(255,255,255,0.15)", color: "var(--bone)" }}><MessageCircle size={14} /> WhatsApp</a>
+            </div>
+          </div>
+          <div className="md:col-span-6">
+            <div className="font-mono text-[10px] uppercase tracking-wider" style={{ color: "rgba(247,245,240,0.4)" }}>Compliance posture</div>
+            <p className="mt-3 max-w-md text-xs leading-relaxed" style={{ color: "rgba(247,245,240,0.55)" }}>XaePay is a software and compliance layer. All funds and stablecoins are moved by licensed partners or directly between counterparties. XaePay does not custody, pool, or transmit customer funds or digital assets, and never acts as counterparty.</p>
+          </div>
+        </div>
+        <div className="mt-12 flex flex-col items-start justify-between gap-3 pt-8 sm:flex-row sm:items-center" style={{ borderTop: "1px solid rgba(255,255,255,0.08)" }}>
+          <div className="font-mono text-[10px] uppercase tracking-wider" style={{ color: "rgba(247,245,240,0.4)" }}>© 2026 XaePay · Lagos · Los Angeles</div>
+          <div className="flex gap-5 font-mono text-[10px] uppercase tracking-wider" style={{ color: "rgba(247,245,240,0.4)" }}><span>Privacy</span><span>Terms</span><span>Regulatory</span></div>
+        </div>
+      </div>
+    </footer>
+  );
+}
+
+function CustomerApp({ session }) {
+  const [step, setStep] = useState(1);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [formData, setFormData] = useState({ amount: "47500", supplier: "Shenzhen Electronics Co., Ltd", country: "China", bdc: "Corporate Exchange BDC", invoiceUploaded: false, rail: "auto" });
+  const userTier = session.tier ?? 0;
+  const isIndividual = session.type === "individual";
+  return (
+    <>
+    <div className="mx-auto max-w-5xl px-4 py-10 sm:px-6 lg:px-8 lg:py-14">
+      <div className="mb-8 flex items-start justify-between gap-4">
+        <div className="rise">
+          <SectionEyebrow>{isIndividual ? "Individual portal · via BDC payment agent" : "Business portal"}</SectionEyebrow>
+          <h1 className="font-display mt-3 text-3xl font-[450] tracking-tight sm:text-[40px]">{isIndividual ? "New trade payment" : "New supplier payment"}</h1>
+          <div className="mt-3"><TierBadge tier={userTier} /></div>
+        </div>
+        <button onClick={() => setHistoryOpen(true)} className="rise inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium transition hover:bg-[color:var(--bone-2)]" style={{ background: "white", border: "1px solid var(--line)", animationDelay: "0.05s" }}><History size={14} /> History</button>
+      </div>
+      {isIndividual && (
+        <div className="mb-6 rise rounded-2xl p-5" style={{ background: "rgba(212,168,44,0.08)", border: "1px solid rgba(212,168,44,0.3)" }}>
+          <div className="flex items-start gap-3"><Sparkles size={16} className="mt-0.5 flex-shrink-0" style={{ color: "var(--amber)" }} />
+            <div className="text-sm" style={{ color: "var(--ink)" }}><div className="font-semibold">Phase 2 · Individual flow via BDC payment agent</div><p className="mt-1 text-xs leading-relaxed" style={{ color: "var(--muted)" }}>Per-transaction limit: $2,000. Monthly aggregate: $10,000. Your BDC pays in their name on your behalf with full disclosure.</p></div>
+          </div>
+        </div>
+      )}
+      <div className="grid gap-6 lg:grid-cols-12">
+        <div className="lg:col-span-8">
+          <Stepper step={step} />
+          <div className="mt-6 rise" style={{ animationDelay: "0.1s" }}>
+            {step === 1 && <StepIntake data={formData} setData={setFormData} onNext={() => setStep(2)} userTier={userTier} isIndividual={isIndividual} />}
+            {step === 2 && <StepCompliance onNext={() => setStep(3)} onBack={() => setStep(1)} isIndividual={isIndividual} />}
+            {step === 3 && <StepReview data={formData} onNext={() => setStep(4)} onBack={() => setStep(2)} isIndividual={isIndividual} />}
+            {step === 4 && <StepConfirmed data={formData} onNew={() => setStep(1)} onHistory={() => setHistoryOpen(true)} isIndividual={isIndividual} />}
+          </div>
+        </div>
+        <aside className="lg:col-span-4"><SidebarHelp isIndividual={isIndividual} /></aside>
+      </div>
+    </div>
+    <HistoryDrawer open={historyOpen} onClose={() => setHistoryOpen(false)} />
+    </>
+  );
+}
+
+function Stepper({ step }) {
+  const steps = ["Intake", "Compliance", "Review", "Confirmed"];
+  return (
+    <div className="flex items-center gap-3 overflow-x-auto">
+      {steps.map((label, i) => {
+        const active = i + 1 === step; const done = i + 1 < step;
+        return (
+          <React.Fragment key={label}>
+            <div className="flex min-w-0 items-center gap-2">
+              <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full text-xs font-semibold transition" style={done ? { background: "var(--emerald)", color: "var(--lime)" } : active ? { background: "var(--ink)", color: "var(--lime)" } : { background: "var(--bone-2)", color: "var(--muted)" }}>{done ? <CheckCircle2 size={14} strokeWidth={2.5} /> : i + 1}</div>
+              <span className="hidden truncate text-sm font-medium sm:block" style={{ color: active ? "var(--ink)" : "var(--muted)" }}>{label}</span>
+            </div>
+            {i < steps.length - 1 && <div className="h-px flex-1" style={{ background: done ? "var(--emerald)" : "var(--line)" }} />}
+          </React.Fragment>
+        );
+      })}
+    </div>
+  );
+}
+
+function StepIntake({ data, setData, onNext, userTier, isIndividual }) {
+  const { push } = useToast();
+  const handleUpload = () => { setData({ ...data, invoiceUploaded: true }); push("Invoice uploaded · agent reading…", "info"); };
+  const amount = parseFloat(data.amount || 0);
+  const limits = [0, 5000, 50000, Infinity];
+  const exceedsLimit = amount > limits[userTier];
+  return (
+    <Card>
+      <h2 className="font-display text-xl font-semibold">Payment details</h2>
+      <p className="mt-1 text-sm" style={{ color: "var(--muted)" }}>{isIndividual ? "Your BDC will pay this on your behalf as disclosed payment agent." : "Tell us who you're paying."}</p>
+      {exceedsLimit && (
+        <div className="mt-5 rounded-xl p-4 text-xs" style={{ background: "#fef3c7", border: "1px solid #fcd34d", color: "#92400e" }}>
+          <div className="flex items-start gap-2"><AlertTriangle size={14} className="mt-0.5 flex-shrink-0" /><div><div className="font-semibold">Amount exceeds your tier limit</div><p className="mt-1">Tier {userTier} limit: ${limits[userTier].toLocaleString()}. <button className="underline font-semibold">Unlock the next tier →</button></p></div></div>
+        </div>
+      )}
+      <div className="mt-6 grid gap-4 sm:grid-cols-2">
+        <Field label="Payment amount (USD)">
+          <div className="focus-ring flex items-center rounded-xl transition" style={{ background: "white", border: "1px solid var(--line)" }}>
+            <span className="pl-3.5 text-sm font-mono" style={{ color: "var(--muted)" }}>$</span>
+            <input type="text" value={data.amount} onChange={(e) => setData({ ...data, amount: e.target.value })} className="w-full bg-transparent px-2 py-3 text-sm outline-none font-mono" />
+          </div>
+        </Field>
+        <Field label="Destination country"><Select value={data.country} onChange={(e) => setData({ ...data, country: e.target.value })}><option>China</option><option>United States</option><option>United Kingdom</option><option>UAE</option><option>Germany</option></Select></Field>
+        <Field label="Supplier name" full><Input value={data.supplier} onChange={(e) => setData({ ...data, supplier: e.target.value })} /></Field>
+        <Field label="Routing BDC" full><Select value={data.bdc} onChange={(e) => setData({ ...data, bdc: e.target.value })}><option>Corporate Exchange BDC</option><option>Dula Global BDC (Tier 1)</option><option>Sevenlocks BDC</option><option>Bergpoint BDC</option></Select></Field>
+      </div>
+      <div className="mt-6">
+        <Label>Rail preference</Label>
+        <div className="grid gap-2 sm:grid-cols-2">
+          <RoleBtn active={data.rail === "auto"} onClick={() => setData({ ...data, rail: "auto" })}>Auto-route (recommended)</RoleBtn>
+          <RoleBtn active={data.rail === "fiat"} onClick={() => setData({ ...data, rail: "fiat" })}>Force Triple-A direct USD</RoleBtn>
+        </div>
+        <p className="mt-2 font-mono text-[10px] uppercase tracking-wider" style={{ color: "var(--muted)" }}>{data.rail === "auto" ? "We'll choose the cheapest available rail" : "Override: fiat-only routing"}</p>
+      </div>
+      <div className="mt-6">
+        <Label>Upload invoice</Label>
+        <button type="button" onClick={handleUpload} className="w-full rounded-xl p-7 text-center transition" style={data.invoiceUploaded ? { background: "var(--bone-2)", border: "1.5px dashed var(--emerald)" } : { background: "white", border: "1.5px dashed var(--line)" }}>
+          {data.invoiceUploaded ? (<><CheckCircle2 size={22} className="mx-auto" style={{ color: "var(--emerald)" }} strokeWidth={2} /><p className="mt-2 font-mono text-sm font-medium" style={{ color: "var(--emerald)" }}>invoice_shenzhen_0419.pdf · 247 KB</p><p className="mt-1 text-xs" style={{ color: "var(--muted)" }}>Click to replace</p></>) : (<><Upload size={22} className="mx-auto" style={{ color: "var(--muted)" }} strokeWidth={1.75} /><p className="mt-2.5 text-sm" style={{ color: "var(--ink)" }}>Drop PDF or image, or <span className="font-medium underline" style={{ color: "var(--emerald)" }}>browse files</span></p><p className="mt-1 text-xs" style={{ color: "var(--muted)" }}>Or send via WhatsApp to +234 700 XAE PAY</p></>)}
+        </button>
+      </div>
+      <div className="mt-6 flex justify-end"><PrimaryBtn onClick={onNext}>Run compliance checks <ArrowRight size={14} /></PrimaryBtn></div>
+    </Card>
+  );
+}
+
+function StepCompliance({ onNext, onBack, isIndividual }) {
+  const baseChecks = [
+    { label: "Invoice freshness", status: "pass", detail: "Dated 14 days ago · within 30-day policy" },
+    { label: "Amount reconciliation", status: "warn", detail: "Invoice $50,000 · requested $47,500 · partial payment doc generated" },
+    { label: "Payer-name match", status: "pass", detail: "Invoice payer matches sending account" },
+    { label: "Supplier sanctions", status: "pass", detail: "No hits on OFAC, UN, EU, Nigerian watchlists" },
+    { label: "Form M pre-flight", status: "pass", detail: "HS code 8517.62.00 · Form M attached" },
+    { label: "Rail availability", status: "pass", detail: "Cedar USDT selected · ₦18 below Triple-A direct" },
+  ];
+  const individualChecks = isIndividual ? [{ label: "Third-party authorization", status: "pass", detail: "BDC payment-agent letter generated · disclosed to receiving bank" }] : [];
+  const checks = [...baseChecks, ...individualChecks];
+  return (
+    <Card>
+      <div className="flex items-start justify-between gap-4">
+        <div><h2 className="font-display text-xl font-semibold">Compliance checks</h2><p className="mt-1 text-sm" style={{ color: "var(--muted)" }}>{isIndividual ? "Seven agents, four seconds." : "Six agents, four seconds."}</p></div>
+        <div className="rounded-full px-3 py-1 font-mono text-[10px] font-semibold uppercase tracking-wider" style={{ background: "var(--emerald)", color: "var(--lime)" }}>{checks.length - 1} of {checks.length} clean</div>
+      </div>
+      <div className="mt-6 space-y-2">
+        {checks.map((c, i) => (
+          <div key={i} className="flex items-start gap-3 rounded-xl p-4 rise" style={{ background: "var(--bone)", border: "1px solid var(--line)", animationDelay: `${i * 0.06}s` }}>
+            <div className="mt-0.5 flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full" style={c.status === "pass" ? { background: "var(--emerald)", color: "var(--lime)" } : { background: "#fbbf24", color: "var(--ink)" }}>{c.status === "pass" ? <CheckCircle2 size={12} strokeWidth={2.5} /> : <AlertTriangle size={12} strokeWidth={2.5} />}</div>
+            <div className="flex-1 min-w-0"><div className="text-sm font-medium">{c.label}</div><div className="text-xs" style={{ color: "var(--muted)" }}>{c.detail}</div></div>
+          </div>
+        ))}
+      </div>
+      <div className="mt-6 flex flex-col justify-between gap-3 sm:flex-row"><SecondaryBtn onClick={onBack}>Back</SecondaryBtn><PrimaryBtn onClick={onNext}>Review payment <ArrowRight size={14} /></PrimaryBtn></div>
+    </Card>
+  );
+}
+
+function StepReview({ data, onNext, onBack, isIndividual }) {
+  const amount = parseFloat(data.amount || 0);
+  const xaeFee = Math.max(25, amount * 0.005);
+  const bdcSpread = amount * 0.018;
+  const total = amount + xaeFee + bdcSpread;
+  const railName = data.rail === "fiat" ? "Triple-A direct USD" : "Cedar USDT corridor";
+  return (
+    <Card>
+      <h2 className="font-display text-xl font-semibold">Review & confirm</h2>
+      <p className="mt-1 text-sm" style={{ color: "var(--muted)" }}>Rate locked for 4 minutes. Everything disclosed.</p>
+      <div className="mt-6 rounded-xl p-4" style={{ background: "var(--ink)", color: "var(--bone)" }}>
+        <div className="flex items-start gap-3"><Layers size={16} className="mt-0.5 flex-shrink-0" style={{ color: "var(--lime)" }} />
+          <div className="flex-1 text-xs"><div className="font-mono uppercase tracking-wider" style={{ color: "rgba(247,245,240,0.6)" }}>Selected rail</div><div className="font-display text-base font-semibold mt-0.5">{railName}</div>
+            <p className="mt-1 leading-relaxed" style={{ color: "rgba(247,245,240,0.65)" }}>{isIndividual ? `${data.bdc} sources USDT from listed LP → off-ramps via Cedar Money → wires to ${data.supplier}.` : `Routed via ${data.bdc} → off-ramps via Cedar Money → MT103 wire to ${data.supplier}.`}</p>
+          </div>
+        </div>
+      </div>
+      <dl className="mt-4 overflow-hidden rounded-xl" style={{ background: "var(--bone)", border: "1px solid var(--line)" }}>
+        <Row label="Payment to" value={data.supplier} sub={data.country} />
+        <Row label="Routing BDC" value={data.bdc} sub="Licensed Tier-2 · CBN-approved" />
+        <Row label="Amount to supplier" value={`$${amount.toLocaleString()}`} sub="USD" mono />
+        <Row label="BDC FX spread" value={`$${bdcSpread.toFixed(2)}`} sub="1.80% · disclosed" mono />
+        <Row label="XaePay Compliance Plus" value={`$${xaeFee.toFixed(2)}`} sub="0.50% · software & compliance fee" mono />
+        <div className="flex items-center justify-between p-4" style={{ background: "var(--ink)", color: "var(--bone)" }}><div className="text-sm font-medium">Total you pay</div><div className="font-display text-xl font-semibold" style={{ color: "var(--lime)" }}>${total.toFixed(2)}</div></div>
+      </dl>
+      <div className="mt-5 rounded-xl p-4 text-xs" style={{ background: "#fef9e7", border: "1px solid #fcd34d", color: "#92400e" }}>
+        <div className="flex items-start gap-2"><AlertTriangle size={14} className="mt-0.5 flex-shrink-0" /><p>Partial payment: invoice $50,000 vs payment $47,500. Partial-payment letter ships with the wire.</p></div>
+      </div>
+      <div className="mt-6 flex flex-col justify-between gap-3 sm:flex-row"><SecondaryBtn onClick={onBack}>Back</SecondaryBtn><PrimaryBtn onClick={onNext}>Execute payment <Send size={14} /></PrimaryBtn></div>
+    </Card>
+  );
+}
+
+function StepConfirmed({ data, onNew, onHistory, isIndividual }) {
+  const { push } = useToast();
+  const download = (name) => push(`${name} · download started`, "success");
+  const openWhatsApp = () => { push("Opening WhatsApp…", "info"); window.open(WHATSAPP_URL, "_blank"); };
+  const docs = isIndividual ? [
+    { icon: Receipt, title: "Updated Invoice", detail: "Your name as buyer · BDC as funding source" },
+    { icon: FileText, title: "Third-Party Authorization", detail: "BDC pays as disclosed agent" },
+    { icon: Send, title: "Disclosed Payment Letter", detail: "Receiving bank knows the underlying buyer" },
+    { icon: Package, title: "Service Agreement", detail: "BDC payment-agent terms" },
+  ] : [
+    { icon: Receipt, title: "Invoice Pack", detail: "Original · partial letter · reconciliation" },
+    { icon: FileText, title: "CBN Documentation", detail: "Form M · HS code · supplier KYB" },
+    { icon: Send, title: "MT103 Wire Reference", detail: "Pending · ~90 minutes" },
+    { icon: Package, title: "Evidence Tracking", detail: "Bill of lading expected T+30" },
+  ];
+  return (
+    <div className="relative overflow-hidden rounded-2xl p-8" style={{ background: "var(--ink)", color: "var(--bone)" }}>
+      <div className="absolute -right-20 -top-20 h-56 w-56 rounded-full opacity-40 blur-3xl" style={{ background: "radial-gradient(circle, var(--lime), transparent)" }} />
+      <div className="relative flex h-12 w-12 items-center justify-center rounded-full" style={{ background: "var(--lime)" }}><CheckCircle2 size={24} strokeWidth={2.5} style={{ color: "var(--ink)" }} /></div>
+      <h2 className="font-display relative mt-5 text-[28px] font-[450] tracking-tight">Payment executed.</h2>
+      <p className="relative mt-2 text-sm" style={{ color: "rgba(247,245,240,0.7)" }}>{isIndividual ? `Funds routed to ${data.supplier} via ${data.bdc} as your disclosed payment agent.` : `Funds routed to ${data.supplier}.`}</p>
+      <div className="relative mt-6 rounded-xl p-4" style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.08)" }}>
+        <div className="font-mono text-[10px] uppercase tracking-wider" style={{ color: "rgba(247,245,240,0.6)" }}>Audit trail</div>
+        <div className="mt-2 space-y-1.5 text-xs font-mono" style={{ color: "rgba(247,245,240,0.85)" }}>
+          <div>1. {isIndividual ? "You → " : ""}{data.bdc} ← ₦{(parseFloat(data.amount) * 1395).toLocaleString()}</div>
+          <div>2. {data.bdc} → LP-2841 ← {parseFloat(data.amount).toLocaleString()} USDT</div>
+          <div>3. USDT → Cedar Money → ${parseFloat(data.amount).toLocaleString()} USD</div>
+          <div>4. ${parseFloat(data.amount).toLocaleString()} → MT103 → {data.supplier}</div>
+        </div>
+      </div>
+      <div className="relative mt-7 grid gap-3 sm:grid-cols-2">
+        {docs.map((d, i) => (
+          <button key={i} onClick={() => download(d.title)} className="flex items-start gap-3 rounded-xl p-4 text-left transition hover:bg-white/5" style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)" }}>
+            <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg" style={{ background: "rgba(197,242,74,0.1)", color: "var(--lime)" }}><d.icon size={15} /></div>
+            <div className="min-w-0"><div className="text-sm font-medium" style={{ color: "var(--bone)" }}>{d.title}</div><div className="font-mono text-[10px] mt-0.5" style={{ color: "rgba(247,245,240,0.5)" }}>{d.detail}</div></div>
+          </button>
+        ))}
+      </div>
+      <div className="relative mt-7 flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+        <button onClick={() => download("XaePay compliance pack (ZIP)")} className="inline-flex items-center justify-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold transition glow-lime" style={{ background: "var(--lime)", color: "var(--ink)" }}><Download size={14} /> Download compliance pack</button>
+        <button onClick={onHistory} className="rounded-xl px-5 py-2.5 text-sm font-semibold transition hover:bg-white/5" style={{ border: "1px solid rgba(255,255,255,0.15)" }}>View history</button>
+        <button onClick={onNew} className="rounded-xl px-5 py-2.5 text-sm font-semibold transition hover:bg-white/5" style={{ border: "1px solid rgba(255,255,255,0.15)" }}>New payment</button>
+        <button onClick={openWhatsApp} className="inline-flex items-center justify-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold transition hover:bg-white/5" style={{ border: "1px solid rgba(255,255,255,0.15)" }}><MessageCircle size={14} /> Message support</button>
+      </div>
+    </div>
+  );
+}
+
+function SidebarHelp({ isIndividual }) {
+  const { push } = useToast();
+  const openWhatsApp = () => { push("Opening WhatsApp…", "info"); window.open(WHATSAPP_URL, "_blank"); };
+  return (
+    <div className="space-y-4 rise" style={{ animationDelay: "0.15s" }}>
+      <Card>
+        <div className="mb-3 flex items-center gap-2"><div className="flex h-7 w-7 items-center justify-center rounded-lg" style={{ background: "var(--bone-2)", color: "var(--emerald)" }}><MessageCircle size={14} /></div><span className="text-sm font-semibold">Continue on WhatsApp</span></div>
+        <p className="text-sm leading-relaxed" style={{ color: "var(--muted)" }}>Most customers run the entire flow via WhatsApp. Send your invoice to +234 700 XAE PAY.</p>
+        <button onClick={openWhatsApp} className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition hover:bg-[color:var(--bone-2)]" style={{ border: "1px solid var(--emerald)", color: "var(--emerald)" }}><ExternalLink size={14} /> Open WhatsApp</button>
+      </Card>
+      {isIndividual ? (
+        <Card>
+          <div className="mb-3 flex items-center gap-2"><div className="flex h-7 w-7 items-center justify-center rounded-lg" style={{ background: "var(--bone-2)", color: "var(--emerald)" }}><Building2 size={14} /></div><span className="text-sm font-semibold">Outgrowing limits?</span></div>
+          <p className="text-sm leading-relaxed" style={{ color: "var(--muted)" }}>Forming a business unlocks higher limits and direct rails.</p>
+          <button className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition" style={{ background: "var(--ink)", color: "var(--bone)" }}>Form business in 7 days <ArrowRight size={14} /></button>
+        </Card>
+      ) : (
+        <Card>
+          <div className="mb-3 flex items-center gap-2"><div className="flex h-7 w-7 items-center justify-center rounded-lg" style={{ background: "var(--bone-2)", color: "var(--emerald)" }}><Shield size={14} /></div><span className="text-sm font-semibold">Why your BDC?</span></div>
+          <p className="text-sm leading-relaxed" style={{ color: "var(--muted)" }}>XaePay routes through a CBN-licensed BDC. We don't hold funds — we validate, document, defend.</p>
+        </Card>
+      )}
+    </div>
+  );
+}
+
+function HistoryDrawer({ open, onClose }) {
+  const { push } = useToast();
+  const history = [
+    { id: "XP-9840", supplier: "Shenzhen Electronics Co.", amount: 47500, status: "Executed", date: "Today · 14:02", rail: "Cedar USDT" },
+    { id: "XP-9788", supplier: "Horizon Metals LLC", amount: 28000, status: "Executed", date: "Apr 14 · 11:18", rail: "Cedar USDT" },
+    { id: "XP-9741", supplier: "Mumbai Pharmachem", amount: 22400, status: "Executed", date: "Apr 08 · 09:32", rail: "Triple-A" },
+    { id: "XP-9702", supplier: "Guangzhou Textiles", amount: 64000, status: "Executed", date: "Apr 02 · 16:44", rail: "Cedar USDT" },
+    { id: "XP-9656", supplier: "Hamburg Auto Parts GmbH", amount: 18200, status: "Rejected", date: "Mar 29 · 13:07", rail: "Triple-A" },
+  ];
+  return (
+    <Drawer open={open} onClose={onClose} title="Transaction history">
+      <div className="space-y-2">
+        {history.map((h) => (
+          <button key={h.id} onClick={() => push(`Opening ${h.id} details`, "info")} className="w-full rounded-xl p-4 text-left transition hover:border-[color:var(--emerald)]" style={{ background: "white", border: "1px solid var(--line)" }}>
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0"><div className="text-sm font-medium truncate">{h.supplier}</div><div className="font-mono text-[10px] mt-0.5" style={{ color: "var(--muted)" }}>{h.date} · {h.id} · {h.rail}</div></div>
+              <div className="text-right flex-shrink-0"><div className="font-mono text-sm font-semibold">${h.amount.toLocaleString()}</div><div className="font-mono text-[10px] mt-0.5" style={{ color: h.status === "Rejected" ? "#b91c1c" : "var(--emerald)" }}>{h.status}</div></div>
+            </div>
+          </button>
+        ))}
+      </div>
+    </Drawer>
+  );
+}
+
+function BDCDashboard({ session }) {
+  const [tab, setTab] = useState("overview");
+  const [newTxOpen, setNewTxOpen] = useState(false);
+  return (
+    <>
+    <div className="mx-auto max-w-7xl px-4 py-10 sm:px-6 lg:px-8 lg:py-14">
+      <div className="mb-8 flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-end">
+        <div className="rise">
+          <SectionEyebrow>{session.type === "agent" ? "Payment Agent portal" : "Operator portal"}</SectionEyebrow>
+          <h1 className="font-display mt-3 text-3xl font-[450] tracking-tight sm:text-[40px]">{session.name || "Corporate Exchange BDC"}</h1>
+          <div className="mt-2 font-mono text-xs" style={{ color: "var(--muted)" }}>
+            {session.type === "agent" ? "IMTO / SCUML / CAC-registered · Lagos · Payment Agent tier" : "CBN Tier 2 · Lagos · Licensed Nov 27, 2025"}
+          </div>
+        </div>
+        <button onClick={() => setNewTxOpen(true)} className="rise inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition" style={{ background: "var(--ink)", color: "var(--bone)", animationDelay: "0.05s" }}><Plus size={14} /> New transaction</button>
+      </div>
+      <div className="mb-6 flex gap-1 overflow-x-auto" style={{ borderBottom: "1px solid var(--line)" }}>
+        {[
+          { id: "overview", label: "Overview" },
+          { id: "transactions", label: "Transactions" },
+          { id: "customers", label: "Customers" },
+          { id: "liquidity", label: "Liquidity", phase2: true },
+          { id: "agent", label: "Payment Agent", phase2: true },
+          { id: "compliance", label: "Compliance" },
+          { id: "evidence", label: "Evidence Packs" },
+        ].map((t) => (
+          <button key={t.id} onClick={() => setTab(t.id)} className="relative whitespace-nowrap px-4 py-3 text-sm font-medium transition flex items-center gap-1.5" style={{ color: tab === t.id ? "var(--ink)" : "var(--muted)" }}>
+            {t.label}
+            {t.phase2 && <span className="rounded-full px-1.5 py-0.5 font-mono text-[8px] font-semibold uppercase tracking-wider" style={{ background: "var(--bone-2)", color: "var(--emerald)" }}>P2</span>}
+            {tab === t.id && <div className="absolute bottom-[-1px] left-0 right-0 h-[2px]" style={{ background: "var(--ink)" }} />}
+          </button>
+        ))}
+      </div>
+      <div className="fade-in">
+        {tab === "overview" && <BDCOverview onJumpTab={setTab} />}
+        {tab === "transactions" && <BDCTransactions />}
+        {tab === "customers" && <BDCCustomers />}
+        {tab === "liquidity" && <BDCLiquidity />}
+        {tab === "agent" && <BDCPaymentAgent />}
+        {tab === "compliance" && <BDCCompliance />}
+        {tab === "evidence" && <BDCEvidence />}
+      </div>
+    </div>
+    <NewTransactionModal open={newTxOpen} onClose={() => setNewTxOpen(false)} />
+    </>
+  );
+}
+
+function NewTransactionModal({ open, onClose }) {
+  const [form, setForm] = useState({ customer: "", amount: "", dest: "China", rail: "Auto-route" });
+  const { push } = useToast();
+  const submit = (e) => { e.preventDefault(); push(`Draft created for ${form.customer}`, "success"); onClose(); setForm({ customer: "", amount: "", dest: "China", rail: "Auto-route" }); };
+  return (
+    <Modal open={open} onClose={onClose} title="New transaction">
+      <form onSubmit={submit} className="space-y-4">
+        <div><Label>Customer</Label><Input required value={form.customer} onChange={(e) => setForm({ ...form, customer: e.target.value })} placeholder="Customer name" /></div>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div><Label>Amount (USD)</Label><Input required type="number" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} placeholder="50000" /></div>
+          <div><Label>Destination</Label><Select value={form.dest} onChange={(e) => setForm({ ...form, dest: e.target.value })}><option>China</option><option>USA</option><option>UAE</option><option>UK</option><option>India</option></Select></div>
+        </div>
+        <div><Label>Rail</Label><Select value={form.rail} onChange={(e) => setForm({ ...form, rail: e.target.value })}><option>Auto-route (recommended)</option><option>Triple-A direct USD</option><option>Cedar Money stablecoin</option><option>BDC USDT settlement</option><option>Internal USD inventory</option></Select></div>
+        <div className="flex justify-end gap-2 pt-2"><SecondaryBtn type="button" onClick={onClose}>Cancel</SecondaryBtn><PrimaryBtn type="submit">Create draft</PrimaryBtn></div>
+      </form>
+    </Modal>
+  );
+}
+
+function BDCOverview({ onJumpTab }) {
+  const { push } = useToast();
+  const [pending, setPending] = useState([
+    { id: 1, customer: "Adeyemi Okafor · Lagos", supplier: "Shenzhen Electronics · CN", amount: "$47,500", flag: "Partial payment" },
+    { id: 2, customer: "Novus Trading Ltd", supplier: "Horizon Metals · AE", amount: "$128,000", flag: "Fresh review" },
+    { id: 3, customer: "Chioma Nwosu (SF) → Lagos Build & Supply", supplier: "Diaspora inbound · vendor", amount: "$2,500", flag: "Inbound · Triple-A" },
+    { id: 4, customer: "Funmi Adeleke (individual)", supplier: "Mumbai Pharmachem · IN", amount: "$1,800", flag: "Payment-agent · P2" },
+  ]);
+  const approve = (id, customer) => { setPending((p) => p.filter((x) => x.id !== id)); push(`Approved · ${customer}`, "success"); };
+  return (
+    <div className="grid gap-6 lg:grid-cols-12">
+      <div className="lg:col-span-8 space-y-6">
+        <div className="grid gap-4 sm:grid-cols-3">
+          <StatCard label="Outbound volume · 30d" value="$2.84M" change="+18.2%" positive />
+          <StatCard label="Inbound · diaspora · 30d" value="$412K" change="+41% MoM" positive />
+          <StatCard label="XaePay rev-share" value="$3,540" change="this month" />
+        </div>
+        <Card>
+          <div className="mb-5 flex items-center justify-between">
+            <h2 className="font-display text-xl font-semibold">Pending approvals</h2>
+            <span className="rounded-full px-2.5 py-1 font-mono text-[9px] font-semibold uppercase tracking-wider" style={{ background: "#fef3c7", color: "#92400e" }}>{pending.length} waiting</span>
+          </div>
+          {pending.length === 0 ? (
+            <div className="rounded-xl p-8 text-center text-sm" style={{ background: "var(--bone)", color: "var(--muted)" }}>All caught up.</div>
+          ) : (
+            <div className="space-y-2.5">{pending.map((p) => (<PendingRow key={p.id} customer={p.customer} supplier={p.supplier} amount={p.amount} flag={p.flag} onApprove={() => approve(p.id, p.customer)} />))}</div>
+          )}
+          <button onClick={() => onJumpTab("transactions")} className="mt-5 inline-flex items-center gap-1 text-sm font-semibold transition hover:gap-2" style={{ color: "var(--emerald)" }}>View all <ChevronRight size={14} /></button>
+        </Card>
+        <Card>
+          <h2 className="mb-6 font-display text-xl font-semibold">Volume by corridor · 30d</h2>
+          <div className="space-y-5">
+            <CorridorBar label="NGN → USD (China)" value="$1.24M" pct={44} />
+            <CorridorBar label="NGN → USD (USA)" value="$640K" pct={23} />
+            <CorridorBar label="NGN → USD (UAE)" value="$480K" pct={17} />
+            <CorridorBar label="NGN → USD (UK)" value="$280K" pct={10} />
+            <CorridorBar label="NGN → USD (Other)" value="$200K" pct={7} />
+          </div>
+        </Card>
+      </div>
+      <div className="space-y-4 lg:col-span-4">
+        <Card>
+          <div className="mb-3 flex items-center gap-2"><div className="flex h-7 w-7 items-center justify-center rounded-lg" style={{ background: "var(--bone-2)", color: "var(--emerald)" }}><Zap size={14} /></div><span className="text-sm font-semibold">Rail status</span></div>
+          <div className="space-y-2.5">
+            <RailStatus name="Triple-A (Singapore)" latency="T+0" />
+            <RailStatus name="Cedar Money (US/NG)" latency="T+1" />
+            <RailStatus name="BDC USDT (8 LPs)" latency="Instant" />
+            <RailStatus name="Internal USD inventory" latency="Instant" />
+          </div>
+        </Card>
+        <Card>
+          <div className="mb-3 flex items-center gap-2"><div className="flex h-7 w-7 items-center justify-center rounded-lg" style={{ background: "#fef3c7", color: "#92400e" }}><Bell size={14} /></div><span className="text-sm font-semibold">Compliance alerts</span></div>
+          <div className="space-y-1 text-sm">
+            <AlertRow severity="warn" text="Q1 evidence pack for Triple-A due in 11 days" onClick={() => onJumpTab("evidence")} />
+            <AlertRow severity="info" text="USDT inventory low · 3 LPs offering" onClick={() => onJumpTab("liquidity")} />
+            <AlertRow severity="info" text="CBN weekly report ready" onClick={() => onJumpTab("compliance")} />
+          </div>
+        </Card>
+        <div className="relative overflow-hidden rounded-2xl p-6" style={{ background: "var(--ink)", color: "var(--bone)" }}>
+          <div className="absolute -right-16 -top-16 h-40 w-40 rounded-full opacity-30 blur-3xl" style={{ background: "var(--lime)" }} />
+          <div className="relative mb-3 flex items-center gap-2"><BarChart3 size={14} style={{ color: "var(--lime)" }} /><span className="font-mono text-[10px] uppercase tracking-wider" style={{ color: "rgba(247,245,240,0.7)" }}>Rejection rate</span></div>
+          <div className="relative font-display text-5xl font-[500] tracking-tight" style={{ color: "var(--lime)" }}>0.3%</div>
+          <div className="relative mt-1.5 font-mono text-[10px]" style={{ color: "rgba(247,245,240,0.5)" }}>8 of 312 · down from 6.2%</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function BDCLiquidity() {
+  const { push } = useToast();
+  const lps = [
+    { id: "LP-2841", name: "K. Asante (Diaspora US)", inventory: "180,000 USDT", rate: "₦1,388", chain: "TRC-20", rating: 4.9 },
+    { id: "LP-3127", name: "Atlantic Holdings LLC", inventory: "450,000 USDT", rate: "₦1,390", chain: "ERC-20", rating: 4.8 },
+    { id: "LP-3290", name: "M. Osei (UK exporter)", inventory: "78,000 USDT", rate: "₦1,386", chain: "TRC-20", rating: 4.9 },
+    { id: "LP-3401", name: "Pan-African Trade Co", inventory: "320,000 USDT", rate: "₦1,391", chain: "BEP-20", rating: 4.7 },
+  ];
+  return (
+    <div className="space-y-4">
+      <div className="rounded-2xl p-5" style={{ background: "rgba(212,168,44,0.08)", border: "1px solid rgba(212,168,44,0.3)" }}>
+        <div className="flex items-start gap-3"><Sparkles size={16} className="mt-0.5 flex-shrink-0" style={{ color: "var(--amber)" }} />
+          <div className="text-sm" style={{ color: "var(--ink)" }}><span className="font-semibold">Phase 2 · USDT Liquidity Marketplace.</span><p className="mt-1 text-xs leading-relaxed" style={{ color: "var(--muted)" }}>Source USDT directly from vetted LPs. Cheaper than fiat off-ramp for sub-$50K. Settlement is direct between your wallet and theirs — XaePay matches and audits, never custodies.</p></div>
+        </div>
+      </div>
+      <div className="grid gap-4 sm:grid-cols-3">
+        <StatCard label="USDT inventory" value="240K" change="at partner banks" />
+        <StatCard label="Active LPs" value="8" change="vetted, ready" positive />
+        <StatCard label="Best rate (USDT/NGN)" value="₦1,386" change="LP-3290" positive />
+      </div>
+      <Card padding="none">
+        <div className="flex items-center justify-between p-4" style={{ borderBottom: "1px solid var(--line)" }}>
+          <div className="text-sm font-semibold">Available liquidity providers</div>
+          <SecondaryBtn onClick={() => push("Sourcing matched liquidity…", "info")}><Coins size={14} /> Source USDT</SecondaryBtn>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr style={{ background: "var(--bone)", borderBottom: "1px solid var(--line)" }}>
+                {["LP ID", "Name", "Inventory", "Rate", "Chain", "Rating", ""].map((h, i) => (<th key={i} className={`px-4 py-3 text-left font-mono text-[10px] font-semibold uppercase tracking-wider ${["Inventory", "Rate", "Rating"].includes(h) ? "text-right" : ""}`} style={{ color: "var(--muted)" }}>{h}</th>))}
+              </tr>
+            </thead>
+            <tbody>
+              {lps.map((lp) => (
+                <tr key={lp.id} className="transition hover:bg-[color:var(--bone)]" style={{ borderBottom: "1px solid var(--line)" }}>
+                  <td className="px-4 py-3.5 font-mono text-xs font-semibold">{lp.id}</td>
+                  <td className="px-4 py-3.5 font-medium">{lp.name}</td>
+                  <td className="px-4 py-3.5 text-right font-mono">{lp.inventory}</td>
+                  <td className="px-4 py-3.5 text-right font-mono font-semibold" style={{ color: "var(--emerald)" }}>{lp.rate}</td>
+                  <td className="px-4 py-3.5 font-mono text-xs" style={{ color: "var(--muted)" }}>{lp.chain}</td>
+                  <td className="px-4 py-3.5 text-right font-mono text-xs">★ {lp.rating}</td>
+                  <td className="px-4 py-3.5"><button onClick={() => push(`Match request sent to ${lp.id}`, "success")} className="rounded-lg px-3 py-1.5 font-mono text-[10px] font-semibold uppercase tracking-wider transition" style={{ background: "var(--ink)", color: "var(--lime)" }}>Match</button></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </Card>
+    </div>
+  );
+}
+
+function BDCPaymentAgent() {
+  const { push } = useToast();
+  const customers = [
+    { name: "Funmi Adeleke", txCount: 4, monthVolume: 6800, lastTx: "Today" },
+    { name: "Tunde Bakare", txCount: 12, monthVolume: 9200, lastTx: "Yesterday" },
+    { name: "Aisha Mohammed", txCount: 7, monthVolume: 4500, lastTx: "Apr 16" },
+  ];
+  return (
+    <div className="space-y-4">
+      <div className="rounded-2xl p-5" style={{ background: "rgba(212,168,44,0.08)", border: "1px solid rgba(212,168,44,0.3)" }}>
+        <div className="flex items-start gap-3"><Sparkles size={16} className="mt-0.5 flex-shrink-0" style={{ color: "var(--amber)" }} />
+          <div className="text-sm" style={{ color: "var(--ink)" }}><span className="font-semibold">Phase 2 · Payment Agent for Individuals.</span><p className="mt-1 text-xs leading-relaxed" style={{ color: "var(--muted)" }}>Process trade payments for individuals as disclosed payment agent. XaePay generates third-party authorization, disclosed payment letter, full audit trail per transaction.</p></div>
+        </div>
+      </div>
+      <div className="grid gap-4 sm:grid-cols-3">
+        <StatCard label="Individual customers" value="14" change="+3 this month" positive />
+        <StatCard label="Volume · 30d" value="$48K" change="38 transactions" />
+        <StatCard label="Service fee revenue" value="$1,920" change="4% avg" />
+      </div>
+      <Card padding="none">
+        <div className="flex items-center justify-between p-4" style={{ borderBottom: "1px solid var(--line)" }}>
+          <div className="text-sm font-semibold">Individual customers · payment agent</div>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead><tr style={{ background: "var(--bone)", borderBottom: "1px solid var(--line)" }}>{["Customer", "Transactions", "Month volume", "Last", ""].map((h, i) => (<th key={i} className={`px-4 py-3 text-left font-mono text-[10px] font-semibold uppercase tracking-wider ${["Transactions", "Month volume"].includes(h) ? "text-right" : ""}`} style={{ color: "var(--muted)" }}>{h}</th>))}</tr></thead>
+            <tbody>
+              {customers.map((c) => (
+                <tr key={c.name} className="transition hover:bg-[color:var(--bone)]" style={{ borderBottom: "1px solid var(--line)" }}>
+                  <td className="px-4 py-3.5 font-medium">{c.name}</td>
+                  <td className="px-4 py-3.5 text-right font-mono">{c.txCount}</td>
+                  <td className="px-4 py-3.5 text-right font-mono font-semibold">${c.monthVolume.toLocaleString()}</td>
+                  <td className="px-4 py-3.5 font-mono text-xs" style={{ color: "var(--muted)" }}>{c.lastTx}</td>
+                  <td className="px-4 py-3.5 text-right"><button onClick={() => push(`Opening authorization docs for ${c.name}`, "info")} className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 font-mono text-[10px] font-semibold uppercase tracking-wider transition" style={{ border: "1px solid var(--line)" }}><FileText size={11} /> Docs</button></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </Card>
+    </div>
+  );
+}
+
+function BDCTransactions() {
+  const { push } = useToast();
+  const [query, setQuery] = useState("");
+  const [selected, setSelected] = useState(null);
+  const [statusFilter, setStatusFilter] = useState("all");
+  const txs = [
+    { id: "XP-9841", customer: "Novus Trading Ltd", dest: "AE", amount: 128000, status: "processing", rail: "Triple-A", date: "Today · 14:22" },
+    { id: "XP-9840", customer: "Adeyemi Okafor", dest: "CN", amount: 47500, status: "pending", rail: "Cedar USDT", date: "Today · 13:58" },
+    { id: "XD-4421", customer: "Diaspora → Lagos Build & Supply", dest: "IN", amount: 2500, status: "completed", rail: "Cedar (inbound)", date: "Today · 12:17" },
+    { id: "XP-9839", customer: "Sahara Foods Import", dest: "CN", amount: 82000, status: "completed", rail: "Cedar USDT", date: "Today · 11:42" },
+    { id: "XD-4398", customer: "Diaspora → Adeola Nwosu", dest: "IN", amount: 800, status: "completed", rail: "Cedar (inbound)", date: "Yesterday · 16:55" },
+    { id: "XP-9838", customer: "Funmi Adeleke (Ind.)", dest: "IN", amount: 1800, status: "pending", rail: "BDC USDT", date: "Today · 10:17" },
+    { id: "XP-9837", customer: "Delta Petrochem", dest: "US", amount: 215000, status: "completed", rail: "Triple-A", date: "Yesterday · 17:03" },
+    { id: "XP-9836", customer: "Kaduna Textiles", dest: "CN", amount: 68500, status: "completed", rail: "Cedar USDT", date: "Yesterday · 15:41" },
+    { id: "XP-9835", customer: "Port Harcourt Supply", dest: "UK", amount: 34200, status: "disputed", rail: "Triple-A", date: "Yesterday · 09:18" },
+  ];
+  const filtered = txs.filter((t) => {
+    const q = query.toLowerCase();
+    const matchQ = !q || t.id.toLowerCase().includes(q) || t.customer.toLowerCase().includes(q) || t.rail.toLowerCase().includes(q);
+    const matchS = statusFilter === "all" || t.status === statusFilter;
+    return matchQ && matchS;
+  });
+  return (
+    <>
+    <Card padding="none">
+      <div className="flex flex-col items-stretch gap-3 p-4 sm:flex-row sm:items-center" style={{ borderBottom: "1px solid var(--line)" }}>
+        <div className="focus-ring flex flex-1 items-center gap-2 rounded-xl px-3 py-2" style={{ background: "white", border: "1px solid var(--line)" }}>
+          <Search size={14} style={{ color: "var(--muted)" }} />
+          <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search transactions, customers…" className="w-full bg-transparent text-sm outline-none" />
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Select small value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+            <option value="all">All statuses</option><option value="completed">Completed</option><option value="processing">Processing</option><option value="pending">Pending</option><option value="disputed">Disputed</option>
+          </Select>
+          <SecondaryBtn onClick={() => { setQuery(""); setStatusFilter("all"); push("Filters cleared", "info"); }}><Filter size={14} /> Clear</SecondaryBtn>
+          <SecondaryBtn onClick={() => push(`Exporting ${filtered.length} rows to CSV…`, "success")}><Download size={14} /> Export</SecondaryBtn>
+        </div>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead><tr style={{ background: "var(--bone)", borderBottom: "1px solid var(--line)" }}>{["Ref", "Customer", "Dest", "Amount", "Rail", "Status", "Date", ""].map((h, i) => (<th key={i} className={`px-4 py-3 text-left font-mono text-[10px] font-semibold uppercase tracking-wider ${h === "Amount" ? "text-right" : ""}`} style={{ color: "var(--muted)" }}>{h}</th>))}</tr></thead>
+          <tbody>
+            {filtered.length === 0 ? (<tr><td colSpan={8} className="px-4 py-12 text-center text-sm" style={{ color: "var(--muted)" }}>No transactions match.</td></tr>) : filtered.map((t) => (
+              <tr key={t.id} onClick={() => setSelected(t)} className="cursor-pointer transition hover:bg-[color:var(--bone)]" style={{ borderBottom: "1px solid var(--line)" }}>
+                <td className="px-4 py-3.5 font-mono text-xs font-semibold">{t.id}</td>
+                <td className="px-4 py-3.5 font-medium">{t.customer}</td>
+                <td className="px-4 py-3.5 font-mono text-xs">{t.dest}</td>
+                <td className="px-4 py-3.5 text-right font-mono font-semibold">${t.amount.toLocaleString()}</td>
+                <td className="px-4 py-3.5 text-[13px]" style={{ color: "var(--muted)" }}>{t.rail}</td>
+                <td className="px-4 py-3.5"><StatusPill status={t.status} /></td>
+                <td className="px-4 py-3.5 font-mono text-xs" style={{ color: "var(--muted)" }}>{t.date}</td>
+                <td className="px-4 py-3.5"><ChevronRight size={14} style={{ color: "var(--muted)" }} /></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </Card>
+    <TxDrawer tx={selected} onClose={() => setSelected(null)} />
+    </>
+  );
+}
+
+function TxDrawer({ tx, onClose }) {
+  const { push } = useToast();
+  if (!tx) return null;
+  return (
+    <Drawer open={!!tx} onClose={onClose} title={`Transaction ${tx.id}`}>
+      <div className="space-y-5">
+        <div className="flex items-center justify-between"><StatusPill status={tx.status} /><span className="font-mono text-[10px]" style={{ color: "var(--muted)" }}>{tx.date}</span></div>
+        <div className="relative overflow-hidden rounded-xl p-5" style={{ background: "var(--ink)", color: "var(--bone)" }}>
+          <div className="absolute -right-12 -top-12 h-32 w-32 rounded-full opacity-30 blur-3xl" style={{ background: "var(--lime)" }} />
+          <div className="relative font-mono text-[10px] uppercase tracking-wider" style={{ color: "rgba(247,245,240,0.5)" }}>Amount</div>
+          <div className="relative font-display mt-1 text-4xl font-[500] tracking-tight" style={{ color: "var(--lime)" }}>${tx.amount.toLocaleString()}</div>
+          <div className="relative mt-1 font-mono text-[11px]" style={{ color: "rgba(247,245,240,0.6)" }}>{tx.customer} → {tx.dest} · via {tx.rail}</div>
+        </div>
+        <div>
+          <Label>Audit trail</Label>
+          <div className="space-y-1.5 rounded-xl p-4 text-xs font-mono" style={{ background: "var(--bone)", border: "1px solid var(--line)" }}>
+            <div>1. Customer → BDC ← ₦{(tx.amount * 1395).toLocaleString()}</div>
+            <div>2. BDC → LP-2841 ← {tx.amount.toLocaleString()} USDT</div>
+            <div>3. USDT → off-ramp → ${tx.amount.toLocaleString()} USD</div>
+            <div>4. USD → MT103 → supplier</div>
+          </div>
+        </div>
+        <div>
+          <Label>Compliance checks</Label>
+          <div className="space-y-2 rounded-xl p-4 text-sm" style={{ background: "var(--bone)", border: "1px solid var(--line)" }}>
+            {["Payer-name match", "Sanctions screening", "Form M pre-flight", "Invoice freshness"].map((c, i) => (<div key={i} className="flex items-center gap-2"><CheckCircle2 size={14} style={{ color: "var(--emerald)" }} strokeWidth={2.5} /> {c}</div>))}
+          </div>
+        </div>
+        <div className="flex flex-col gap-2 pt-4" style={{ borderTop: "1px solid var(--line)" }}>
+          <PrimaryBtn onClick={() => push(`Downloading evidence pack for ${tx.id}`, "success")} full><Download size={14} /> Download evidence pack</PrimaryBtn>
+          <SecondaryBtn onClick={() => push(`Opened dispute for ${tx.id}`, "info")} full>Open dispute</SecondaryBtn>
+        </div>
+      </div>
+    </Drawer>
+  );
+}
+
+function BDCCustomers() {
+  const { push } = useToast();
+  const [selected, setSelected] = useState(null);
+  const customers = [
+    { name: "Novus Trading Ltd", volume: 1240000, count: 34, tier: "Corporate", kycTier: 3 },
+    { name: "Delta Petrochem", volume: 890000, count: 12, tier: "Corporate", kycTier: 3 },
+    { name: "Sahara Foods Import", volume: 420000, count: 28, tier: "SME", kycTier: 2 },
+    { name: "Kaduna Textiles Ltd", volume: 380000, count: 19, tier: "SME", kycTier: 2 },
+    { name: "Adeyemi Okafor", volume: 142000, count: 8, tier: "SME", kycTier: 2 },
+    { name: "Funmi Adeleke", volume: 6800, count: 4, tier: "Individual", kycTier: 1 },
+  ];
+  return (
+    <>
+    <Card padding="none">
+      <div className="flex items-center justify-between p-4" style={{ borderBottom: "1px solid var(--line)" }}>
+        <div className="text-sm font-semibold">{customers.length} customers</div>
+        <SecondaryBtn onClick={() => push(`Exporting ${customers.length} customers…`, "success")}><Download size={14} /> Export</SecondaryBtn>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead><tr style={{ background: "var(--bone)", borderBottom: "1px solid var(--line)" }}>{["Customer", "Type", "KYC", "Lifetime volume", "Transactions", ""].map((h, i) => (<th key={i} className={`px-4 py-3 text-left font-mono text-[10px] font-semibold uppercase tracking-wider ${["Lifetime volume", "Transactions"].includes(h) ? "text-right" : ""}`} style={{ color: "var(--muted)" }}>{h}</th>))}</tr></thead>
+          <tbody>
+            {customers.map((c) => (
+              <tr key={c.name} onClick={() => setSelected(c)} className="cursor-pointer transition hover:bg-[color:var(--bone)]" style={{ borderBottom: "1px solid var(--line)" }}>
+                <td className="px-4 py-3.5 font-medium">{c.name}</td>
+                <td className="px-4 py-3.5"><span className="rounded-full px-2 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-wider" style={c.tier === "Corporate" ? { background: "var(--emerald)", color: "var(--lime)" } : c.tier === "SME" ? { background: "#fef3c7", color: "#92400e" } : { background: "var(--bone-2)", color: "var(--muted)" }}>{c.tier}</span></td>
+                <td className="px-4 py-3.5"><span className="font-mono text-[10px] font-semibold" style={{ color: "var(--emerald)" }}>T{c.kycTier}</span></td>
+                <td className="px-4 py-3.5 text-right font-mono font-semibold">${c.volume.toLocaleString()}</td>
+                <td className="px-4 py-3.5 text-right font-mono">{c.count}</td>
+                <td className="px-4 py-3.5"><ChevronRight size={14} style={{ color: "var(--muted)" }} /></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </Card>
+    <CustomerDrawer customer={selected} onClose={() => setSelected(null)} />
+    </>
+  );
+}
+
+function CustomerDrawer({ customer, onClose }) {
+  const { push } = useToast();
+  if (!customer) return null;
+  return (
+    <Drawer open={!!customer} onClose={onClose} title={customer.name}>
+      <div className="space-y-4">
+        <div className="relative overflow-hidden rounded-xl p-5" style={{ background: "var(--ink)", color: "var(--bone)" }}>
+          <div className="absolute -right-12 -top-12 h-32 w-32 rounded-full opacity-30 blur-3xl" style={{ background: "var(--lime)" }} />
+          <div className="relative font-mono text-[10px] uppercase tracking-wider" style={{ color: "rgba(247,245,240,0.5)" }}>Lifetime volume</div>
+          <div className="relative font-display mt-1 text-4xl font-[500] tracking-tight" style={{ color: "var(--lime)" }}>${customer.volume.toLocaleString()}</div>
+          <div className="relative mt-1 font-mono text-[11px]" style={{ color: "rgba(247,245,240,0.6)" }}>{customer.count} transactions · KYC Tier {customer.kycTier}</div>
+        </div>
+        <div className="flex flex-col gap-2 pt-4" style={{ borderTop: "1px solid var(--line)" }}>
+          <PrimaryBtn onClick={() => push(`Generating report for ${customer.name}`, "success")} full><FileText size={14} /> Generate report</PrimaryBtn>
+          <SecondaryBtn onClick={() => push(`Opening transactions for ${customer.name}`, "info")} full>View transactions</SecondaryBtn>
+        </div>
+      </div>
+    </Drawer>
+  );
+}
+
+function BDCCompliance() {
+  const { push } = useToast();
+  return (
+    <div className="grid gap-6 lg:grid-cols-2">
+      <Card>
+        <h2 className="font-display text-xl font-semibold">CBN Reporting</h2>
+        <p className="mt-1 text-sm" style={{ color: "var(--muted)" }}>Weekly and monthly returns auto-generated.</p>
+        <div className="mt-5 space-y-2">
+          <ReportRow label="Weekly Return · Week 16" status="ready" onClick={() => push("Downloading Weekly Return · Week 16", "success")} />
+          <ReportRow label="Monthly FX Report · April" status="ready" onClick={() => push("Downloading Monthly FX Report", "success")} />
+          <ReportRow label="Suspicious Activity Report · Q1" status="filed" onClick={() => push("Opening filed SAR · Q1", "info")} />
+          <ReportRow label="Annual Compliance Attestation" status="draft" onClick={() => push("Opening draft attestation", "info")} />
+        </div>
+      </Card>
+      <Card>
+        <h2 className="font-display text-xl font-semibold">Sanctions Screening</h2>
+        <p className="mt-1 text-sm" style={{ color: "var(--muted)" }}>OFAC, UN, EU, and Nigerian watchlists.</p>
+        <div className="mt-5 grid grid-cols-2 gap-3">
+          <ComplianceStat label="Screened · 30d" value="312" />
+          <ComplianceStat label="Clear hits" value="312" emphasis />
+          <ComplianceStat label="Flagged for review" value="0" />
+          <ComplianceStat label="False positives" value="2" />
+        </div>
+        <button onClick={() => push("Running full screen refresh…", "info")} className="mt-5 w-full rounded-xl px-4 py-2.5 text-sm font-semibold transition" style={{ background: "var(--ink)", color: "var(--bone)" }}>Run full refresh</button>
+      </Card>
+    </div>
+  );
+}
+
+function BDCEvidence() {
+  const { push } = useToast();
+  const packs = [
+    { id: "EP-2026Q1-TA", partner: "Triple-A", quarter: "Q1 2026", transactions: 214, status: "ready", due: "Apr 30, 2026" },
+    { id: "EP-2026Q1-CD", partner: "Cedar Money", quarter: "Q1 2026", transactions: 98, status: "ready", due: "Apr 30, 2026" },
+    { id: "EP-2025Q4-TA", partner: "Triple-A", quarter: "Q4 2025", transactions: 187, status: "submitted", due: "Jan 31, 2026" },
+    { id: "EP-2025Q4-CD", partner: "Cedar Money", quarter: "Q4 2025", transactions: 64, status: "submitted", due: "Jan 31, 2026" },
+  ];
+  return (
+    <Card padding="none">
+      <div className="flex items-center justify-between p-4" style={{ borderBottom: "1px solid var(--line)" }}>
+        <div><h2 className="font-display text-xl font-semibold">Evidence Packs</h2><p className="text-xs mt-0.5" style={{ color: "var(--muted)" }}>Quarterly audit bundles for partner rail reviews</p></div>
+        <SecondaryBtn onClick={() => push("Generating new evidence pack…", "info")}><Plus size={14} /> New pack</SecondaryBtn>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead><tr style={{ background: "var(--bone)", borderBottom: "1px solid var(--line)" }}>{["Pack ID", "Partner", "Quarter", "Transactions", "Due", "Status", ""].map((h, i) => (<th key={i} className={`px-4 py-3 text-left font-mono text-[10px] font-semibold uppercase tracking-wider ${h === "Transactions" ? "text-right" : ""}`} style={{ color: "var(--muted)" }}>{h}</th>))}</tr></thead>
+          <tbody>
+            {packs.map((p) => (
+              <tr key={p.id} className="transition hover:bg-[color:var(--bone)]" style={{ borderBottom: "1px solid var(--line)" }}>
+                <td className="px-4 py-3.5 font-mono text-xs font-semibold">{p.id}</td>
+                <td className="px-4 py-3.5 font-medium">{p.partner}</td>
+                <td className="px-4 py-3.5">{p.quarter}</td>
+                <td className="px-4 py-3.5 text-right font-mono">{p.transactions}</td>
+                <td className="px-4 py-3.5 font-mono text-xs" style={{ color: "var(--muted)" }}>{p.due}</td>
+                <td className="px-4 py-3.5"><EvidenceStatus status={p.status} /></td>
+                <td className="px-4 py-3.5"><button onClick={() => push(`Downloading ${p.id}`, "success")} className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 font-mono text-[10px] font-semibold uppercase tracking-wider transition" style={{ border: "1px solid var(--line)" }}><Download size={11} /> Pack</button></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </Card>
+  );
+}
+
+function LPDashboard({ session }) {
+  const { push } = useToast();
+  const [tab, setTab] = useState("overview");
+  const matches = [
+    { id: "MT-8823", bdc: "Corporate Exchange BDC", amount: 42000, rate: "₦1,388", ngnReceivable: "₦58,296,000", status: "pending", date: "Today · 13:22" },
+    { id: "MT-8819", bdc: "Sevenlocks BDC", amount: 18000, rate: "₦1,388", ngnReceivable: "₦24,984,000", status: "settled", date: "Today · 11:02" },
+    { id: "MT-8815", bdc: "Bergpoint BDC", amount: 25000, rate: "₦1,386", ngnReceivable: "₦34,650,000", status: "settled", date: "Yesterday" },
+    { id: "MT-8811", bdc: "Dula Global BDC", amount: 60000, rate: "₦1,390", ngnReceivable: "₦83,400,000", status: "settled", date: "Apr 18" },
+  ];
+  return (
+    <div className="mx-auto max-w-7xl px-4 py-10 sm:px-6 lg:px-8 lg:py-14">
+      <div className="mb-6 flex items-start justify-between gap-4">
+        <div className="rise">
+          <div className="flex items-center gap-2">
+            <SectionEyebrow>Liquidity Provider portal</SectionEyebrow>
+            <span className="rounded-full px-2 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-wider" style={{ background: "var(--bone-2)", color: "var(--emerald)" }}>Phase 2</span>
+          </div>
+          <h1 className="font-display mt-3 text-3xl font-[450] tracking-tight sm:text-[40px]">{session.name || "K. Asante"}</h1>
+          <div className="mt-2 font-mono text-xs" style={{ color: "var(--muted)" }}>LP-2841 · TRC-20 verified · ★ 4.9</div>
+        </div>
+      </div>
+      <div className="mb-6 rounded-2xl p-5" style={{ background: "rgba(212,168,44,0.08)", border: "1px solid rgba(212,168,44,0.3)" }}>
+        <div className="flex items-start gap-3">
+          <Shield size={16} className="mt-0.5 flex-shrink-0" style={{ color: "var(--amber)" }} />
+          <p className="text-xs" style={{ color: "var(--ink)" }}><span className="font-semibold">XaePay is not a counterparty.</span> You sell USDT directly to BDC wallets. XaePay only matches and records — never custodies or intermediates funds.</p>
+        </div>
+      </div>
+      <div className="mb-6 flex gap-1 overflow-x-auto" style={{ borderBottom: "1px solid var(--line)" }}>
+        {[{ id: "overview", label: "Overview" }, { id: "matches", label: "Matches" }, { id: "inventory", label: "Inventory" }].map((t) => (
+          <button key={t.id} onClick={() => setTab(t.id)} className="relative whitespace-nowrap px-4 py-3 text-sm font-medium transition" style={{ color: tab === t.id ? "var(--ink)" : "var(--muted)" }}>
+            {t.label}{tab === t.id && <div className="absolute bottom-[-1px] left-0 right-0 h-[2px]" style={{ background: "var(--ink)" }} />}
+          </button>
+        ))}
+      </div>
+      {tab === "overview" && (
+        <div className="grid gap-6 lg:grid-cols-12">
+          <div className="lg:col-span-8 space-y-6">
+            <div className="grid gap-4 sm:grid-cols-3">
+              <StatCard label="USDT listed" value="180K" change="TRC-20 verified" />
+              <StatCard label="Matched · 30d" value="$145K" change="+$24K vs prior" positive />
+              <StatCard label="Naira received" value="₦223M" change="8 settlements" positive />
+            </div>
+            <Card>
+              <h2 className="font-display text-xl font-semibold">Recent matches</h2>
+              <p className="mt-1 text-sm" style={{ color: "var(--muted)" }}>BDCs sourcing USDT from your wallet.</p>
+              <div className="mt-5 space-y-2.5">
+                {matches.slice(0, 3).map((m) => (
+                  <div key={m.id} className="flex items-start justify-between gap-3 rounded-xl p-4" style={{ background: "var(--bone)", border: "1px solid var(--line)" }}>
+                    <div className="min-w-0 flex-1">
+                      <div className="text-sm font-medium">{m.bdc}</div>
+                      <div className="font-mono text-[10px] mt-0.5" style={{ color: "var(--muted)" }}>{m.id} · {m.date} · rate {m.rate}</div>
+                    </div>
+                    <div className="text-right flex-shrink-0">
+                      <div className="font-mono text-sm font-semibold">${m.amount.toLocaleString()}</div>
+                      <div className="font-mono text-[10px] mt-0.5" style={{ color: m.status === "settled" ? "var(--emerald)" : "#92400e" }}>{m.status}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <button onClick={() => setTab("matches")} className="mt-5 inline-flex items-center gap-1 text-sm font-semibold transition hover:gap-2" style={{ color: "var(--emerald)" }}>View all matches <ChevronRight size={14} /></button>
+            </Card>
+          </div>
+          <div className="space-y-4 lg:col-span-4">
+            <div className="relative overflow-hidden rounded-2xl p-6" style={{ background: "var(--ink)", color: "var(--bone)" }}>
+              <div className="absolute -right-16 -top-16 h-40 w-40 rounded-full opacity-30 blur-3xl" style={{ background: "var(--lime)" }} />
+              <div className="relative mb-3 flex items-center gap-2"><TrendingUp size={14} style={{ color: "var(--lime)" }} /><span className="font-mono text-[10px] uppercase tracking-wider" style={{ color: "rgba(247,245,240,0.7)" }}>Your rate</span></div>
+              <div className="relative font-display text-5xl font-[500] tracking-tight" style={{ color: "var(--lime)" }}>₦1,388</div>
+              <div className="relative mt-1.5 font-mono text-[10px]" style={{ color: "rgba(247,245,240,0.5)" }}>USDT/NGN · best among active LPs</div>
+              <button onClick={() => push("Opening rate editor…", "info")} className="relative mt-4 w-full rounded-lg px-3 py-2 font-mono text-[10px] font-semibold uppercase tracking-wider transition" style={{ background: "rgba(197,242,74,0.1)", color: "var(--lime)" }}>Adjust rate</button>
+            </div>
+            <Card>
+              <div className="mb-3 flex items-center gap-2"><div className="flex h-7 w-7 items-center justify-center rounded-lg" style={{ background: "var(--bone-2)", color: "var(--emerald)" }}><Wallet size={14} /></div><span className="text-sm font-semibold">Wallets</span></div>
+              <div className="space-y-2 text-xs">
+                <div className="flex items-center justify-between"><span className="font-mono" style={{ color: "var(--muted)" }}>TRC-20</span><span className="font-mono font-semibold">180,000 USDT</span></div>
+                <div className="flex items-center justify-between" style={{ color: "var(--muted)" }}><span className="font-mono">ERC-20</span><span className="font-mono">Not configured</span></div>
+                <div className="flex items-center justify-between" style={{ color: "var(--muted)" }}><span className="font-mono">BEP-20</span><span className="font-mono">Not configured</span></div>
+              </div>
+              <button onClick={() => push("Opening chain setup…", "info")} className="mt-4 w-full rounded-lg px-3 py-2 text-sm font-semibold transition" style={{ border: "1px solid var(--line)" }}>Add chain</button>
+            </Card>
+          </div>
+        </div>
+      )}
+      {tab === "matches" && (
+        <Card padding="none">
+          <div className="flex items-center justify-between p-4" style={{ borderBottom: "1px solid var(--line)" }}>
+            <div className="text-sm font-semibold">{matches.length} matches</div>
+            <SecondaryBtn onClick={() => push("Exporting matches…", "success")}><Download size={14} /> Export</SecondaryBtn>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead><tr style={{ background: "var(--bone)", borderBottom: "1px solid var(--line)" }}>{["Match ID", "BDC", "USDT", "Rate", "Naira receivable", "Status", "Date"].map((h, i) => (<th key={i} className={`px-4 py-3 text-left font-mono text-[10px] font-semibold uppercase tracking-wider ${["USDT", "Naira receivable"].includes(h) ? "text-right" : ""}`} style={{ color: "var(--muted)" }}>{h}</th>))}</tr></thead>
+              <tbody>
+                {matches.map((m) => (
+                  <tr key={m.id} className="transition hover:bg-[color:var(--bone)]" style={{ borderBottom: "1px solid var(--line)" }}>
+                    <td className="px-4 py-3.5 font-mono text-xs font-semibold">{m.id}</td>
+                    <td className="px-4 py-3.5 font-medium">{m.bdc}</td>
+                    <td className="px-4 py-3.5 text-right font-mono font-semibold">${m.amount.toLocaleString()}</td>
+                    <td className="px-4 py-3.5 font-mono text-xs" style={{ color: "var(--emerald)" }}>{m.rate}</td>
+                    <td className="px-4 py-3.5 text-right font-mono font-semibold">{m.ngnReceivable}</td>
+                    <td className="px-4 py-3.5"><StatusPill status={m.status === "settled" ? "completed" : "pending"} /></td>
+                    <td className="px-4 py-3.5 font-mono text-xs" style={{ color: "var(--muted)" }}>{m.date}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      )}
+      {tab === "inventory" && (
+        <div className="grid gap-6 lg:grid-cols-2">
+          <Card>
+            <h2 className="font-display text-xl font-semibold">USDT inventory</h2>
+            <p className="mt-1 text-sm" style={{ color: "var(--muted)" }}>Listed balance available for matching.</p>
+            <div className="mt-5 space-y-3">
+              <div className="flex items-center justify-between rounded-xl p-4" style={{ background: "var(--bone)", border: "1px solid var(--line)" }}>
+                <div><div className="font-mono text-[10px] uppercase tracking-wider" style={{ color: "var(--muted)" }}>TRC-20 · Tron</div><div className="font-mono text-sm font-semibold mt-0.5">T...x9Kq</div></div>
+                <div className="text-right"><div className="font-mono text-lg font-semibold">180,000</div><div className="font-mono text-[10px]" style={{ color: "var(--muted)" }}>USDT listed</div></div>
+              </div>
+            </div>
+            <button onClick={() => push("Opening inventory top-up…", "info")} className="mt-5 w-full rounded-xl px-4 py-2.5 text-sm font-semibold transition" style={{ background: "var(--ink)", color: "var(--bone)" }}>Top up inventory</button>
+          </Card>
+          <Card>
+            <h2 className="font-display text-xl font-semibold">Settlement bank</h2>
+            <p className="mt-1 text-sm" style={{ color: "var(--muted)" }}>Where naira settlements land.</p>
+            <div className="mt-5 rounded-xl p-4" style={{ background: "var(--bone)", border: "1px solid var(--line)" }}>
+              <div className="flex items-center justify-between">
+                <div><div className="text-sm font-semibold">GTBank</div><div className="font-mono text-[10px] mt-0.5" style={{ color: "var(--muted)" }}>•••• 4821</div></div>
+                <CheckCircle2 size={16} style={{ color: "var(--emerald)" }} />
+              </div>
+            </div>
+            <button onClick={() => push("Opening bank settings…", "info")} className="mt-5 w-full rounded-xl px-4 py-2.5 text-sm font-semibold transition" style={{ border: "1px solid var(--line)" }}>Change bank</button>
+          </Card>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function DiasporaOnboarding({ onComplete }) {
+  const [step, setStep] = useState(1);
+  const [data, setData] = useState({ name: "", email: "", phone: "", country: "United States", currency: "USD", idType: "Passport", idNumber: "", idVerified: false, address: "", addressVerified: false, sofSigned: false, preferredRail: "auto" });
+  const { push } = useToast();
+  const [verifying, setVerifying] = useState(false);
+  const verifyID = () => {
+    if (!data.idNumber) return;
+    setVerifying(true);
+    setTimeout(() => { setVerifying(false); setData({ ...data, idVerified: true, name: data.name || "Chioma Nwosu" }); push("ID verified · sanctions screening clear", "success"); }, 1500);
+  };
+  return (
+    <div className="rise">
+      <SectionEyebrow>Diaspora sender onboarding</SectionEyebrow>
+      <h1 className="font-display mt-3 text-3xl font-[450] tracking-tight sm:text-4xl">Send to Nigeria and Africa.</h1>
+      <p className="mt-2 text-sm" style={{ color: "var(--muted)" }}>Five steps. Pay vendors, family, school fees, property, medical — any Nigerian or African account. Rails licensed in your country.</p>
+      <div className="mt-6 rounded-xl p-4" style={{ background: "rgba(15,95,63,0.06)", border: "1px solid rgba(15,95,63,0.2)" }}>
+        <div className="flex items-start gap-2">
+          <Shield size={14} className="mt-0.5 flex-shrink-0" style={{ color: "var(--emerald)" }} />
+          <p className="text-xs" style={{ color: "var(--ink)" }}><span className="font-semibold">Licensed rails.</span> Triple-A (MAS Singapore) handles USD, GBP, EUR, SGD. Cedar Money handles US-to-Nigeria stablecoin. XaePay never holds your money.</p>
+        </div>
+      </div>
+      <div className="mt-8"><OnboardingStepper step={step} steps={["You", "ID verify", "Address", "Source", "Done"]} tiers={["T0", "T1", "T2", "T3", ""]} /></div>
+      <div className="mt-6">
+        {step === 1 && (
+          <Card>
+            <h2 className="font-display text-xl font-semibold">Tell us about you</h2>
+            <p className="mt-1 text-sm" style={{ color: "var(--muted)" }}>Your identity for sending-country AML compliance.</p>
+            <div className="mt-6 grid gap-4 sm:grid-cols-2">
+              <Field label="Full name (as on ID)" full><Input value={data.name} onChange={(e) => setData({ ...data, name: e.target.value })} placeholder="Chioma Nwosu" /></Field>
+              <Field label="Email"><Input type="email" value={data.email} onChange={(e) => setData({ ...data, email: e.target.value })} placeholder="you@example.com" /></Field>
+              <Field label="Phone (WhatsApp)"><Input value={data.phone} onChange={(e) => setData({ ...data, phone: e.target.value })} placeholder="+1 415 123 4567" /></Field>
+              <Field label="Country of residence"><Select value={data.country} onChange={(e) => setData({ ...data, country: e.target.value, currency: e.target.value === "United Kingdom" ? "GBP" : e.target.value === "Germany" || e.target.value === "France" ? "EUR" : e.target.value === "Canada" ? "CAD" : "USD" })}>
+                <option>United States</option><option>United Kingdom</option><option>Canada</option><option>Germany</option><option>France</option><option>UAE</option><option>Australia</option><option>Other</option>
+              </Select></Field>
+              <Field label="Sending currency"><Select value={data.currency} onChange={(e) => setData({ ...data, currency: e.target.value })}>
+                <option>USD</option><option>GBP</option><option>EUR</option><option>CAD</option><option>AUD</option>
+              </Select></Field>
+            </div>
+            <TierUnlockNote tier={1} description="account created, you can send up to $5,000" />
+            <div className="mt-6 flex justify-end"><PrimaryBtn onClick={() => setStep(2)} disabled={!data.name || !data.email}>Continue <ArrowRight size={14} /></PrimaryBtn></div>
+          </Card>
+        )}
+        {step === 2 && (
+          <Card>
+            <h2 className="font-display text-xl font-semibold">ID verification</h2>
+            <p className="mt-1 text-sm" style={{ color: "var(--muted)" }}>Document and selfie — required by the sending-country rail.</p>
+            <div className="mt-6 grid gap-4 sm:grid-cols-2">
+              <Field label="ID type"><Select value={data.idType} onChange={(e) => setData({ ...data, idType: e.target.value })}>
+                <option>Passport</option><option>Driver's License</option><option>National ID</option>
+              </Select></Field>
+              <Field label="ID number"><Input value={data.idNumber} onChange={(e) => setData({ ...data, idNumber: e.target.value })} placeholder="P12345678" /></Field>
+            </div>
+            <div className="mt-4">
+              <button onClick={verifyID} disabled={verifying || !data.idNumber} className="inline-flex items-center justify-center gap-2 rounded-xl px-5 py-3 text-sm font-semibold transition disabled:opacity-50" style={{ background: "var(--ink)", color: "var(--bone)" }}>
+                {verifying ? <><Loader2 size={14} className="spin" /> Verifying via rail partner</> : <><Search size={14} /> Verify ID + run sanctions screen</>}
+              </button>
+            </div>
+            {data.idVerified && (
+              <div className="mt-5 rise rounded-xl p-5" style={{ background: "var(--ink)", color: "var(--bone)" }}>
+                <div className="flex items-start gap-3">
+                  <div className="mt-0.5 flex h-6 w-6 items-center justify-center rounded-full" style={{ background: "var(--lime)" }}><CheckCircle2 size={14} strokeWidth={2.5} style={{ color: "var(--ink)" }} /></div>
+                  <div className="flex-1">
+                    <div className="font-mono text-[10px] uppercase tracking-wider" style={{ color: "rgba(247,245,240,0.6)" }}>Identity verified · sanctions clear</div>
+                    <div className="font-display mt-1 text-lg font-semibold">{data.name}</div>
+                    <div className="mt-2 grid gap-2 text-xs sm:grid-cols-3">
+                      <div><span style={{ color: "rgba(247,245,240,0.5)" }}>ID:</span> {data.idType}</div>
+                      <div><span style={{ color: "rgba(247,245,240,0.5)" }}>Country:</span> {data.country}</div>
+                      <div><span style={{ color: "rgba(247,245,240,0.5)" }}>Rail partner:</span> Triple-A</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+            <UploadRow label="Selfie with ID" sublabel="WhatsApp upload available · or browse files" done={false} onClick={() => push("Send to +234 700 XAE PAY or upload here", "info")} />
+            <TierUnlockNote tier={2} description="ID verified. $5K – $50K corridor unlocked." />
+            <div className="mt-6 flex justify-between"><SecondaryBtn onClick={() => setStep(1)}>Back</SecondaryBtn><PrimaryBtn onClick={() => setStep(3)} disabled={!data.idVerified}>Continue <ArrowRight size={14} /></PrimaryBtn></div>
+          </Card>
+        )}
+        {step === 3 && (
+          <Card>
+            <h2 className="font-display text-xl font-semibold">Address verification</h2>
+            <p className="mt-1 text-sm" style={{ color: "var(--muted)" }}>Utility bill, bank statement, or tenancy agreement (within 90 days).</p>
+            <div className="mt-6 space-y-4">
+              <Field label="Residential address" full><Input value={data.address} onChange={(e) => setData({ ...data, address: e.target.value })} placeholder="123 Main St, San Francisco, CA 94103" /></Field>
+              <UploadRow label="Proof of address document" sublabel="PDF or image · WhatsApp upload available" done={data.addressVerified} onClick={() => { setData({ ...data, addressVerified: true }); push("Proof of address accepted", "success"); }} />
+            </div>
+            <div className="mt-6 flex justify-between"><SecondaryBtn onClick={() => setStep(2)}>Back</SecondaryBtn><PrimaryBtn onClick={() => setStep(4)} disabled={!data.address || !data.addressVerified}>Continue <ArrowRight size={14} /></PrimaryBtn></div>
+          </Card>
+        )}
+        {step === 4 && (
+          <Card>
+            <h2 className="font-display text-xl font-semibold">Source of funds</h2>
+            <p className="mt-1 text-sm" style={{ color: "var(--muted)" }}>Required above $10K aggregate or for higher-tier sending.</p>
+            <div className="mt-6 space-y-2">
+              <UploadRow label="Source of funds declaration" sublabel="One-page — salary, savings, business income, investment proceeds" done={data.sofSigned} onClick={() => { setData({ ...data, sofSigned: true }); push("Source of funds signed", "success"); }} />
+            </div>
+            <div className="mt-6 rounded-xl p-4" style={{ background: "var(--bone)", border: "1px solid var(--line)" }}>
+              <Label>Preferred rail (optional)</Label>
+              <div className="grid gap-2 sm:grid-cols-3">
+                <RoleBtn active={data.preferredRail === "auto"} onClick={() => setData({ ...data, preferredRail: "auto" })}>Auto-route</RoleBtn>
+                <RoleBtn active={data.preferredRail === "triple-a"} onClick={() => setData({ ...data, preferredRail: "triple-a" })}>Triple-A fiat</RoleBtn>
+                <RoleBtn active={data.preferredRail === "cedar"} onClick={() => setData({ ...data, preferredRail: "cedar" })}>Cedar stablecoin</RoleBtn>
+              </div>
+              <p className="mt-2 font-mono text-[10px] uppercase tracking-wider" style={{ color: "var(--muted)" }}>Auto picks cheapest per-transaction and discloses choice</p>
+            </div>
+            <TierUnlockNote tier={3} description="full diaspora tier · unlimited monthly volume, all corridors" />
+            <div className="mt-6 flex justify-between"><SecondaryBtn onClick={() => setStep(3)}>Back</SecondaryBtn><PrimaryBtn onClick={() => setStep(5)} disabled={!data.sofSigned}>Finish <Sparkles size={14} /></PrimaryBtn></div>
+          </Card>
+        )}
+        {step === 5 && (
+          <div className="rounded-2xl p-8 relative overflow-hidden" style={{ background: "var(--ink)", color: "var(--bone)" }}>
+            <div className="absolute -right-20 -top-20 h-56 w-56 rounded-full opacity-40 blur-3xl" style={{ background: "radial-gradient(circle, var(--lime), transparent)" }} />
+            <div className="relative">
+              <div className="flex h-12 w-12 items-center justify-center rounded-full" style={{ background: "var(--lime)" }}><CheckCircle2 size={24} strokeWidth={2.5} style={{ color: "var(--ink)" }} /></div>
+              <h2 className="font-display mt-5 text-[28px] font-[450] tracking-tight">You're set up.</h2>
+              <p className="mt-2 text-sm" style={{ color: "rgba(247,245,240,0.7)" }}>Send {data.currency} to any Nigerian or African account. Tier 3 unlocked — no monthly limit.</p>
+              <button onClick={() => onComplete({ type: "diaspora", tier: 3, name: data.name, company: null, country: data.country, currency: data.currency })} className="mt-7 inline-flex items-center justify-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold transition glow-lime" style={{ background: "var(--lime)", color: "var(--ink)" }}>Send your first payment <ArrowRight size={14} /></button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function DiasporaApp({ session }) {
+  const [step, setStep] = useState(1);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const currency = session.currency || "USD";
+  const [formData, setFormData] = useState({
+    amount: "2500", sendCurrency: currency, recipientType: "vendor",
+    recipientName: "Lagos Build & Supply Ltd", recipientBank: "GTBank",
+    recipientAccount: "0123456789", recipientCountry: "Nigeria",
+    purpose: "Construction materials · Q2", documentUploaded: false, rail: "auto",
+  });
+  return (
+    <>
+    <div className="mx-auto max-w-5xl px-4 py-10 sm:px-6 lg:px-8 lg:py-14">
+      <div className="mb-8 flex items-start justify-between gap-4">
+        <div className="rise">
+          <SectionEyebrow>Diaspora sender portal</SectionEyebrow>
+          <h1 className="font-display mt-3 text-3xl font-[450] tracking-tight sm:text-[40px]">Send to Nigeria</h1>
+          <div className="mt-3 flex items-center gap-3">
+            <TierBadge tier={session.tier ?? 3} />
+            <span className="font-mono text-[10px] uppercase tracking-wider" style={{ color: "var(--muted)" }}>{session.country || "United States"} · {currency}</span>
+          </div>
+        </div>
+        <button onClick={() => setHistoryOpen(true)} className="rise inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium transition hover:bg-[color:var(--bone-2)]" style={{ background: "white", border: "1px solid var(--line)", animationDelay: "0.05s" }}><History size={14} /> History</button>
+      </div>
+      <div className="grid gap-6 lg:grid-cols-12">
+        <div className="lg:col-span-8">
+          <Stepper step={step} />
+          <div className="mt-6 rise" style={{ animationDelay: "0.1s" }}>
+            {step === 1 && <DiasporaStepIntake data={formData} setData={setFormData} onNext={() => setStep(2)} />}
+            {step === 2 && <DiasporaStepCompliance onNext={() => setStep(3)} onBack={() => setStep(1)} data={formData} />}
+            {step === 3 && <DiasporaStepReview data={formData} onNext={() => setStep(4)} onBack={() => setStep(2)} />}
+            {step === 4 && <DiasporaStepConfirmed data={formData} onNew={() => setStep(1)} onHistory={() => setHistoryOpen(true)} />}
+          </div>
+        </div>
+        <aside className="lg:col-span-4"><DiasporaSidebar /></aside>
+      </div>
+    </div>
+    <DiasporaHistoryDrawer open={historyOpen} onClose={() => setHistoryOpen(false)} currency={currency} />
+    </>
+  );
+}
+
+function DiasporaStepIntake({ data, setData, onNext }) {
+  const { push } = useToast();
+  const handleUpload = () => { setData({ ...data, documentUploaded: true }); push("Document uploaded · parsing recipient metadata…", "info"); };
+  const purposeLabel = {
+    vendor: "Business vendor / supplier", family: "Family support",
+    education: "Education / school fees", medical: "Medical",
+    property: "Property / rent", individual: "Other individual",
+  }[data.recipientType];
+  return (
+    <Card>
+      <h2 className="font-display text-xl font-semibold">Payment details</h2>
+      <p className="mt-1 text-sm" style={{ color: "var(--muted)" }}>Who you're paying and why. Each purpose has its own document bundle.</p>
+      <div className="mt-6">
+        <Label>Purpose of payment</Label>
+        <div className="grid gap-2 sm:grid-cols-3">
+          {[
+            { id: "vendor", label: "Vendor / supplier" },
+            { id: "family", label: "Family support" },
+            { id: "education", label: "Education" },
+            { id: "medical", label: "Medical" },
+            { id: "property", label: "Property / rent" },
+            { id: "individual", label: "Other individual" },
+          ].map((p) => (<RoleBtn key={p.id} active={data.recipientType === p.id} onClick={() => setData({ ...data, recipientType: p.id })}>{p.label}</RoleBtn>))}
+        </div>
+      </div>
+      <div className="mt-6 grid gap-4 sm:grid-cols-2">
+        <Field label={`Amount (${data.sendCurrency})`}>
+          <div className="focus-ring flex items-center rounded-xl transition" style={{ background: "white", border: "1px solid var(--line)" }}>
+            <span className="pl-3.5 text-sm font-mono" style={{ color: "var(--muted)" }}>{data.sendCurrency === "USD" ? "$" : data.sendCurrency === "GBP" ? "£" : data.sendCurrency === "EUR" ? "€" : data.sendCurrency}</span>
+            <input type="text" value={data.amount} onChange={(e) => setData({ ...data, amount: e.target.value })} className="w-full bg-transparent px-2 py-3 text-sm outline-none font-mono" />
+          </div>
+        </Field>
+        <Field label="Recipient country"><Select value={data.recipientCountry} onChange={(e) => setData({ ...data, recipientCountry: e.target.value })}>
+          <option>Nigeria</option><option>Ghana</option><option>Kenya</option><option>South Africa</option><option>Senegal</option><option>Côte d'Ivoire</option>
+        </Select></Field>
+        <Field label="Recipient name" full><Input value={data.recipientName} onChange={(e) => setData({ ...data, recipientName: e.target.value })} placeholder={data.recipientType === "vendor" ? "Lagos Build & Supply Ltd" : "Recipient full name"} /></Field>
+        <Field label="Recipient bank"><Select value={data.recipientBank} onChange={(e) => setData({ ...data, recipientBank: e.target.value })}>
+          <option>GTBank</option><option>Access Bank</option><option>Zenith Bank</option><option>UBA</option><option>First Bank</option><option>Kuda</option><option>Opay</option>
+        </Select></Field>
+        <Field label="Account number"><Input value={data.recipientAccount} onChange={(e) => setData({ ...data, recipientAccount: e.target.value })} /></Field>
+        <Field label="Payment memo" full><Input value={data.purpose} onChange={(e) => setData({ ...data, purpose: e.target.value })} placeholder={purposeLabel} /></Field>
+      </div>
+      <div className="mt-6">
+        <Label>Rail preference</Label>
+        <div className="grid gap-2 sm:grid-cols-2">
+          <RoleBtn active={data.rail === "auto"} onClick={() => setData({ ...data, rail: "auto" })}>Auto-route (recommended)</RoleBtn>
+          <RoleBtn active={data.rail === "cedar"} onClick={() => setData({ ...data, rail: "cedar" })}>Force Cedar stablecoin</RoleBtn>
+        </div>
+        <p className="mt-2 font-mono text-[10px] uppercase tracking-wider" style={{ color: "var(--muted)" }}>{data.rail === "auto" ? "Triple-A for larger, Cedar stablecoin for sub-$10K" : "Override: Cedar-only routing"}</p>
+      </div>
+      <div className="mt-6">
+        <Label>{data.recipientType === "vendor" ? "Invoice or purchase order" : data.recipientType === "education" ? "School letter or invoice" : data.recipientType === "property" ? "Lease or purchase agreement" : data.recipientType === "medical" ? "Medical invoice" : "Supporting document (optional)"}</Label>
+        <button type="button" onClick={handleUpload} className="w-full rounded-xl p-7 text-center transition" style={data.documentUploaded ? { background: "var(--bone-2)", border: "1.5px dashed var(--emerald)" } : { background: "white", border: "1.5px dashed var(--line)" }}>
+          {data.documentUploaded ? (<><CheckCircle2 size={22} className="mx-auto" style={{ color: "var(--emerald)" }} strokeWidth={2} /><p className="mt-2 font-mono text-sm font-medium" style={{ color: "var(--emerald)" }}>document_{data.recipientType}_0419.pdf</p><p className="mt-1 text-xs" style={{ color: "var(--muted)" }}>Click to replace</p></>) : (<><Upload size={22} className="mx-auto" style={{ color: "var(--muted)" }} strokeWidth={1.75} /><p className="mt-2.5 text-sm" style={{ color: "var(--ink)" }}>Drop PDF or image, or <span className="font-medium underline" style={{ color: "var(--emerald)" }}>browse files</span></p><p className="mt-1 text-xs" style={{ color: "var(--muted)" }}>Or send via WhatsApp to +234 700 XAE PAY</p></>)}
+        </button>
+      </div>
+      <div className="mt-6 flex justify-end"><PrimaryBtn onClick={onNext}>Run compliance checks <ArrowRight size={14} /></PrimaryBtn></div>
+    </Card>
+  );
+}
+
+function DiasporaStepCompliance({ onNext, onBack, data }) {
+  const checks = [
+    { label: "Sender identity & sanctions", status: "pass", detail: "Triple-A AML clear · OFAC, UN, FinCEN" },
+    { label: "Recipient account match", status: "pass", detail: `${data.recipientBank} returned name match for "${data.recipientName}"` },
+    { label: "Purpose documentation", status: "pass", detail: `${data.recipientType === "vendor" ? "Vendor invoice" : "Supporting document"} received and parsed` },
+    { label: "Amount threshold check", status: "pass", detail: `${data.sendCurrency} ${data.amount} within Tier 3 limits` },
+    { label: "Recipient-side AML", status: "pass", detail: "Nigerian bank sanctions screen clear" },
+    { label: "Rail availability", status: "pass", detail: "Cedar stablecoin selected · 23 bps below Triple-A fiat" },
+    { label: "CBN inbound disclosure", status: "pass", detail: "Inbound remittance category assigned · no Form M required" },
+  ];
+  return (
+    <Card>
+      <div className="flex items-start justify-between gap-4">
+        <div><h2 className="font-display text-xl font-semibold">Compliance checks</h2><p className="mt-1 text-sm" style={{ color: "var(--muted)" }}>Seven agents, across sending and receiving sides.</p></div>
+        <div className="rounded-full px-3 py-1 font-mono text-[10px] font-semibold uppercase tracking-wider" style={{ background: "var(--emerald)", color: "var(--lime)" }}>all clean</div>
+      </div>
+      <div className="mt-6 space-y-2">
+        {checks.map((c, i) => (
+          <div key={i} className="flex items-start gap-3 rounded-xl p-4 rise" style={{ background: "var(--bone)", border: "1px solid var(--line)", animationDelay: `${i * 0.06}s` }}>
+            <div className="mt-0.5 flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full" style={{ background: "var(--emerald)", color: "var(--lime)" }}><CheckCircle2 size={12} strokeWidth={2.5} /></div>
+            <div className="flex-1 min-w-0"><div className="text-sm font-medium">{c.label}</div><div className="text-xs" style={{ color: "var(--muted)" }}>{c.detail}</div></div>
+          </div>
+        ))}
+      </div>
+      <div className="mt-6 flex flex-col justify-between gap-3 sm:flex-row"><SecondaryBtn onClick={onBack}>Back</SecondaryBtn><PrimaryBtn onClick={onNext}>Review payment <ArrowRight size={14} /></PrimaryBtn></div>
+    </Card>
+  );
+}
+
+function DiasporaStepReview({ data, onNext, onBack }) {
+  const amount = parseFloat(data.amount || 0);
+  const xaeFee = Math.max(4, amount * 0.005);
+  const fxSpread = amount * 0.006;
+  const total = amount + xaeFee + fxSpread;
+  const rateMap = { USD: 1395, GBP: 1852, EUR: 1602, CAD: 996, AUD: 972 };
+  const rate = rateMap[data.sendCurrency] || 1395;
+  const ngnOut = Math.round(amount * rate).toLocaleString();
+  const railName = data.rail === "cedar" ? "Cedar Money stablecoin" : "Cedar Money stablecoin (auto-selected)";
+  const symbol = data.sendCurrency === "USD" ? "$" : data.sendCurrency === "GBP" ? "£" : data.sendCurrency === "EUR" ? "€" : `${data.sendCurrency} `;
+  return (
+    <Card>
+      <h2 className="font-display text-xl font-semibold">Review & confirm</h2>
+      <p className="mt-1 text-sm" style={{ color: "var(--muted)" }}>Rate locked 4 minutes. Recipient gets the exact naira amount shown.</p>
+      <div className="mt-6 rounded-xl p-4" style={{ background: "var(--ink)", color: "var(--bone)" }}>
+        <div className="flex items-start gap-3"><Layers size={16} className="mt-0.5 flex-shrink-0" style={{ color: "var(--lime)" }} />
+          <div className="flex-1 text-xs">
+            <div className="font-mono uppercase tracking-wider" style={{ color: "rgba(247,245,240,0.6)" }}>Selected rail</div>
+            <div className="font-display text-base font-semibold mt-0.5">{railName}</div>
+            <p className="mt-1 leading-relaxed" style={{ color: "rgba(247,245,240,0.65)" }}>{data.sendCurrency} → USDT on Cedar → BDC (Corporate Exchange) → ₦ credited directly to {data.recipientName} at {data.recipientBank}.</p>
+          </div>
+        </div>
+      </div>
+      <dl className="mt-4 overflow-hidden rounded-xl" style={{ background: "var(--bone)", border: "1px solid var(--line)" }}>
+        <Row label="Recipient" value={data.recipientName} sub={`${data.recipientBank} · ${data.recipientAccount}`} />
+        <Row label="Purpose" value={data.purpose} sub={data.recipientType} />
+        <Row label="You send" value={`${symbol}${amount.toLocaleString()}`} sub={data.sendCurrency} mono />
+        <Row label="FX spread" value={`${symbol}${fxSpread.toFixed(2)}`} sub="0.60% · disclosed" mono />
+        <Row label="XaePay fee" value={`${symbol}${xaeFee.toFixed(2)}`} sub="0.50% · software & compliance" mono />
+        <Row label="Rate" value={`1 ${data.sendCurrency} = ₦${rate.toLocaleString()}`} sub="Locked 4 min" mono />
+        <div className="flex items-center justify-between p-4" style={{ background: "var(--ink)", color: "var(--bone)" }}>
+          <div className="text-sm font-medium">Recipient receives</div>
+          <div className="font-display text-xl font-semibold" style={{ color: "var(--lime)" }}>₦{ngnOut}</div>
+        </div>
+        <div className="flex items-center justify-between p-4" style={{ background: "var(--bone-2)" }}>
+          <div className="text-sm font-medium">Total you pay</div>
+          <div className="font-display text-base font-semibold">{symbol}{total.toFixed(2)}</div>
+        </div>
+      </dl>
+      <div className="mt-6 flex flex-col justify-between gap-3 sm:flex-row"><SecondaryBtn onClick={onBack}>Back</SecondaryBtn><PrimaryBtn onClick={onNext}>Execute payment <Send size={14} /></PrimaryBtn></div>
+    </Card>
+  );
+}
+
+function DiasporaStepConfirmed({ data, onNew, onHistory }) {
+  const { push } = useToast();
+  const download = (name) => push(`${name} · download started`, "success");
+  const openWhatsApp = () => { push("Opening WhatsApp…", "info"); window.open(WHATSAPP_URL_US, "_blank"); };
+  const amount = parseFloat(data.amount || 0);
+  const rateMap = { USD: 1395, GBP: 1852, EUR: 1602, CAD: 996, AUD: 972 };
+  const rate = rateMap[data.sendCurrency] || 1395;
+  const ngnOut = Math.round(amount * rate).toLocaleString();
+  const docs = [
+    { icon: Receipt, title: "Payment receipt", detail: "Sender-side confirmation" },
+    { icon: FileText, title: "Purpose documentation", detail: `${data.recipientType} · supporting docs` },
+    { icon: Send, title: "Cedar settlement reference", detail: "Stablecoin leg · T+0" },
+    { icon: Package, title: "Recipient advice", detail: `${data.recipientBank} credit notification` },
+  ];
+  return (
+    <div className="relative overflow-hidden rounded-2xl p-8" style={{ background: "var(--ink)", color: "var(--bone)" }}>
+      <div className="absolute -right-20 -top-20 h-56 w-56 rounded-full opacity-40 blur-3xl" style={{ background: "radial-gradient(circle, var(--lime), transparent)" }} />
+      <div className="relative flex h-12 w-12 items-center justify-center rounded-full" style={{ background: "var(--lime)" }}><CheckCircle2 size={24} strokeWidth={2.5} style={{ color: "var(--ink)" }} /></div>
+      <h2 className="font-display relative mt-5 text-[28px] font-[450] tracking-tight">Payment sent.</h2>
+      <p className="relative mt-2 text-sm" style={{ color: "rgba(247,245,240,0.7)" }}>₦{ngnOut} credited to {data.recipientName} at {data.recipientBank}. Typically arrives within 5 minutes.</p>
+      <div className="relative mt-6 rounded-xl p-4" style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.08)" }}>
+        <div className="font-mono text-[10px] uppercase tracking-wider" style={{ color: "rgba(247,245,240,0.6)" }}>Audit trail</div>
+        <div className="mt-2 space-y-1.5 text-xs font-mono" style={{ color: "rgba(247,245,240,0.85)" }}>
+          <div>1. You → Triple-A ← {data.sendCurrency} {amount.toLocaleString()}</div>
+          <div>2. Triple-A → Cedar Money ← {amount.toLocaleString()} USDT</div>
+          <div>3. Cedar Money → BDC ← ₦{ngnOut} equivalent</div>
+          <div>4. BDC → {data.recipientBank} → {data.recipientName} (₦{ngnOut})</div>
+        </div>
+      </div>
+      <div className="relative mt-7 grid gap-3 sm:grid-cols-2">
+        {docs.map((d, i) => (
+          <button key={i} onClick={() => download(d.title)} className="flex items-start gap-3 rounded-xl p-4 text-left transition hover:bg-white/5" style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)" }}>
+            <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg" style={{ background: "rgba(197,242,74,0.1)", color: "var(--lime)" }}><d.icon size={15} /></div>
+            <div className="min-w-0"><div className="text-sm font-medium" style={{ color: "var(--bone)" }}>{d.title}</div><div className="font-mono text-[10px] mt-0.5" style={{ color: "rgba(247,245,240,0.5)" }}>{d.detail}</div></div>
+          </button>
+        ))}
+      </div>
+      <div className="relative mt-7 flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+        <button onClick={() => download("Payment pack (ZIP)")} className="inline-flex items-center justify-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold transition glow-lime" style={{ background: "var(--lime)", color: "var(--ink)" }}><Download size={14} /> Download pack</button>
+        <button onClick={onHistory} className="rounded-xl px-5 py-2.5 text-sm font-semibold transition hover:bg-white/5" style={{ border: "1px solid rgba(255,255,255,0.15)" }}>View history</button>
+        <button onClick={onNew} className="rounded-xl px-5 py-2.5 text-sm font-semibold transition hover:bg-white/5" style={{ border: "1px solid rgba(255,255,255,0.15)" }}>New payment</button>
+        <button onClick={openWhatsApp} className="inline-flex items-center justify-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold transition hover:bg-white/5" style={{ border: "1px solid rgba(255,255,255,0.15)" }}><MessageCircle size={14} /> Message support</button>
+      </div>
+    </div>
+  );
+}
+
+function DiasporaSidebar() {
+  const { push } = useToast();
+  const openWhatsApp = () => { push("Opening WhatsApp…", "info"); window.open(WHATSAPP_URL_US, "_blank"); };
+  return (
+    <div className="space-y-4 rise" style={{ animationDelay: "0.15s" }}>
+      <Card>
+        <div className="mb-3 flex items-center gap-2"><div className="flex h-7 w-7 items-center justify-center rounded-lg" style={{ background: "var(--bone-2)", color: "var(--emerald)" }}><MessageCircle size={14} /></div><span className="text-sm font-semibold">Send via WhatsApp</span></div>
+        <p className="text-sm leading-relaxed" style={{ color: "var(--muted)" }}>Send the recipient details to +234 700 XAE PAY. We handle the rest.</p>
+        <button onClick={openWhatsApp} className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition hover:bg-[color:var(--bone-2)]" style={{ border: "1px solid var(--emerald)", color: "var(--emerald)" }}><ExternalLink size={14} /> Open WhatsApp</button>
+      </Card>
+      <Card>
+        <div className="mb-3 flex items-center gap-2"><div className="flex h-7 w-7 items-center justify-center rounded-lg" style={{ background: "var(--bone-2)", color: "var(--emerald)" }}><Shield size={14} /></div><span className="text-sm font-semibold">How this works</span></div>
+        <p className="text-sm leading-relaxed" style={{ color: "var(--muted)" }}>Triple-A holds your funds on the sending side under MAS license. Cedar Money bridges via stablecoin. A Nigerian BDC credits the recipient. Full paper trail, zero custody by XaePay.</p>
+      </Card>
+      <Card>
+        <div className="mb-3 flex items-center gap-2"><div className="flex h-7 w-7 items-center justify-center rounded-lg" style={{ background: "var(--bone-2)", color: "var(--emerald)" }}><TrendingUp size={14} /></div><span className="text-sm font-semibold">Today's rates</span></div>
+        <div className="space-y-1.5 text-sm font-mono">
+          <div className="flex items-center justify-between"><span style={{ color: "var(--muted)" }}>USD → NGN</span><span className="font-semibold">1,395</span></div>
+          <div className="flex items-center justify-between"><span style={{ color: "var(--muted)" }}>GBP → NGN</span><span className="font-semibold">1,852</span></div>
+          <div className="flex items-center justify-between"><span style={{ color: "var(--muted)" }}>EUR → NGN</span><span className="font-semibold">1,602</span></div>
+          <div className="flex items-center justify-between"><span style={{ color: "var(--muted)" }}>CAD → NGN</span><span className="font-semibold">996</span></div>
+        </div>
+      </Card>
+    </div>
+  );
+}
+
+function DiasporaHistoryDrawer({ open, onClose, currency }) {
+  const { push } = useToast();
+  const symbol = currency === "USD" ? "$" : currency === "GBP" ? "£" : currency === "EUR" ? "€" : `${currency} `;
+  const history = [
+    { id: "XD-4421", recipient: "Lagos Build & Supply Ltd", purpose: "Vendor", amount: 2500, ngn: "₦3,487,500", status: "Delivered", date: "Today · 09:44" },
+    { id: "XD-4398", recipient: "Adeola Nwosu (Mother)", purpose: "Family support", amount: 800, ngn: "₦1,116,000", status: "Delivered", date: "Apr 15 · 07:18" },
+    { id: "XD-4362", recipient: "Unilag Accountant Office", purpose: "Education", amount: 1400, ngn: "₦1,953,000", status: "Delivered", date: "Apr 02 · 14:07" },
+    { id: "XD-4321", recipient: "Victoria Garden Estates", purpose: "Property", amount: 12000, ngn: "₦16,740,000", status: "Delivered", date: "Mar 24 · 11:32" },
+    { id: "XD-4288", recipient: "St. Luke's Medical Centre", purpose: "Medical", amount: 3200, ngn: "₦4,464,000", status: "Delivered", date: "Mar 18 · 15:21" },
+  ];
+  return (
+    <Drawer open={open} onClose={onClose} title="Send history">
+      <div className="space-y-2">
+        {history.map((h) => (
+          <button key={h.id} onClick={() => push(`Opening ${h.id} details`, "info")} className="w-full rounded-xl p-4 text-left transition hover:border-[color:var(--emerald)]" style={{ background: "white", border: "1px solid var(--line)" }}>
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0"><div className="text-sm font-medium truncate">{h.recipient}</div><div className="font-mono text-[10px] mt-0.5" style={{ color: "var(--muted)" }}>{h.date} · {h.id} · {h.purpose}</div></div>
+              <div className="text-right flex-shrink-0"><div className="font-mono text-sm font-semibold">{symbol}{h.amount.toLocaleString()}</div><div className="font-mono text-[10px] mt-0.5" style={{ color: "var(--emerald)" }}>{h.ngn}</div></div>
+            </div>
+          </button>
+        ))}
+      </div>
+    </Drawer>
+  );
+}
+
+function SectionEyebrow({ children }) {
+  return <div className="font-mono text-[10px] font-medium uppercase tracking-[0.14em]" style={{ color: "var(--emerald)" }}>{children}</div>;
+}
+
+function Card({ children, padding = "default" }) {
+  const p = padding === "none" ? "" : "p-6";
+  return <div className={`card-soft rounded-2xl bg-white ${p}`} style={{ border: "1px solid var(--line)" }}>{children}</div>;
+}
+
+function Label({ children }) {
+  return <label className="mb-1.5 block font-mono text-[10px] font-semibold uppercase tracking-wider" style={{ color: "var(--muted)" }}>{children}</label>;
+}
+
+function Input(props) {
+  return (
+    <div className="focus-ring flex items-center rounded-xl transition" style={{ background: "white", border: "1px solid var(--line)" }}>
+      <input {...props} className="w-full bg-transparent px-3.5 py-3 text-sm outline-none placeholder:text-stone-400" />
+    </div>
+  );
+}
+
+function Select({ children, small, ...props }) {
+  return (
+    <div className="focus-ring rounded-xl transition" style={{ background: "white", border: "1px solid var(--line)" }}>
+      <select {...props} className={`w-full bg-transparent text-sm outline-none ${small ? "px-3 py-2" : "px-3.5 py-3"}`}>{children}</select>
+    </div>
+  );
+}
+
+function Field({ label, children, full }) {
+  return <div className={full ? "sm:col-span-2" : ""}><Label>{label}</Label>{children}</div>;
+}
+
+function PrimaryBtn({ children, onClick, type = "button", full, disabled }) {
+  return <button type={type} onClick={onClick} disabled={disabled} className={`inline-flex items-center justify-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold transition disabled:opacity-40 disabled:cursor-not-allowed ${full ? "w-full" : ""}`} style={{ background: "var(--ink)", color: "var(--bone)" }}>{children}</button>;
+}
+
+function SecondaryBtn({ children, onClick, type = "button", full, disabled }) {
+  return <button type={type} onClick={onClick} disabled={disabled} className={`inline-flex items-center justify-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold transition disabled:opacity-40 ${full ? "w-full" : ""}`} style={{ background: "white", border: "1px solid var(--line)", color: "var(--ink)" }}>{children}</button>;
+}
+
+function RoleBtn({ children, active, onClick }) {
+  return <button type="button" onClick={onClick} className="rounded-xl px-3 py-2.5 text-sm font-medium transition" style={active ? { background: "var(--ink)", color: "var(--bone)", border: "1px solid var(--ink)" } : { background: "white", color: "var(--ink)", border: "1px solid var(--line)" }}>{children}</button>;
+}
+
+function Row({ label, value, sub, mono }) {
+  return (
+    <div className="flex items-start justify-between p-4" style={{ borderBottom: "1px solid var(--line)" }}>
+      <div className="min-w-0 flex-1">
+        <div className="font-mono text-[10px] uppercase tracking-wider" style={{ color: "var(--muted)" }}>{label}</div>
+        <div className={`mt-0.5 text-sm font-medium truncate ${mono ? "font-mono" : ""}`}>{value}</div>
+      </div>
+      {sub && <div className="ml-3 text-right flex-shrink-0"><div className="font-mono text-[10px]" style={{ color: "var(--muted)" }}>{sub}</div></div>}
+    </div>
+  );
+}
+
+function StatCard({ label, value, change, positive }) {
+  return (
+    <div className="card-soft rounded-2xl bg-white p-5" style={{ border: "1px solid var(--line)" }}>
+      <div className="font-mono text-[10px] uppercase tracking-wider" style={{ color: "var(--muted)" }}>{label}</div>
+      <div className="font-display mt-2 text-3xl font-[500] tracking-tight">{value}</div>
+      {change && <div className="mt-1.5 font-mono text-[10px]" style={{ color: positive ? "var(--emerald)" : "var(--muted)" }}>{change}</div>}
+    </div>
+  );
+}
+
+function PendingRow({ customer, supplier, amount, flag, onApprove }) {
+  return (
+    <div className="flex items-start justify-between gap-3 rounded-xl p-4" style={{ background: "var(--bone)", border: "1px solid var(--line)" }}>
+      <div className="min-w-0 flex-1">
+        <div className="text-sm font-medium">{customer}</div>
+        <div className="font-mono text-[10px] mt-0.5" style={{ color: "var(--muted)" }}>{supplier} · {flag}</div>
+      </div>
+      <div className="flex flex-col items-end gap-2 flex-shrink-0">
+        <div className="font-mono text-sm font-semibold">{amount}</div>
+        <button onClick={onApprove} className="rounded-lg px-3 py-1.5 font-mono text-[10px] font-semibold uppercase tracking-wider transition" style={{ background: "var(--ink)", color: "var(--lime)" }}>Approve</button>
+      </div>
+    </div>
+  );
+}
+
+function CorridorBar({ label, value, pct }) {
+  return (
+    <div>
+      <div className="mb-2 flex items-baseline justify-between">
+        <span className="text-sm font-medium">{label}</span>
+        <span className="font-mono text-xs font-semibold">{value}</span>
+      </div>
+      <div className="h-2 overflow-hidden rounded-full" style={{ background: "var(--bone-2)" }}>
+        <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, background: "linear-gradient(90deg, var(--emerald), var(--lime))" }} />
+      </div>
+    </div>
+  );
+}
+
+function RailStatus({ name, latency }) {
+  return (
+    <div className="flex items-center justify-between">
+      <div className="flex items-center gap-2">
+        <div className="relative h-1.5 w-1.5 rounded-full" style={{ background: "var(--emerald)" }}>
+          <div className="absolute inset-0 rounded-full pulse-dot" style={{ background: "var(--emerald)" }} />
+        </div>
+        <span className="text-xs">{name}</span>
+      </div>
+      <span className="font-mono text-[10px]" style={{ color: "var(--muted)" }}>{latency}</span>
+    </div>
+  );
+}
+
+function AlertRow({ severity, text, onClick }) {
+  const color = severity === "warn" ? "#92400e" : "var(--emerald)";
+  return (
+    <button onClick={onClick} className="flex w-full items-start gap-2 rounded-lg px-2 py-2 text-left transition hover:bg-[color:var(--bone)]">
+      <div className="mt-1 h-1.5 w-1.5 flex-shrink-0 rounded-full" style={{ background: color }} />
+      <span className="text-xs" style={{ color: "var(--ink)" }}>{text}</span>
+    </button>
+  );
+}
+
+function StatusPill({ status }) {
+  const styles = {
+    completed: { background: "var(--emerald)", color: "var(--lime)", label: "Completed" },
+    processing: { background: "#dbeafe", color: "#1e40af", label: "Processing" },
+    pending: { background: "#fef3c7", color: "#92400e", label: "Pending" },
+    disputed: { background: "#fee2e2", color: "#991b1b", label: "Disputed" },
+  }[status] || { background: "var(--bone-2)", color: "var(--muted)", label: status };
+  return <span className="rounded-full px-2 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-wider" style={{ background: styles.background, color: styles.color }}>{styles.label}</span>;
+}
+
+function ReportRow({ label, status, onClick }) {
+  const styles = {
+    ready: { background: "var(--emerald)", color: "var(--lime)", label: "Ready" },
+    filed: { background: "var(--bone-2)", color: "var(--muted)", label: "Filed" },
+    draft: { background: "#fef3c7", color: "#92400e", label: "Draft" },
+  }[status];
+  return (
+    <button onClick={onClick} className="flex w-full items-center justify-between rounded-xl p-3 text-left transition hover:bg-[color:var(--bone)]" style={{ border: "1px solid var(--line)" }}>
+      <span className="text-sm font-medium">{label}</span>
+      <span className="rounded-full px-2 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-wider" style={{ background: styles.background, color: styles.color }}>{styles.label}</span>
+    </button>
+  );
+}
+
+function ComplianceStat({ label, value, emphasis }) {
+  return (
+    <div className="rounded-xl p-3" style={{ background: "var(--bone)", border: "1px solid var(--line)" }}>
+      <div className="font-mono text-[9px] uppercase tracking-wider" style={{ color: "var(--muted)" }}>{label}</div>
+      <div className="font-display mt-1 text-2xl font-[500]" style={{ color: emphasis ? "var(--emerald)" : "var(--ink)" }}>{value}</div>
+    </div>
+  );
+}
+
+function EvidenceStatus({ status }) {
+  const styles = {
+    ready: { background: "var(--emerald)", color: "var(--lime)", label: "Ready" },
+    submitted: { background: "var(--bone-2)", color: "var(--muted)", label: "Submitted" },
+    draft: { background: "#fef3c7", color: "#92400e", label: "Draft" },
+  }[status];
+  return <span className="rounded-full px-2 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-wider" style={{ background: styles.background, color: styles.color }}>{styles.label}</span>;
+}
