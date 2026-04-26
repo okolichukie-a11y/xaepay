@@ -80,7 +80,7 @@ function ToastProvider({ children }) {
       <div className="pointer-events-none fixed bottom-5 right-5 z-[100] flex flex-col gap-2 font-ui">
         {toasts.map((t) => (
           <div key={t.id} className="pointer-events-auto flex max-w-sm items-start gap-2.5 rounded-xl border px-4 py-3 shadow-2xl"
-            style={{ animation: "rise 0.4s cubic-bezier(0.16, 1, 0.3, 1)",
+            style={{ animation: "rise 0.4s cubic-bezier(0.16, 1, 0.3, 1) both",
               background: t.tone === "success" ? "var(--ink)" : t.tone === "warn" ? "#fef3c7" : "var(--paper)",
               color: t.tone === "success" ? "var(--bone)" : "var(--ink)",
               borderColor: t.tone === "success" ? "var(--ink)" : t.tone === "warn" ? "#fcd34d" : "var(--line)",
@@ -107,7 +107,7 @@ function Modal({ open, onClose, title, children, size = "md" }) {
   return (
     <div className="fixed inset-0 z-[90] flex items-center justify-center p-4 font-ui fade-in">
       <div className="absolute inset-0 backdrop-blur-md" style={{ background: "rgba(10,11,13,0.45)" }} onClick={onClose} />
-      <div className={`relative w-full ${width} max-h-[90vh] overflow-hidden rounded-2xl bg-white shadow-2xl flex flex-col`} style={{ animation: "rise 0.45s cubic-bezier(0.16, 1, 0.3, 1)" }}>
+      <div className={`relative w-full ${width} max-h-[90vh] overflow-hidden rounded-2xl bg-white shadow-2xl flex flex-col`} style={{ animation: "rise 0.45s cubic-bezier(0.16, 1, 0.3, 1) both" }}>
         <div className="flex items-start justify-between px-6 py-5 flex-shrink-0" style={{ borderBottom: "1px solid var(--line)" }}>
           <h3 className="font-display text-xl font-semibold" style={{ color: "var(--ink)" }}>{title}</h3>
           <button onClick={onClose} className="text-stone-400 transition hover:text-stone-900"><X size={18} /></button>
@@ -123,7 +123,7 @@ function Drawer({ open, onClose, title, children }) {
   return (
     <div className="fixed inset-0 z-[90] flex font-ui fade-in">
       <div className="absolute inset-0 backdrop-blur-md" style={{ background: "rgba(10,11,13,0.45)" }} onClick={onClose} />
-      <div className="ml-auto flex h-full w-full max-w-md flex-col bg-white shadow-2xl sm:w-[480px]" style={{ animation: "rise 0.5s cubic-bezier(0.16, 1, 0.3, 1)" }}>
+      <div className="ml-auto flex h-full w-full max-w-md flex-col bg-white shadow-2xl sm:w-[480px]" style={{ animation: "rise 0.5s cubic-bezier(0.16, 1, 0.3, 1) both" }}>
         <div className="flex items-start justify-between px-6 py-5" style={{ borderBottom: "1px solid var(--line)" }}>
           <h3 className="font-display text-xl font-semibold" style={{ color: "var(--ink)" }}>{title}</h3>
           <button onClick={onClose} className="text-stone-400 transition hover:text-stone-900"><X size={18} /></button>
