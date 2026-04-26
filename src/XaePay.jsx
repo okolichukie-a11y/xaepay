@@ -287,8 +287,7 @@ function TopBar({ view, setView, mobileOpen, setMobileOpen, onSignIn, onRequestA
             <NavBtn active={view === "landing"} onLanding={onLanding} onClick={() => setView("landing")}>Overview</NavBtn>
             <NavBtn active={view === "customer"} onLanding={onLanding} onClick={() => setView("customer")}>For Businesses</NavBtn>
             <NavBtn active={view === "diaspora"} onLanding={onLanding} onClick={() => setView("diaspora")}>For Diaspora</NavBtn>
-            <NavBtn active={view === "bdc"} onLanding={onLanding} onClick={() => setView("bdc")}>For BDCs</NavBtn>
-            <NavBtn active={view === "lp"} onLanding={onLanding} onClick={() => setView("lp")}>For LPs <Phase2Pill onLanding={onLanding} /></NavBtn>
+            <NavBtn active={view === "bdc"} onLanding={onLanding} onClick={() => setView("bdc")}>For Exchange Operators</NavBtn>
           </nav>
           <div className="hidden items-center gap-2 md:flex">
             {session.type && (
@@ -309,8 +308,7 @@ function TopBar({ view, setView, mobileOpen, setMobileOpen, onSignIn, onRequestA
               <MobileNavBtn onLanding={onLanding} onClick={() => { setView("landing"); setMobileOpen(false); }}>Overview</MobileNavBtn>
               <MobileNavBtn onLanding={onLanding} onClick={() => { setView("customer"); setMobileOpen(false); }}>For Businesses</MobileNavBtn>
               <MobileNavBtn onLanding={onLanding} onClick={() => { setView("diaspora"); setMobileOpen(false); }}>For Diaspora</MobileNavBtn>
-              <MobileNavBtn onLanding={onLanding} onClick={() => { setView("bdc"); setMobileOpen(false); }}>For BDCs</MobileNavBtn>
-              <MobileNavBtn onLanding={onLanding} onClick={() => { setView("lp"); setMobileOpen(false); }}>For LPs · Phase 2</MobileNavBtn>
+              <MobileNavBtn onLanding={onLanding} onClick={() => { setView("bdc"); setMobileOpen(false); }}>For Exchange Operators</MobileNavBtn>
               <div className="mt-3 flex flex-col gap-2 pt-3" style={{ borderTop: `1px solid ${onLanding ? "rgba(255,255,255,0.06)" : "var(--line)"}` }}>
                 <a href={WHATSAPP_URL} target="_blank" rel="noreferrer" className="inline-flex items-center justify-center gap-2 w-full rounded-lg px-4 py-2.5 text-sm font-medium" style={{ border: `1px solid ${onLanding ? "rgba(255,255,255,0.1)" : "var(--line)"}`, color: onLanding ? "var(--bone)" : "var(--ink)" }}><MessageCircle size={14} /> Chat on WhatsApp</a>
                 <button onClick={() => { onRequestAccess(); setMobileOpen(false); }} className="w-full rounded-lg px-4 py-2.5 text-sm font-medium" style={{ border: `1px solid ${onLanding ? "rgba(255,255,255,0.1)" : "var(--line)"}`, color: onLanding ? "var(--bone)" : "var(--ink)" }}>See preview</button>
