@@ -286,7 +286,7 @@ function TopBar({ view, setView, mobileOpen, setMobileOpen, onSignIn, onRequestA
           <nav className="hidden items-center gap-0.5 md:flex">
             <NavBtn active={view === "landing"} onLanding={onLanding} onClick={() => setView("landing")}>Overview</NavBtn>
             <NavBtn active={view === "customer"} onLanding={onLanding} onClick={() => setView("customer")}>For Businesses</NavBtn>
-            <NavBtn active={view === "diaspora"} onLanding={onLanding} onClick={() => setView("diaspora")}>For Diaspora</NavBtn>
+            <NavBtn active={view === "diaspora"} onLanding={onLanding} onClick={() => setView("diaspora")}>For Overseas Operators</NavBtn>
             <NavBtn active={view === "bdc"} onLanding={onLanding} onClick={() => setView("bdc")}>For Exchange Operators</NavBtn>
           </nav>
           <div className="hidden items-center gap-2 md:flex">
@@ -307,7 +307,7 @@ function TopBar({ view, setView, mobileOpen, setMobileOpen, onSignIn, onRequestA
             <div className="flex flex-col gap-1">
               <MobileNavBtn onLanding={onLanding} onClick={() => { setView("landing"); setMobileOpen(false); }}>Overview</MobileNavBtn>
               <MobileNavBtn onLanding={onLanding} onClick={() => { setView("customer"); setMobileOpen(false); }}>For Businesses</MobileNavBtn>
-              <MobileNavBtn onLanding={onLanding} onClick={() => { setView("diaspora"); setMobileOpen(false); }}>For Diaspora</MobileNavBtn>
+              <MobileNavBtn onLanding={onLanding} onClick={() => { setView("diaspora"); setMobileOpen(false); }}>For Overseas Operators</MobileNavBtn>
               <MobileNavBtn onLanding={onLanding} onClick={() => { setView("bdc"); setMobileOpen(false); }}>For Exchange Operators</MobileNavBtn>
               <div className="mt-3 flex flex-col gap-2 pt-3" style={{ borderTop: `1px solid ${onLanding ? "rgba(255,255,255,0.06)" : "var(--line)"}` }}>
                 <a href={WHATSAPP_URL} target="_blank" rel="noreferrer" className="inline-flex items-center justify-center gap-2 w-full rounded-lg px-4 py-2.5 text-sm font-medium" style={{ border: `1px solid ${onLanding ? "rgba(255,255,255,0.1)" : "var(--line)"}`, color: onLanding ? "var(--bone)" : "var(--ink)" }}><MessageCircle size={14} /> Chat on WhatsApp</a>
@@ -350,8 +350,8 @@ function SignInModal({ open, onClose, onSuccess }) {
           <Label>Sign in as</Label>
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
             <RoleBtn active={role === "business"} onClick={() => setRole("business")}>Business</RoleBtn>
-            <RoleBtn active={role === "diaspora"} onClick={() => setRole("diaspora")}>Diaspora</RoleBtn>
-            <RoleBtn active={role === "bdc"} onClick={() => setRole("bdc")}>BDC</RoleBtn>
+            <RoleBtn active={role === "diaspora"} onClick={() => setRole("diaspora")}>Overseas</RoleBtn>
+            <RoleBtn active={role === "bdc"} onClick={() => setRole("bdc")}>Exchange Op</RoleBtn>
             <RoleBtn active={role === "agent"} onClick={() => setRole("agent")}>Payment Agent</RoleBtn>
             <RoleBtn active={role === "lp"} onClick={() => setRole("lp")}>LP</RoleBtn>
           </div>
@@ -379,7 +379,7 @@ function RequestAccessModal({ open, onClose, onChoose, onWaitlist }) {
       </div>
       <div className="grid gap-3 sm:grid-cols-2">
         <RoleCard icon={Building2} title="I run a business" subtitle="CAC-registered company" description="Pay foreign suppliers, manage trade payments, generate compliance docs." time="~4 min" available onClick={() => onChoose("business")} />
-        <RoleCard icon={Send} title="I'm sending from abroad" subtitle="Diaspora · US / UK / EU / CA" description="Pay vendors, family, school fees, or property in Nigeria and Africa." time="~5 min" available onClick={() => onChoose("diaspora")} />
+        <RoleCard icon={Send} title="I operate from overseas" subtitle="Individual or business · US / UK / EU / CA" description="Send foreign currency from abroad to settle as NGN locally — vendors, payroll, family, school, property." time="~5 min" available onClick={() => onChoose("diaspora")} />
         <RoleCard icon={User} title="I'm an individual" subtitle="Personal trade payments" description="Pay foreign suppliers via BDC payment-agent service." time="~3 min" phase2 onClick={() => onChoose("individual")} />
         <RoleCard icon={Briefcase} title="I operate a BDC" subtitle="CBN-licensed BDC" description="Process trade payments, access global rails, generate evidence packs." time="~10 min" available onClick={() => onChoose("bdc")} />
         <RoleCard icon={Layers} title="I'm a Payment Agent" subtitle="IMTO / SCUML / CAC + BDC partner" description="Licensed Nigerian operators serving trade and remittance flows. Same dashboard as BDCs, different regulatory wrapper." time="~8 min" available onClick={() => onChoose("agent")} />
@@ -1380,7 +1380,7 @@ function SidesSection({ setView }) {
       </div>
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <SideMiniCard icon={Building2} label="Businesses" desc="Pay foreign suppliers. Direct rail access." onClick={() => setView("customer")} live />
-        <SideMiniCard icon={Send} label="Diaspora" desc="Send to Nigeria & Africa from US, UK, EU, CA." onClick={() => setView("diaspora")} live />
+        <SideMiniCard icon={Send} label="Overseas Operators" desc="Individuals or businesses abroad sending foreign currency to settle as NGN locally in Nigeria." onClick={() => setView("diaspora")} live />
         <SideMiniCard icon={User} label="Individuals" desc="Trade payments via BDC payment-agent." onClick={() => setView("customer")} phase2 />
         <SideMiniCard icon={Briefcase} label="BDCs" desc="CBN-licensed bureaus. Operate platform, source liquidity." onClick={() => setView("bdc")} live />
         <SideMiniCard icon={Layers} label="Payment Agents" desc="IMTO / SCUML / CAC+BDC-partner. Same platform, different wrapper." onClick={() => setView("bdc")} live />
@@ -1420,7 +1420,7 @@ function PricingSection({ onRequestAccess, onWaitlist }) {
         <div className="mb-8 flex gap-1 overflow-x-auto rounded-xl p-1" style={{ background: "white", border: "1px solid var(--line)", width: "fit-content" }}>
           {[
             { id: "business", label: "Businesses" },
-            { id: "diaspora", label: "Diaspora" },
+            { id: "diaspora", label: "Overseas Operators" },
             { id: "bdc", label: "BDCs" },
             { id: "agent", label: "Payment Agents" },
             { id: "lp", label: "LPs" },
@@ -2155,6 +2155,7 @@ function BDCRailQuotes() {
   // ── Cedar Money — NGN-native quotes (both directions). ─────────────────
   const cedarMid = wobble(1394.40, 4);
   const cedarFeeBps = urgency === "priority" ? 18 : 12;
+  const cedarAllInNGN = cedarMid * (1 + cedarFeeBps / 10000);
   const cedar = {
     name: "Cedar Money",
     sublabel: direction === "off-ramp" ? "NGN-native · off-ramp (NG → abroad)" : "NGN-native · on-ramp (abroad → NG)",
@@ -2165,7 +2166,10 @@ function BDCRailQuotes() {
     settlement: urgency === "priority" ? "T+0 · 25 min" : "T+0 · 90 min",
     network: direction === "off-ramp" ? "BDC funds Cedar in NGN → wire/payout abroad" : "Foreign sender → Cedar → BDC NGN account",
     minTicket: 1000,
-    nativeCostNGN: cedarMid * (1 + cedarFeeBps / 10000),
+    nativeCostNGN: cedarAllInNGN,
+    headlineLabel: "All-in NGN cost / $",
+    headlinePrimary: `₦${cedarAllInNGN.toFixed(2)}`,
+    headlineSecondary: null,
     note: "Cedar quotes natively in naira because they operate locally in Nigeria.",
   };
 
@@ -2187,7 +2191,10 @@ function BDCRailQuotes() {
       network: "BDC sends USDT TRC-20 → Triple-A wires foreign fiat (SWIFT MT103)",
       minTicket: 5000,
       nativeCostNGN: ngnPerUsd,
-      note: `BDC pays in USDT (TRC-20). Effective NGN cost uses your current best LP USDT rate (₦${LP_USDT_NGN.toLocaleString()}/USDT).`,
+      headlineLabel: "BDC pays in USDT / $",
+      headlinePrimary: `${usdtPerUsd.toFixed(4)} USDT`,
+      headlineSecondary: `≈ ₦${ngnPerUsd.toFixed(2)} at LP rate ₦${LP_USDT_NGN}/USDT`,
+      note: `BDC pays Triple-A in USDT (TRC-20). The naira figure uses your current best LP USDT rate (₦${LP_USDT_NGN.toLocaleString()}/USDT).`,
     };
   } else {
     // On-ramp via Triple-A US arm: foreign sender → Triple-A US → BDC's USD partner bank → BDC settles NGN to beneficiary.
@@ -2203,7 +2210,10 @@ function BDCRailQuotes() {
       network: "Foreign sender → Triple-A US → BDC's USD partner bank → BDC settles NGN locally",
       minTicket: 2000,
       nativeCostNGN: ngnPerUsd,
-      note: "Triple-A US handles diaspora/foreign-business inbound. BDC's banking partner receives USD; BDC then pays NGN beneficiary.",
+      headlineLabel: "Triple-A US fee on USD received",
+      headlinePrimary: `${(tripleAFeeBps / 100).toFixed(2)}%`,
+      headlineSecondary: `≈ ₦${ngnPerUsd.toFixed(2)} effective at your NGN payout rate`,
+      note: "Triple-A US handles overseas-individual/business inbound. BDC's banking partner receives USD; BDC then pays NGN beneficiary.",
     };
   }
 
@@ -2308,9 +2318,12 @@ function BDCRailQuotes() {
                 <dl className="mt-5 space-y-2.5 text-sm">
                   <div className="flex items-baseline justify-between"><dt style={isCheapest ? { color: "rgba(247,245,240,0.6)" } : { color: "var(--muted)" }}>Quote ({rail.quoteCurrency})</dt><dd className="font-mono font-semibold">{rail.rateLine}</dd></div>
                   <div className="flex items-baseline justify-between"><dt style={isCheapest ? { color: "rgba(247,245,240,0.6)" } : { color: "var(--muted)" }}>Rail fee</dt><dd className="font-mono font-semibold">{rail.feeLine}</dd></div>
-                  <div className="flex items-baseline justify-between pt-2.5" style={{ borderTop: `1px solid ${isCheapest ? "rgba(255,255,255,0.08)" : "var(--line)"}` }}>
-                    <dt className="font-semibold">Effective NGN cost / $</dt>
-                    <dd className="font-display text-2xl font-[500]" style={isCheapest ? { color: "var(--lime)" } : {}}>₦{rail.nativeCostNGN.toFixed(2)}</dd>
+                  <div className="pt-2.5" style={{ borderTop: `1px solid ${isCheapest ? "rgba(255,255,255,0.08)" : "var(--line)"}` }}>
+                    <div className="flex items-baseline justify-between">
+                      <dt className="font-semibold">{rail.headlineLabel}</dt>
+                      <dd className="font-display text-2xl font-[500]" style={isCheapest ? { color: "var(--lime)" } : {}}>{rail.headlinePrimary}</dd>
+                    </div>
+                    {rail.headlineSecondary && <div className="mt-0.5 text-right font-mono text-[10px]" style={isCheapest ? { color: "rgba(247,245,240,0.5)" } : { color: "var(--muted)" }}>{rail.headlineSecondary}</div>}
                   </div>
                   <div className="flex items-baseline justify-between"><dt style={isCheapest ? { color: "rgba(247,245,240,0.6)" } : { color: "var(--muted)" }}>Settlement</dt><dd className="font-mono text-xs">{rail.settlement}</dd></div>
                   <div className="flex items-baseline justify-between"><dt style={isCheapest ? { color: "rgba(247,245,240,0.6)" } : { color: "var(--muted)" }}>Min ticket</dt><dd className="font-mono text-xs">${rail.minTicket.toLocaleString()}</dd></div>
@@ -3015,6 +3028,7 @@ function DiasporaOnboarding({ onComplete }) {
 function DiasporaApp({ session }) {
   const [step, setStep] = useState(1);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [senderType, setSenderType] = useState("individual"); // individual | business
   const currency = session.currency || "USD";
   const [formData, setFormData] = useState({
     amount: "2500", sendCurrency: currency, recipientType: "vendor",
@@ -3025,16 +3039,29 @@ function DiasporaApp({ session }) {
   return (
     <>
     <div className="mx-auto max-w-5xl px-4 py-10 sm:px-6 lg:px-8 lg:py-14">
-      <div className="mb-8 flex items-start justify-between gap-4">
+      <div className="mb-6 flex items-start justify-between gap-4 flex-wrap">
         <div className="rise">
-          <SectionEyebrow>Diaspora sender portal</SectionEyebrow>
-          <h1 className="font-display mt-3 text-3xl font-[450] tracking-tight sm:text-[40px]">Send to Nigeria</h1>
-          <div className="mt-3 flex items-center gap-3">
+          <SectionEyebrow>Overseas Operator portal · foreign currency → NGN</SectionEyebrow>
+          <h1 className="font-display mt-3 text-3xl font-[450] tracking-tight sm:text-[40px]">{senderType === "business" ? "Pay into Nigeria from overseas" : "Send to Nigeria"}</h1>
+          <div className="mt-3 flex items-center gap-3 flex-wrap">
             <TierBadge tier={session.tier ?? 3} />
             <span className="font-mono text-[10px] uppercase tracking-wider" style={{ color: "var(--muted)" }}>{session.country || "United States"} · {currency}</span>
           </div>
         </div>
         <button onClick={() => setHistoryOpen(true)} className="rise inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium transition hover:bg-[color:var(--bone-2)]" style={{ background: "white", border: "1px solid var(--line)", animationDelay: "0.05s" }}><History size={14} /> History</button>
+      </div>
+
+      <div className="mb-8 rise rounded-2xl p-4 flex items-center gap-4 flex-wrap" style={{ background: "var(--bone)", border: "1px solid var(--line)", animationDelay: "0.05s" }}>
+        <div>
+          <div className="font-mono text-[10px] uppercase tracking-wider mb-1.5" style={{ color: "var(--muted)" }}>I am sending as</div>
+          <Select value={senderType} onChange={(e) => setSenderType(e.target.value)}>
+            <option value="individual">An individual (family, school, vendor, property)</option>
+            <option value="business">A business (payroll, supplier, distributor, services)</option>
+          </Select>
+        </div>
+        <div className="text-xs" style={{ color: "var(--muted)" }}>
+          {senderType === "individual" ? "Personal sends from abroad — typically family support, school fees, vendor payments, property." : "Business sends from abroad — payroll for Nigerian staff, distributor settlements, supplier invoices, recurring services."}
+        </div>
       </div>
       <div className="grid gap-6 lg:grid-cols-12">
         <div className="lg:col-span-8">
