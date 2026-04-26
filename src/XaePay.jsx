@@ -1948,6 +1948,7 @@ function BDCDashboard({ session }) {
       <div className="mb-6 flex gap-1 overflow-x-auto" style={{ borderBottom: "1px solid var(--line)" }}>
         {[
           { id: "overview", label: "Overview" },
+          { id: "quotes", label: "Rail Quotes" },
           { id: "transactions", label: "Transactions" },
           { id: "customers", label: "Customers" },
           { id: "liquidity", label: "Liquidity", phase2: true },
@@ -1964,6 +1965,7 @@ function BDCDashboard({ session }) {
       </div>
       <div className="fade-in">
         {tab === "overview" && <BDCOverview onJumpTab={setTab} />}
+        {tab === "quotes" && <BDCRailQuotes />}
         {tab === "transactions" && <BDCTransactions />}
         {tab === "customers" && <BDCCustomers />}
         {tab === "liquidity" && <BDCLiquidity />}
@@ -2112,6 +2114,218 @@ function BDCLiquidity() {
             </tbody>
           </table>
         </div>
+      </Card>
+    </div>
+  );
+}
+
+function BDCRailQuotes() {
+  const { push } = useToast();
+  const [direction, setDirection] = useState("on-ramp"); // on-ramp = NGN→USD outbound; off-ramp = USD→NGN diaspora inbound
+  const [amount, setAmount] = useState("50000");
+  const [destination, setDestination] = useState("China");
+  const [urgency, setUrgency] = useState("standard"); // standard | priority
+  const [markupPct, setMarkupPct] = useState("1.80");
+  const [tick, setTick] = useState(0);
+  const [orders, setOrders] = useState([
+    { id: "ORD-2218", rail: "Cedar Money", amount: 32000, customerRate: 1421.40, ts: "12 min ago", status: "filled" },
+    { id: "ORD-2217", rail: "Triple-A", amount: 128000, customerRate: 1422.10, ts: "47 min ago", status: "settling" },
+  ]);
+
+  useEffect(() => {
+    const i = setInterval(() => setTick((t) => t + 1), 4000);
+    return () => clearInterval(i);
+  }, []);
+
+  // Simulated live mid-market — small jitter to feel real
+  const wobble = (base, ampBps) => base + (Math.sin(tick * 0.7) + Math.cos(tick * 0.3)) * 0.5 * (base * ampBps / 10000);
+  const baseMid = direction === "on-ramp" ? 1395.00 : 1395.00; // simplified — same base both ways
+
+  const tripleA = {
+    name: "Triple-A",
+    sublabel: "Singapore · MAS-licensed",
+    midRate: wobble(baseMid, 6),
+    feeBps: urgency === "priority" ? 22 : 18,
+    settlement: urgency === "priority" ? "T+0 · 90 min" : "T+0 · 4 hrs",
+    minTicket: 5000,
+    chains: "USD wire (SWIFT MT103)",
+  };
+  tripleA.allInRate = tripleA.midRate + (tripleA.midRate * tripleA.feeBps / 10000);
+
+  const cedar = {
+    name: "Cedar Money",
+    sublabel: "US/NG · stablecoin (USDT)",
+    midRate: wobble(baseMid - 2.4, 4),
+    feeBps: 12,
+    settlement: urgency === "priority" ? "T+0 · 25 min" : "T+0 · 90 min",
+    minTicket: 1000,
+    chains: "TRC-20 / ERC-20",
+  };
+  cedar.allInRate = cedar.midRate + (cedar.midRate * cedar.feeBps / 10000);
+
+  const eligibleRails = [tripleA, cedar].filter((r) => parseFloat(amount) >= r.minTicket);
+  const cheapest = eligibleRails.length > 0 ? eligibleRails.reduce((a, b) => (a.allInRate < b.allInRate ? a : b)) : null;
+  const customerRate = cheapest ? cheapest.allInRate * (1 + parseFloat(markupPct || 0) / 100) : 0;
+  const grossMarginPerUSD = cheapest ? customerRate - cheapest.allInRate : 0;
+  const grossMarginTotal = grossMarginPerUSD * parseFloat(amount || 0);
+
+  const submitOrder = (rail) => {
+    const newOrder = {
+      id: `ORD-${2200 + Math.floor(Math.random() * 100)}`,
+      rail: rail.name,
+      amount: parseFloat(amount),
+      customerRate: customerRate,
+      ts: "just now",
+      status: "submitted",
+    };
+    setOrders((o) => [newOrder, ...o].slice(0, 6));
+    push(`Order ${newOrder.id} submitted to ${rail.name}`, "success");
+  };
+
+  return (
+    <div className="space-y-5">
+      <div className="rounded-2xl p-5" style={{ background: "var(--bone)", border: "1px solid var(--line)" }}>
+        <div className="grid gap-4 sm:grid-cols-4">
+          <Field label="Direction">
+            <Select value={direction} onChange={(e) => setDirection(e.target.value)}>
+              <option value="on-ramp">On-ramp · NGN → USD (outbound)</option>
+              <option value="off-ramp">Off-ramp · USD → NGN (diaspora inbound)</option>
+            </Select>
+          </Field>
+          <Field label="Amount (USD)">
+            <div className="focus-ring flex items-center rounded-xl transition" style={{ background: "white", border: "1px solid var(--line)" }}>
+              <span className="pl-3.5 text-sm font-mono" style={{ color: "var(--muted)" }}>$</span>
+              <input type="text" value={amount} onChange={(e) => setAmount(e.target.value)} className="w-full bg-transparent px-2 py-3 text-sm outline-none font-mono" />
+            </div>
+          </Field>
+          <Field label="Destination corridor">
+            <Select value={destination} onChange={(e) => setDestination(e.target.value)}>
+              <option>China</option><option>USA</option><option>UAE</option><option>UK</option><option>India</option><option>Germany</option>
+            </Select>
+          </Field>
+          <Field label="Urgency">
+            <Select value={urgency} onChange={(e) => setUrgency(e.target.value)}>
+              <option value="standard">Standard</option>
+              <option value="priority">Priority (faster, +bps)</option>
+            </Select>
+          </Field>
+        </div>
+        <div className="mt-3 flex items-center gap-3 text-xs">
+          <div className="flex items-center gap-1.5"><div className="h-1.5 w-1.5 rounded-full pulse-dot" style={{ background: "var(--emerald)", boxShadow: "0 0 6px var(--emerald)" }} /><span className="font-mono uppercase tracking-wider" style={{ color: "var(--muted)" }}>Live · refreshes every 4s</span></div>
+          <span style={{ color: "var(--muted)" }}>·</span>
+          <span className="font-mono" style={{ color: "var(--muted)" }}>Quote tick #{tick}</span>
+        </div>
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        {[tripleA, cedar].map((rail) => {
+          const isCheapest = cheapest && rail.name === cheapest.name;
+          const ineligible = parseFloat(amount) < rail.minTicket;
+          return (
+            <div key={rail.name} className="card-soft rounded-2xl p-6 relative overflow-hidden" style={isCheapest ? { background: "var(--ink)", color: "var(--bone)", border: "1px solid var(--ink)" } : { background: "white", border: "1px solid var(--line)" }}>
+              {isCheapest && (<><div className="absolute -right-16 -top-16 h-40 w-40 rounded-full opacity-30 blur-2xl" style={{ background: "var(--lime)" }} /><div className="absolute right-4 top-4 rounded-full px-2 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-wider" style={{ background: "var(--lime)", color: "var(--ink)" }}>Cheapest</div></>)}
+              <div className="relative">
+                <div className="flex items-start gap-3">
+                  <div className="flex h-9 w-9 items-center justify-center rounded-lg" style={isCheapest ? { background: "rgba(197,242,74,0.1)", color: "var(--lime)" } : { background: "var(--bone-2)", color: "var(--emerald)" }}><Layers size={16} /></div>
+                  <div>
+                    <div className="font-display text-lg font-semibold">{rail.name}</div>
+                    <div className="font-mono text-[10px] uppercase tracking-wider" style={isCheapest ? { color: "rgba(247,245,240,0.6)" } : { color: "var(--muted)" }}>{rail.sublabel}</div>
+                  </div>
+                </div>
+                <dl className="mt-5 space-y-2.5 text-sm">
+                  <div className="flex items-baseline justify-between"><dt style={isCheapest ? { color: "rgba(247,245,240,0.6)" } : { color: "var(--muted)" }}>Mid-market rate</dt><dd className="font-mono font-semibold">₦{rail.midRate.toFixed(2)} / $</dd></div>
+                  <div className="flex items-baseline justify-between"><dt style={isCheapest ? { color: "rgba(247,245,240,0.6)" } : { color: "var(--muted)" }}>Rail fee</dt><dd className="font-mono font-semibold">{rail.feeBps} bps · {(rail.feeBps / 100).toFixed(2)}%</dd></div>
+                  <div className="flex items-baseline justify-between pt-2.5" style={{ borderTop: `1px solid ${isCheapest ? "rgba(255,255,255,0.08)" : "var(--line)"}` }}>
+                    <dt className="font-semibold">All-in cost basis</dt>
+                    <dd className="font-display text-2xl font-[500]" style={isCheapest ? { color: "var(--lime)" } : {}}>₦{rail.allInRate.toFixed(2)}</dd>
+                  </div>
+                  <div className="flex items-baseline justify-between"><dt style={isCheapest ? { color: "rgba(247,245,240,0.6)" } : { color: "var(--muted)" }}>Settlement</dt><dd className="font-mono text-xs">{rail.settlement}</dd></div>
+                  <div className="flex items-baseline justify-between"><dt style={isCheapest ? { color: "rgba(247,245,240,0.6)" } : { color: "var(--muted)" }}>Rail / network</dt><dd className="font-mono text-xs">{rail.chains}</dd></div>
+                  <div className="flex items-baseline justify-between"><dt style={isCheapest ? { color: "rgba(247,245,240,0.6)" } : { color: "var(--muted)" }}>Min ticket</dt><dd className="font-mono text-xs">${rail.minTicket.toLocaleString()}</dd></div>
+                </dl>
+                <button onClick={() => submitOrder(rail)} disabled={ineligible} className="mt-5 w-full rounded-xl px-4 py-2.5 text-sm font-semibold transition disabled:opacity-40 disabled:cursor-not-allowed inline-flex items-center justify-center gap-2" style={isCheapest ? { background: "var(--lime)", color: "var(--ink)" } : { background: "var(--ink)", color: "var(--bone)" }}>
+                  {ineligible ? `Below ${rail.name} minimum` : <>Submit order to {rail.name} <ArrowRight size={14} /></>}
+                </button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="card-soft rounded-2xl p-6" style={{ background: "white", border: "1px solid var(--line)" }}>
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h3 className="font-display text-lg font-semibold">Customer rate calculator</h3>
+            <p className="mt-1 text-sm" style={{ color: "var(--muted)" }}>Set your spread on top of the cheapest rail's all-in cost. This is the rate you quote your customer.</p>
+          </div>
+          {cheapest && <div className="rounded-full px-2.5 py-1 font-mono text-[10px] font-semibold uppercase tracking-wider whitespace-nowrap" style={{ background: "var(--bone-2)", color: "var(--emerald)" }}>Basis · {cheapest.name}</div>}
+        </div>
+        {cheapest ? (
+          <div className="mt-5 grid gap-5 lg:grid-cols-2">
+            <div className="space-y-4">
+              <Field label="Your markup (%)">
+                <div className="focus-ring flex items-center rounded-xl transition" style={{ background: "white", border: "1px solid var(--line)" }}>
+                  <input type="number" step="0.05" value={markupPct} onChange={(e) => setMarkupPct(e.target.value)} className="w-full bg-transparent px-3.5 py-3 text-sm outline-none font-mono" />
+                  <span className="pr-3.5 text-sm font-mono" style={{ color: "var(--muted)" }}>%</span>
+                </div>
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  {["1.20", "1.50", "1.80", "2.20", "2.50"].map((p) => (
+                    <button key={p} onClick={() => setMarkupPct(p)} className="rounded-full px-2.5 py-1 font-mono text-[10px] font-semibold uppercase tracking-wider transition" style={markupPct === p ? { background: "var(--ink)", color: "var(--bone)" } : { background: "var(--bone-2)", color: "var(--muted)" }}>{p}%</button>
+                  ))}
+                </div>
+              </Field>
+              <div className="space-y-1.5 rounded-xl p-4 text-sm" style={{ background: "var(--bone)", border: "1px solid var(--line)" }}>
+                <div className="flex items-baseline justify-between"><span style={{ color: "var(--muted)" }}>Cost basis ({cheapest.name})</span><span className="font-mono font-semibold">₦{cheapest.allInRate.toFixed(2)}</span></div>
+                <div className="flex items-baseline justify-between"><span style={{ color: "var(--muted)" }}>+ Your markup ({markupPct}%)</span><span className="font-mono font-semibold">₦{(customerRate - cheapest.allInRate).toFixed(2)}</span></div>
+              </div>
+            </div>
+            <div className="rounded-xl p-5 relative overflow-hidden" style={{ background: "var(--ink)", color: "var(--bone)" }}>
+              <div className="absolute -right-12 -top-12 h-32 w-32 rounded-full opacity-30 blur-3xl" style={{ background: "var(--lime)" }} />
+              <div className="relative font-mono text-[10px] uppercase tracking-wider" style={{ color: "rgba(247,245,240,0.5)" }}>Quote to customer</div>
+              <div className="relative font-display mt-1 text-4xl font-[500] tracking-tight" style={{ color: "var(--lime)" }}>₦{customerRate.toFixed(2)}<span className="font-mono text-base ml-1.5" style={{ color: "rgba(247,245,240,0.6)" }}>/ $</span></div>
+              <div className="relative mt-3 grid grid-cols-2 gap-3 text-xs pt-3" style={{ borderTop: "1px solid rgba(255,255,255,0.08)" }}>
+                <div>
+                  <div className="font-mono uppercase tracking-wider" style={{ color: "rgba(247,245,240,0.5)" }}>Margin / $1</div>
+                  <div className="font-mono mt-0.5 font-semibold">₦{grossMarginPerUSD.toFixed(2)}</div>
+                </div>
+                <div>
+                  <div className="font-mono uppercase tracking-wider" style={{ color: "rgba(247,245,240,0.5)" }}>Total margin</div>
+                  <div className="font-mono mt-0.5 font-semibold" style={{ color: "var(--lime)" }}>₦{Math.round(grossMarginTotal).toLocaleString()}</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="mt-5 rounded-xl p-5 text-sm" style={{ background: "var(--bone)", color: "var(--muted)" }}>Amount is below the minimum ticket on every rail. Increase amount or change urgency.</div>
+        )}
+      </div>
+
+      <Card padding="none">
+        <div className="p-4" style={{ borderBottom: "1px solid var(--line)" }}>
+          <h3 className="font-display text-lg font-semibold">Recent orders</h3>
+          <p className="text-xs mt-0.5" style={{ color: "var(--muted)" }}>Submitted orders awaiting rail confirmation. Filled orders move to Transactions.</p>
+        </div>
+        {orders.length === 0 ? (
+          <div className="p-8 text-center text-sm" style={{ color: "var(--muted)" }}>No orders submitted yet.</div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead><tr style={{ background: "var(--bone)", borderBottom: "1px solid var(--line)" }}>{["Order ID", "Rail", "Amount", "Customer rate", "When", "Status"].map((h, i) => (<th key={i} className={`px-4 py-3 text-left font-mono text-[10px] font-semibold uppercase tracking-wider ${["Amount", "Customer rate"].includes(h) ? "text-right" : ""}`} style={{ color: "var(--muted)" }}>{h}</th>))}</tr></thead>
+              <tbody>
+                {orders.map((o) => (
+                  <tr key={o.id} className="transition hover:bg-[color:var(--bone)]" style={{ borderBottom: "1px solid var(--line)" }}>
+                    <td className="px-4 py-3.5 font-mono text-xs font-semibold">{o.id}</td>
+                    <td className="px-4 py-3.5 font-medium">{o.rail}</td>
+                    <td className="px-4 py-3.5 text-right font-mono font-semibold">${o.amount.toLocaleString()}</td>
+                    <td className="px-4 py-3.5 text-right font-mono">₦{o.customerRate.toFixed(2)}</td>
+                    <td className="px-4 py-3.5 font-mono text-xs" style={{ color: "var(--muted)" }}>{o.ts}</td>
+                    <td className="px-4 py-3.5"><StatusPill status={o.status === "submitted" ? "pending" : o.status === "settling" ? "processing" : "completed"} /></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </Card>
     </div>
   );
