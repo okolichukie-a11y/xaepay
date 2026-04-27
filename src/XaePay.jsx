@@ -6,14 +6,13 @@ import {
   ExternalLink, Sparkles, User, Building2, Briefcase, Coins, Lock, Unlock,
   ArrowLeft, Loader2, Layers, TrendingUp, Wallet, DollarSign, Mail,
 } from "lucide-react";
+import { supabase } from "./lib/supabase.js";
 
 // ─── Editable in one place ────────────────────────────────────────────────
 // Swap these when you have real values. Search for "TODO:" to find them.
 const WHATSAPP_NUMBER_NG = "2348149571908"; // Nigeria — primary brand number
 const WHATSAPP_NUMBER_US = "12673618234"; // US — used in diaspora-specific surfaces
 const WHATSAPP_NUMBER = WHATSAPP_NUMBER_NG;
-const WAITLIST_FORMSPREE_ENDPOINT = "https://formspree.io/f/mjgjzpqr"; // Live — submissions land in Chukie's Formspree inbox
-const CONTACT_EMAIL = "okoli.chukie@gmail.com"; // TODO: change to a hello@xaepay.com once domain + email are live
 const WHATSAPP_URL = `https://wa.me/${WHATSAPP_NUMBER}`;
 const WHATSAPP_URL_US = `https://wa.me/${WHATSAPP_NUMBER_US}`;
 
@@ -515,21 +514,22 @@ function WaitlistModal({ open, onClose }) {
     e.preventDefault();
     setSubmitting(true); setError("");
     try {
-      if (WAITLIST_FORMSPREE_ENDPOINT) {
-        const res = await fetch(WAITLIST_FORMSPREE_ENDPOINT, {
-          method: "POST",
-          headers: { "Content-Type": "application/json", Accept: "application/json" },
-          body: JSON.stringify({ email, name, role, source: "xaepay-waitlist" }),
+      const { error: insertError } = await supabase
+        .from("xaepay_waitlist")
+        .insert({
+          name,
+          email,
+          role,
+          source: "xaepay.com-waitlist",
+          user_agent: typeof navigator !== "undefined" ? navigator.userAgent : null,
+          referrer: typeof document !== "undefined" ? document.referrer || null : null,
         });
-        if (!res.ok) throw new Error("Submission failed");
-      } else {
-        const subject = encodeURIComponent("XaePay waitlist signup");
-        const body = encodeURIComponent(`Name: ${name}\nEmail: ${email}\nRole: ${role}\n\n(Sent from xaepay.com waitlist)`);
-        window.location.href = `mailto:${CONTACT_EMAIL}?subject=${subject}&body=${body}`;
-      }
+      if (insertError) throw insertError;
       setSubmitted(true);
       push("You're on the waitlist.", "success");
     } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error("Waitlist insert failed:", err);
       setError("Couldn't submit — please try again or message us on WhatsApp.");
     } finally {
       setSubmitting(false);
