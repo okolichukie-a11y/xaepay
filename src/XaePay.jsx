@@ -134,11 +134,33 @@ function Drawer({ open, onClose, title, children }) {
   );
 }
 
+// ─── Quote-link encoding ──────────────────────────────────────────────────
+// Quote details ride in the URL so the customer-side approval page works without a backend.
+// btoa/atob handle base64; we strip URL-unsafe chars and padding for clean URLs.
+const encodeQuoteToken = (data) => {
+  try {
+    return btoa(unescape(encodeURIComponent(JSON.stringify(data))))
+      .replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  } catch { return ""; }
+};
+const decodeQuoteToken = (token) => {
+  try {
+    const padded = token.replace(/-/g, "+").replace(/_/g, "/");
+    return JSON.parse(decodeURIComponent(escape(atob(padded))));
+  } catch { return null; }
+};
+
 export default function XaePay() {
   return (<><GlobalStyles /><ToastProvider><AppShell /></ToastProvider></>);
 }
 
 function AppShell() {
+  // All hooks must be called unconditionally — declare them up top.
+  const [quoteRoute, setQuoteRoute] = useState(() => {
+    if (typeof window === "undefined") return null;
+    const t = new URLSearchParams(window.location.search).get("quote");
+    return t ? decodeQuoteToken(t) : null;
+  });
   const [view, setView] = useState("landing");
   const [mobileOpen, setMobileOpen] = useState(false);
   const [accessOpen, setAccessOpen] = useState(false);
@@ -147,6 +169,17 @@ function AppShell() {
   const [onboardingOpen, setOnboardingOpen] = useState(false);
   const [onboardingType, setOnboardingType] = useState(null);
   const [session, setSession] = useState({ type: null, tier: 0, name: null, company: null });
+  useEffect(() => {
+    const onPop = () => {
+      const t = new URLSearchParams(window.location.search).get("quote");
+      setQuoteRoute(t ? decodeQuoteToken(t) : null);
+    };
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, []);
+
+  // After all hooks: now we can branch.
+  if (quoteRoute) return <QuoteApprovalPage quote={quoteRoute} />;
 
   const startOnboarding = (type) => { setOnboardingType(type); setOnboardingOpen(true); setAccessOpen(false); };
   const completeOnboarding = (data) => {
@@ -175,6 +208,125 @@ function AppShell() {
       <RequestAccessModal open={accessOpen} onClose={() => setAccessOpen(false)} onChoose={startOnboarding} onWaitlist={() => { setAccessOpen(false); setWaitlistOpen(true); }} />
       <WaitlistModal open={waitlistOpen} onClose={() => setWaitlistOpen(false)} />
       {onboardingOpen && <OnboardingFlow type={onboardingType} onClose={() => setOnboardingOpen(false)} onComplete={completeOnboarding} onSwitchType={(t) => setOnboardingType(t)} />}
+    </div>
+  );
+}
+
+function QuoteApprovalPage({ quote }) {
+  const { push } = useToast();
+  const [decision, setDecision] = useState(() => new URLSearchParams(window.location.search).get("approved") === "1" ? "approved" : null);
+  const [secondsLeft, setSecondsLeft] = useState(() => {
+    const exp = quote?.expiresAt ? new Date(quote.expiresAt).getTime() : Date.now() + 4 * 60 * 1000;
+    return Math.max(0, Math.floor((exp - Date.now()) / 1000));
+  });
+  useEffect(() => {
+    if (decision || secondsLeft <= 0) return;
+    const i = setInterval(() => setSecondsLeft((s) => Math.max(0, s - 1)), 1000);
+    return () => clearInterval(i);
+  }, [decision, secondsLeft]);
+
+  const expired = secondsLeft <= 0 && decision !== "approved";
+  const mins = Math.floor(secondsLeft / 60);
+  const secs = secondsLeft % 60;
+
+  const approve = () => {
+    setDecision("approved");
+    const url = new URL(window.location.href);
+    url.searchParams.set("approved", "1");
+    window.history.replaceState({}, "", url);
+    push("Quote approved.", "success");
+  };
+  const decline = () => {
+    setDecision("declined");
+    push("Quote declined.", "info");
+  };
+
+  return (
+    <div className="min-h-screen font-ui flex flex-col" style={{ background: "var(--paper)", color: "var(--ink)" }}>
+      {/* Compact branded header (no full nav — this is a customer surface) */}
+      <header className="flex items-center justify-between px-5 py-4" style={{ borderBottom: "1px solid var(--line)" }}>
+        <div className="flex items-center gap-2.5">
+          <div className="flex h-8 w-8 items-center justify-center rounded-lg" style={{ background: "linear-gradient(135deg, var(--emerald), var(--emerald-deep))" }}>
+            <span className="font-display text-lg font-semibold" style={{ color: "var(--lime)" }}>X</span>
+          </div>
+          <span className="font-display text-[20px] font-semibold tracking-tight">XaePay</span>
+        </div>
+        <a href={WHATSAPP_URL} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition" style={{ border: "1px solid var(--line)", color: "var(--ink)" }}><MessageCircle size={13} /> Help</a>
+      </header>
+
+      <main className="mx-auto w-full max-w-xl px-5 py-10 sm:py-14 flex-1">
+        <SectionEyebrow>Trade payment quote</SectionEyebrow>
+        <h1 className="font-display mt-3 text-3xl font-[450] tracking-tight sm:text-4xl">
+          {decision === "approved" ? "You approved this quote." : decision === "declined" ? "Quote declined." : expired ? "This quote has expired." : `Hello ${quote.customer || "there"},`}
+        </h1>
+        <p className="mt-2 text-sm" style={{ color: "var(--muted)" }}>
+          {decision === "approved" ? `${quote.bdcName || "Your operator"} will execute and notify you on WhatsApp once the wire is on its way.`
+            : decision === "declined" ? "We've recorded your decline. Your operator will reach out if you want to renegotiate."
+            : expired ? "Rates move every few seconds. Reply to your operator on WhatsApp for a fresh quote."
+            : `${quote.bdcName || "Your operator"} has prepared this trade payment for your approval. Review the details below — once you approve, the wire executes.`}
+        </p>
+
+        {!decision && !expired && (
+          <div className="mt-5 inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-mono uppercase tracking-wider" style={{ background: secondsLeft < 60 ? "#fef3c7" : "var(--bone)", color: secondsLeft < 60 ? "#92400e" : "var(--muted)", border: `1px solid ${secondsLeft < 60 ? "#fcd34d" : "var(--line)"}` }}>
+            <div className="h-1.5 w-1.5 rounded-full pulse-dot" style={{ background: secondsLeft < 60 ? "#92400e" : "var(--emerald)" }} />
+            Quote valid for {String(mins).padStart(2, "0")}:{String(secs).padStart(2, "0")}
+          </div>
+        )}
+
+        <div className="card-soft mt-7 rounded-2xl p-6 relative overflow-hidden" style={{ background: "var(--ink)", color: "var(--bone)" }}>
+          <div className="absolute -right-16 -top-16 h-40 w-40 rounded-full opacity-30 blur-3xl" style={{ background: "var(--lime)" }} />
+          <div className="relative">
+            <div className="font-mono text-[10px] uppercase tracking-wider" style={{ color: "rgba(247,245,240,0.55)" }}>You will pay</div>
+            <div className="font-display mt-1 text-5xl font-[500] tracking-tight" style={{ color: "var(--lime)" }}>₦{Math.round(quote.ngnTotal || (quote.rate * quote.amount)).toLocaleString()}</div>
+            <div className="mt-1 font-mono text-xs" style={{ color: "rgba(247,245,240,0.65)" }}>For ${parseFloat(quote.amount).toLocaleString()} {quote.currency || "USD"} delivered to {quote.beneficiary || "your beneficiary"}</div>
+            <div className="mt-5 grid grid-cols-2 gap-4 text-xs pt-5" style={{ borderTop: "1px solid rgba(255,255,255,0.08)" }}>
+              <div><div className="font-mono uppercase tracking-wider" style={{ color: "rgba(247,245,240,0.5)" }}>Rate</div><div className="font-mono mt-0.5 font-semibold">₦{parseFloat(quote.rate).toFixed(2)} / $</div></div>
+              <div><div className="font-mono uppercase tracking-wider" style={{ color: "rgba(247,245,240,0.5)" }}>Settlement</div><div className="font-mono mt-0.5 font-semibold">{quote.settlement || "T+0"}</div></div>
+              <div><div className="font-mono uppercase tracking-wider" style={{ color: "rgba(247,245,240,0.5)" }}>Routing rail</div><div className="font-mono mt-0.5 font-semibold">{quote.rail || "Auto"}</div></div>
+              <div><div className="font-mono uppercase tracking-wider" style={{ color: "rgba(247,245,240,0.5)" }}>Quote ref</div><div className="font-mono mt-0.5 font-semibold">{quote.id || "—"}</div></div>
+            </div>
+          </div>
+        </div>
+
+        {!decision && !expired && (
+          <div className="mt-6 grid gap-3 sm:grid-cols-3">
+            <button onClick={approve} className="sm:col-span-2 inline-flex items-center justify-center gap-2 rounded-xl px-5 py-3.5 text-sm font-semibold transition glow-lime" style={{ background: "var(--lime)", color: "var(--ink)" }}>
+              <CheckCircle2 size={16} strokeWidth={2.5} /> Approve & execute
+            </button>
+            <button onClick={decline} className="inline-flex items-center justify-center gap-2 rounded-xl px-5 py-3.5 text-sm font-semibold transition" style={{ background: "white", border: "1px solid var(--line)", color: "var(--ink)" }}>
+              Decline
+            </button>
+          </div>
+        )}
+
+        {decision === "approved" && (
+          <div className="mt-6 rounded-2xl p-5" style={{ background: "rgba(15,95,63,0.06)", border: "1px solid rgba(15,95,63,0.2)" }}>
+            <div className="flex items-start gap-3">
+              <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full" style={{ background: "var(--emerald)", color: "var(--lime)" }}><CheckCircle2 size={18} strokeWidth={2.5} /></div>
+              <div className="text-sm">
+                <div className="font-semibold" style={{ color: "var(--ink)" }}>Approved · ref {quote.id}</div>
+                <p className="mt-1" style={{ color: "var(--muted)" }}>Reply <span className="font-mono font-semibold">YES {quote.id}</span> on WhatsApp to your operator to confirm receipt of this approval, or just keep this page open — they'll see your approval in their dashboard.</p>
+                <a href={WHATSAPP_URL} target="_blank" rel="noreferrer" className="mt-3 inline-flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold transition" style={{ background: "var(--ink)", color: "var(--bone)" }}><MessageCircle size={14} /> Reply on WhatsApp</a>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {(expired || decision === "declined") && (
+          <a href={WHATSAPP_URL} target="_blank" rel="noreferrer" className="mt-6 inline-flex items-center justify-center gap-2 rounded-xl px-5 py-3 text-sm font-semibold transition w-full" style={{ background: "var(--ink)", color: "var(--bone)" }}>
+            <MessageCircle size={14} /> Message your operator on WhatsApp
+          </a>
+        )}
+
+        <div className="mt-10 rounded-xl p-4 text-xs" style={{ background: "var(--bone)", border: "1px solid var(--line)", color: "var(--muted)" }}>
+          <div className="flex items-start gap-2">
+            <Shield size={14} className="mt-0.5 flex-shrink-0" style={{ color: "var(--emerald)" }} />
+            <p>XaePay is a software and compliance layer. The actual payment is executed by {quote.bdcName || "your CBN-licensed operator"} via licensed rail partners (Triple-A or Cedar Money). XaePay does not custody your funds.</p>
+          </div>
+        </div>
+      </main>
+
+      <footer className="px-5 py-6 text-center font-mono text-[10px] uppercase tracking-wider" style={{ color: "var(--muted)", borderTop: "1px solid var(--line)" }}>© XaePay · xaepay.com</footer>
     </div>
   );
 }
@@ -2232,17 +2384,34 @@ function BDCRailQuotes() {
   const sendQuoteOnWhatsApp = () => {
     if (!customerPhone) { push("Enter a customer WhatsApp number first.", "warn"); return; }
     const phoneDigits = customerPhone.replace(/[^\d]/g, "");
+    const quoteId = `QU-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
+    const expiresAt = new Date(Date.now() + 4 * 60 * 1000).toISOString();
+    const token = encodeQuoteToken({
+      id: quoteId,
+      customer: customerName,
+      amount: parseFloat(amount),
+      currency: destinationCcy,
+      rate: parseFloat(customerRate.toFixed(2)),
+      ngnTotal: Math.round(ngnTotal),
+      rail: chosenRail || cheapest?.name,
+      settlement: cheapest?.settlement,
+      beneficiary: beneficiary || destinationCorridor,
+      bdcName: "Corporate Exchange BDC", // TODO: pull from session.name once wired
+      expiresAt,
+    });
+    const approvalUrl = `${window.location.origin}/?quote=${token}`;
     const message =
       `Hello ${customerName || "there"},%0A%0A` +
-      `Trade payment quote via XaePay:%0A` +
+      `Trade payment quote via XaePay (ref ${quoteId}):%0A` +
       `• Send: $${parseFloat(amount).toLocaleString()} ${destinationCcy} to ${beneficiary || destinationCorridor}%0A` +
       `• Rate: ₦${customerRate.toFixed(2)} / $%0A` +
       `• Total naira: ₦${Math.round(ngnTotal).toLocaleString()}%0A` +
       `• Settlement: ${cheapest?.settlement || "—"}%0A%0A` +
-      `Quote valid for 4 minutes. Reply YES to confirm.`;
+      `Tap to review and approve:%0A${encodeURIComponent(approvalUrl)}%0A%0A` +
+      `Quote valid for 4 minutes. Or reply YES ${quoteId} to confirm here.`;
     window.open(`https://wa.me/${phoneDigits}?text=${message}`, "_blank");
     setApprovalStatus("sent");
-    push(`Quote sent to ${customerName || phoneDigits} on WhatsApp`, "success");
+    push(`Quote ${quoteId} sent to ${customerName || phoneDigits} on WhatsApp`, "success");
   };
 
   const submitOrder = () => {
