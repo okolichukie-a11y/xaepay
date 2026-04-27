@@ -161,6 +161,11 @@ function AppShell() {
     const t = new URLSearchParams(window.location.search).get("quote");
     return t ? decodeQuoteToken(t) : null;
   });
+  const [onboardRoute, setOnboardRoute] = useState(() => {
+    if (typeof window === "undefined") return null;
+    const t = new URLSearchParams(window.location.search).get("onboard");
+    return t ? decodeQuoteToken(t) : null;
+  });
   const [view, setView] = useState("landing");
   const [mobileOpen, setMobileOpen] = useState(false);
   const [accessOpen, setAccessOpen] = useState(false);
@@ -171,8 +176,11 @@ function AppShell() {
   const [session, setSession] = useState({ type: null, tier: 0, name: null, company: null });
   useEffect(() => {
     const onPop = () => {
-      const t = new URLSearchParams(window.location.search).get("quote");
-      setQuoteRoute(t ? decodeQuoteToken(t) : null);
+      const params = new URLSearchParams(window.location.search);
+      const q = params.get("quote");
+      const o = params.get("onboard");
+      setQuoteRoute(q ? decodeQuoteToken(q) : null);
+      setOnboardRoute(o ? decodeQuoteToken(o) : null);
     };
     window.addEventListener("popstate", onPop);
     return () => window.removeEventListener("popstate", onPop);
@@ -180,6 +188,7 @@ function AppShell() {
 
   // After all hooks: now we can branch.
   if (quoteRoute) return <QuoteApprovalPage quote={quoteRoute} />;
+  if (onboardRoute) return <CustomerOnboardPage invite={onboardRoute} />;
 
   const startOnboarding = (type) => { setOnboardingType(type); setOnboardingOpen(true); setAccessOpen(false); };
   const completeOnboarding = (data) => {
@@ -344,6 +353,138 @@ function QuoteApprovalPage({ quote }) {
             <p>XaePay is a software and compliance layer. The actual payment is executed by {quote.bdcName || "your CBN-licensed operator"} via licensed rail partners (Triple-A or Cedar Money). XaePay does not custody your funds.</p>
           </div>
         </div>
+      </main>
+
+      <footer className="px-5 py-6 text-center font-mono text-[10px] uppercase tracking-wider" style={{ color: "var(--muted)", borderTop: "1px solid var(--line)" }}>© XaePay · xaepay.com</footer>
+    </div>
+  );
+}
+
+function CustomerOnboardPage({ invite }) {
+  const { push } = useToast();
+  const [step, setStep] = useState(1);
+  const [data, setData] = useState({
+    fullName: invite?.customer || "",
+    bvn: "",
+    bvnVerified: false,
+    idType: "NIN",
+    idNumber: "",
+    idUploaded: false,
+    address: "",
+    addressUploaded: false,
+  });
+  const [verifying, setVerifying] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
+
+  const verifyBVN = () => {
+    if (!data.bvn || data.bvn.length < 5) return;
+    setVerifying(true);
+    setTimeout(() => { setVerifying(false); setData((d) => ({ ...d, bvnVerified: true, fullName: d.fullName || "Adeyemi Okafor" })); push("BVN verified · NIBSS returned identity match", "success"); }, 1500);
+  };
+
+  const submit = () => {
+    setSubmitted(true);
+    push("Onboarding submitted to your operator", "success");
+  };
+
+  return (
+    <div className="min-h-screen font-ui flex flex-col" style={{ background: "var(--paper)", color: "var(--ink)" }}>
+      <header className="flex items-center justify-between px-5 py-4" style={{ borderBottom: "1px solid var(--line)" }}>
+        <div className="flex items-center gap-2.5">
+          <div className="flex h-8 w-8 items-center justify-center rounded-lg" style={{ background: "linear-gradient(135deg, var(--emerald), var(--emerald-deep))" }}>
+            <span className="font-display text-lg font-semibold" style={{ color: "var(--lime)" }}>X</span>
+          </div>
+          <span className="font-display text-[20px] font-semibold tracking-tight">XaePay</span>
+        </div>
+        <a href={WHATSAPP_URL} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition" style={{ border: "1px solid var(--line)", color: "var(--ink)" }}><MessageCircle size={13} /> Help</a>
+      </header>
+
+      <main className="mx-auto w-full max-w-xl px-5 py-10 sm:py-14 flex-1">
+        <SectionEyebrow>Customer onboarding</SectionEyebrow>
+        <h1 className="font-display mt-3 text-3xl font-[450] tracking-tight sm:text-4xl">
+          {submitted ? "We're reviewing your details." : `Hello ${invite?.customer || "there"},`}
+        </h1>
+        <p className="mt-2 text-sm" style={{ color: "var(--muted)" }}>
+          {submitted
+            ? `${invite?.bdcName || "Your operator"} will be in touch on WhatsApp once your KYC is approved (usually within a few hours during business hours).`
+            : `${invite?.bdcName || "Your operator"} invited you to onboard. Three quick steps — about 4 minutes. Your information is encrypted and goes only to your operator.`}
+        </p>
+
+        {!submitted && (
+          <>
+            <div className="mt-7"><OnboardingStepper step={step} steps={["Identity", "ID document", "Confirm"]} /></div>
+
+            <div className="mt-6">
+              {step === 1 && (
+                <Card>
+                  <h2 className="font-display text-xl font-semibold">Verify your identity</h2>
+                  <p className="mt-1 text-sm" style={{ color: "var(--muted)" }}>BVN lookup is instant — no documents needed at this step.</p>
+                  <div className="mt-6 space-y-4">
+                    <Field label="Full name (as on your bank account)"><Input value={data.fullName} onChange={(e) => setData({ ...data, fullName: e.target.value })} placeholder="Your full legal name" /></Field>
+                    <div>
+                      <Label>BVN (Bank Verification Number)</Label>
+                      <div className="flex gap-2">
+                        <Input value={data.bvn} onChange={(e) => setData({ ...data, bvn: e.target.value, bvnVerified: false })} placeholder="22XXXXXXXXX" />
+                        <button onClick={verifyBVN} disabled={verifying || !data.bvn} className="inline-flex items-center justify-center gap-2 rounded-xl px-5 py-3 text-sm font-semibold transition disabled:opacity-50" style={{ background: "var(--ink)", color: "var(--bone)" }}>{verifying ? <><Loader2 size={14} className="spin" /> Verifying</> : "Verify"}</button>
+                      </div>
+                      {data.bvnVerified && (
+                        <div className="mt-3 rise rounded-xl p-3" style={{ background: "var(--ink)", color: "var(--bone)" }}>
+                          <div className="flex items-center gap-2"><CheckCircle2 size={14} style={{ color: "var(--lime)" }} strokeWidth={2.5} /><span className="text-sm">Identity confirmed: <span className="font-semibold">{data.fullName}</span></span></div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  <div className="mt-6 flex justify-end"><PrimaryBtn onClick={() => setStep(2)} disabled={!data.bvnVerified}>Continue <ArrowRight size={14} /></PrimaryBtn></div>
+                </Card>
+              )}
+              {step === 2 && (
+                <Card>
+                  <h2 className="font-display text-xl font-semibold">Photo ID</h2>
+                  <p className="mt-1 text-sm" style={{ color: "var(--muted)" }}>Snap or upload your government-issued ID. The number must match what we just verified.</p>
+                  <div className="mt-6 grid gap-4 sm:grid-cols-2">
+                    <Field label="ID type"><Select value={data.idType} onChange={(e) => setData({ ...data, idType: e.target.value })}><option>NIN</option><option>Passport</option><option>Driver's License</option><option>Voter's Card</option></Select></Field>
+                    <Field label="ID number"><Input value={data.idNumber} onChange={(e) => setData({ ...data, idNumber: e.target.value })} placeholder="Number on the card / passport" /></Field>
+                  </div>
+                  <div className="mt-4">
+                    <UploadRow label="Photo of your ID + selfie" sublabel="Phone-camera quality is fine — or send via WhatsApp to your operator" done={data.idUploaded} onClick={() => { setData({ ...data, idUploaded: true }); push("Photo received", "success"); }} />
+                  </div>
+                  <div className="mt-6 flex justify-between"><SecondaryBtn onClick={() => setStep(1)}>Back</SecondaryBtn><PrimaryBtn onClick={() => setStep(3)} disabled={!data.idNumber || !data.idUploaded}>Continue <ArrowRight size={14} /></PrimaryBtn></div>
+                </Card>
+              )}
+              {step === 3 && (
+                <Card>
+                  <h2 className="font-display text-xl font-semibold">Confirm and submit</h2>
+                  <p className="mt-1 text-sm" style={{ color: "var(--muted)" }}>Quick check — does this look right?</p>
+                  <dl className="mt-5 overflow-hidden rounded-xl" style={{ background: "var(--bone)", border: "1px solid var(--line)" }}>
+                    <Row label="Full name" value={data.fullName} />
+                    <Row label="BVN" value={`••••${data.bvn.slice(-4)}`} mono sub="Verified" />
+                    <Row label="ID" value={`${data.idType} · ${data.idNumber}`} mono sub="Photo received" />
+                    <Row label="Onboarding via" value={invite?.bdcName || "Your operator"} sub={invite?.tier || "—"} />
+                  </dl>
+                  <div className="mt-5 rounded-xl p-4 text-xs" style={{ background: "rgba(15,95,63,0.06)", border: "1px solid rgba(15,95,63,0.2)" }}>
+                    <div className="flex items-start gap-2">
+                      <Shield size={14} className="mt-0.5 flex-shrink-0" style={{ color: "var(--emerald)" }} />
+                      <p style={{ color: "var(--ink)" }}>By submitting you agree your data is shared with {invite?.bdcName || "your operator"} for KYC under CBN rules. XaePay processes the submission as a software vendor — we never custody funds and you remain a customer of the licensed operator.</p>
+                    </div>
+                  </div>
+                  <div className="mt-6 flex justify-between"><SecondaryBtn onClick={() => setStep(2)}>Back</SecondaryBtn><PrimaryBtn onClick={submit}>Submit onboarding <Sparkles size={14} /></PrimaryBtn></div>
+                </Card>
+              )}
+            </div>
+          </>
+        )}
+
+        {submitted && (
+          <div className="mt-7 rounded-2xl p-7 relative overflow-hidden" style={{ background: "var(--ink)", color: "var(--bone)" }}>
+            <div className="absolute -right-20 -top-20 h-56 w-56 rounded-full opacity-40 blur-3xl" style={{ background: "var(--lime)" }} />
+            <div className="relative">
+              <div className="flex h-12 w-12 items-center justify-center rounded-full" style={{ background: "var(--lime)" }}><CheckCircle2 size={24} strokeWidth={2.5} style={{ color: "var(--ink)" }} /></div>
+              <h2 className="font-display mt-5 text-[24px] font-[450] tracking-tight">Submitted to {invite?.bdcName || "your operator"}.</h2>
+              <p className="mt-2 text-sm" style={{ color: "rgba(247,245,240,0.7)" }}>You'll get a WhatsApp notification once your KYC is approved. After that you can request trade payment quotes anytime.</p>
+              <a href={WHATSAPP_URL} target="_blank" rel="noreferrer" className="mt-5 inline-flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold transition glow-lime" style={{ background: "var(--lime)", color: "var(--ink)" }}><MessageCircle size={14} /> Message your operator</a>
+            </div>
+          </div>
+        )}
       </main>
 
       <footer className="px-5 py-6 text-center font-mono text-[10px] uppercase tracking-wider" style={{ color: "var(--muted)", borderTop: "1px solid var(--line)" }}>© XaePay · xaepay.com</footer>
@@ -2146,6 +2287,9 @@ function BDCDashboard({ session }) {
   // Orders submitted from Rail Quotes flow through to Transactions. Lifted here so both tabs see the same list.
   const [submittedOrders, setSubmittedOrders] = useState([]);
   const addOrder = (o) => setSubmittedOrders((prev) => [o, ...prev].slice(0, 20));
+  // Newly onboarded customers persist across tab switches.
+  const [addedCustomers, setAddedCustomers] = useState([]);
+  const addCustomer = (c) => setAddedCustomers((prev) => [c, ...prev].slice(0, 50));
   return (
     <>
     <div className="mx-auto max-w-7xl px-4 py-10 sm:px-6 lg:px-8 lg:py-14">
@@ -2181,7 +2325,7 @@ function BDCDashboard({ session }) {
         {tab === "overview" && <BDCOverview onJumpTab={setTab} />}
         {tab === "quotes" && <BDCRailQuotes onOrderSubmitted={addOrder} />}
         {tab === "transactions" && <BDCTransactions submittedOrders={submittedOrders} />}
-        {tab === "customers" && <BDCCustomers />}
+        {tab === "customers" && <BDCCustomers addedCustomers={addedCustomers} onAddCustomer={addCustomer} />}
         {tab === "liquidity" && <BDCLiquidity />}
         {tab === "agent" && <BDCPaymentAgent />}
         {tab === "compliance" && <BDCCompliance />}
@@ -2875,10 +3019,11 @@ function TxDrawer({ tx, onClose }) {
   );
 }
 
-function BDCCustomers() {
+function BDCCustomers({ addedCustomers = [], onAddCustomer }) {
   const { push } = useToast();
   const [selected, setSelected] = useState(null);
-  const customers = [
+  const [addOpen, setAddOpen] = useState(false);
+  const baseCustomers = [
     { name: "Novus Trading Ltd", volume: 1240000, count: 34, tier: "Corporate", kycTier: 3 },
     { name: "Delta Petrochem", volume: 890000, count: 12, tier: "Corporate", kycTier: 3 },
     { name: "Sahara Foods Import", volume: 420000, count: 28, tier: "SME", kycTier: 2 },
@@ -2886,12 +3031,16 @@ function BDCCustomers() {
     { name: "Adeyemi Okafor", volume: 142000, count: 8, tier: "SME", kycTier: 2 },
     { name: "Funmi Adeleke", volume: 6800, count: 4, tier: "Individual", kycTier: 1 },
   ];
+  const customers = [...addedCustomers, ...baseCustomers];
   return (
     <>
     <Card padding="none">
-      <div className="flex items-center justify-between p-4" style={{ borderBottom: "1px solid var(--line)" }}>
+      <div className="flex items-center justify-between p-4 gap-2 flex-wrap" style={{ borderBottom: "1px solid var(--line)" }}>
         <div className="text-sm font-semibold">{customers.length} customers</div>
-        <SecondaryBtn onClick={() => push(`Exporting ${customers.length} customers…`, "success")}><Download size={14} /> Export</SecondaryBtn>
+        <div className="flex gap-2">
+          <SecondaryBtn onClick={() => push(`Exporting ${customers.length} customers…`, "success")}><Download size={14} /> Export</SecondaryBtn>
+          <PrimaryBtn onClick={() => setAddOpen(true)}><Plus size={14} /> Add customer</PrimaryBtn>
+        </div>
       </div>
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
@@ -2899,7 +3048,7 @@ function BDCCustomers() {
           <tbody>
             {customers.map((c) => (
               <tr key={c.name} onClick={() => setSelected(c)} className="cursor-pointer transition hover:bg-[color:var(--bone)]" style={{ borderBottom: "1px solid var(--line)" }}>
-                <td className="px-4 py-3.5 font-medium">{c.name}</td>
+                <td className="px-4 py-3.5 font-medium">{c.name}{c.kycStatus === "pending" && <span className="ml-2 rounded-full px-1.5 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-wider" style={{ background: "#fef3c7", color: "#92400e" }}>KYC pending</span>}</td>
                 <td className="px-4 py-3.5"><span className="rounded-full px-2 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-wider" style={c.tier === "Corporate" ? { background: "var(--emerald)", color: "var(--lime)" } : c.tier === "SME" ? { background: "#fef3c7", color: "#92400e" } : { background: "var(--bone-2)", color: "var(--muted)" }}>{c.tier}</span></td>
                 <td className="px-4 py-3.5"><span className="font-mono text-[10px] font-semibold" style={{ color: "var(--emerald)" }}>T{c.kycTier}</span></td>
                 <td className="px-4 py-3.5 text-right font-mono font-semibold">${c.volume.toLocaleString()}</td>
@@ -2912,7 +3061,145 @@ function BDCCustomers() {
       </div>
     </Card>
     <CustomerDrawer customer={selected} onClose={() => setSelected(null)} />
+    <AddCustomerModal open={addOpen} onClose={() => setAddOpen(false)} onAdd={(c) => { if (onAddCustomer) onAddCustomer(c); setAddOpen(false); }} />
     </>
+  );
+}
+
+function AddCustomerModal({ open, onClose, onAdd }) {
+  const { push } = useToast();
+  const [mode, setMode] = useState("whatsapp"); // whatsapp | counter
+  // Shared
+  const [name, setName] = useState("");
+  const [phone, setPhone] = useState("");
+  const [tier, setTier] = useState("SME");
+  const [kycTier, setKycTier] = useState(2);
+  // Counter mode (BDC has docs in hand)
+  const [bvn, setBvn] = useState("");
+  const [idType, setIdType] = useState("NIN");
+  const [idNumber, setIdNumber] = useState("");
+  const [docsUploaded, setDocsUploaded] = useState(false);
+
+  const reset = () => { setName(""); setPhone(""); setTier("SME"); setKycTier(2); setBvn(""); setIdType("NIN"); setIdNumber(""); setDocsUploaded(false); setMode("whatsapp"); };
+  const closeAndReset = () => { reset(); onClose(); };
+
+  const sendWhatsAppOnboardLink = (e) => {
+    e.preventDefault();
+    if (!name || !phone) { push("Customer name and WhatsApp number required.", "warn"); return; }
+    const phoneDigits = phone.replace(/[^\d]/g, "");
+    const onboardToken = encodeQuoteToken({
+      type: "onboard",
+      customer: name,
+      bdcName: "Corporate Exchange BDC", // TODO: pull from session.name
+      tier,
+      requestedAt: new Date().toISOString(),
+    });
+    const onboardUrl = `${window.location.origin}/?onboard=${onboardToken}`;
+    const message =
+      `Hello ${name},%0A%0A` +
+      `Corporate Exchange BDC has invited you to onboard via XaePay.%0A%0A` +
+      `Tap to securely complete your KYC (BVN, ID, address) — takes about 4 minutes:%0A` +
+      `${encodeURIComponent(onboardUrl)}%0A%0A` +
+      `Once approved, you can request trade payment quotes directly through us. Reply if you have questions.`;
+    window.open(`https://wa.me/${phoneDigits}?text=${message}`, "_blank");
+    onAdd({
+      name,
+      phone,
+      tier,
+      kycTier: 0, // not yet verified
+      kycStatus: "pending",
+      volume: 0,
+      count: 0,
+      onboardedVia: "whatsapp-link",
+      addedAt: "just now",
+    });
+    push(`Onboarding link sent to ${name} on WhatsApp · added as KYC-pending`, "success");
+    closeAndReset();
+  };
+
+  const submitCounter = (e) => {
+    e.preventDefault();
+    if (!name || !phone || !bvn || !idNumber || !docsUploaded) { push("Complete all fields and upload docs to onboard at counter.", "warn"); return; }
+    onAdd({
+      name,
+      phone,
+      bvn,
+      idType,
+      idNumber,
+      tier,
+      kycTier,
+      kycStatus: "verified",
+      volume: 0,
+      count: 0,
+      onboardedVia: "counter",
+      addedAt: "just now",
+    });
+    push(`${name} onboarded at counter · KYC Tier ${kycTier} assigned`, "success");
+    closeAndReset();
+  };
+
+  return (
+    <Modal open={open} onClose={closeAndReset} title="Add a customer" size="lg">
+      <p className="text-sm mb-5" style={{ color: "var(--muted)" }}>Two ways to onboard. Pick whichever fits how you got the customer.</p>
+
+      <div className="grid gap-2 sm:grid-cols-2 mb-5">
+        <button onClick={() => setMode("whatsapp")} className="rounded-xl p-4 text-left transition" style={mode === "whatsapp" ? { background: "var(--ink)", color: "var(--bone)", border: "1px solid var(--ink)" } : { background: "white", border: "1px solid var(--line)" }}>
+          <div className="flex items-start gap-3">
+            <div className="flex h-9 w-9 items-center justify-center rounded-lg" style={mode === "whatsapp" ? { background: "rgba(197,242,74,0.1)", color: "var(--lime)" } : { background: "var(--bone-2)", color: "var(--emerald)" }}><MessageCircle size={16} /></div>
+            <div className="flex-1">
+              <div className="font-display text-base font-semibold">Push KYC link to WhatsApp</div>
+              <div className="text-xs mt-1" style={mode === "whatsapp" ? { color: "rgba(247,245,240,0.6)" } : { color: "var(--muted)" }}>Customer self-completes on their phone. Best for diaspora, businesses, tech-savvy customers.</div>
+            </div>
+          </div>
+        </button>
+        <button onClick={() => setMode("counter")} className="rounded-xl p-4 text-left transition" style={mode === "counter" ? { background: "var(--ink)", color: "var(--bone)", border: "1px solid var(--ink)" } : { background: "white", border: "1px solid var(--line)" }}>
+          <div className="flex items-start gap-3">
+            <div className="flex h-9 w-9 items-center justify-center rounded-lg" style={mode === "counter" ? { background: "rgba(197,242,74,0.1)", color: "var(--lime)" } : { background: "var(--bone-2)", color: "var(--emerald)" }}><Building2 size={16} /></div>
+            <div className="flex-1">
+              <div className="font-display text-base font-semibold">Onboard at the counter</div>
+              <div className="text-xs mt-1" style={mode === "counter" ? { color: "rgba(247,245,240,0.6)" } : { color: "var(--muted)" }}>You have their docs in hand. Capture BVN + ID, upload, KYC tier assigned immediately.</div>
+            </div>
+          </div>
+        </button>
+      </div>
+
+      {mode === "whatsapp" ? (
+        <form onSubmit={sendWhatsAppOnboardLink} className="space-y-4">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field label="Customer name"><Input required value={name} onChange={(e) => setName(e.target.value)} placeholder="Adeyemi Okafor" /></Field>
+            <Field label="Customer WhatsApp"><Input required value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+234 803 ..." /></Field>
+            <Field label="Customer type"><Select value={tier} onChange={(e) => setTier(e.target.value)}><option>Individual</option><option>SME</option><option>Corporate</option></Select></Field>
+          </div>
+          <div className="rounded-xl p-4 text-xs" style={{ background: "var(--bone)", border: "1px solid var(--line)" }}>
+            <div className="flex items-start gap-2">
+              <Sparkles size={14} className="mt-0.5 flex-shrink-0" style={{ color: "var(--emerald)" }} />
+              <p style={{ color: "var(--muted)" }}>Customer receives a secure link on WhatsApp to complete KYC themselves (BVN, ID, address — guided step-by-step). They appear in your customer list immediately as <span className="font-semibold" style={{ color: "var(--ink)" }}>KYC-pending</span> and tier promotes once docs are reviewed.</p>
+            </div>
+          </div>
+          <PrimaryBtn type="submit" full><MessageCircle size={14} /> Send onboarding link on WhatsApp</PrimaryBtn>
+        </form>
+      ) : (
+        <form onSubmit={submitCounter} className="space-y-4">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field label="Customer name"><Input required value={name} onChange={(e) => setName(e.target.value)} placeholder="Adeyemi Okafor" /></Field>
+            <Field label="WhatsApp / phone"><Input required value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+234 803 ..." /></Field>
+            <Field label="BVN"><Input required value={bvn} onChange={(e) => setBvn(e.target.value)} placeholder="22XXXXXXXXX" /></Field>
+            <Field label="ID type"><Select value={idType} onChange={(e) => setIdType(e.target.value)}><option>NIN</option><option>Passport</option><option>Driver's License</option><option>Voter's Card</option></Select></Field>
+            <Field label="ID number" full><Input required value={idNumber} onChange={(e) => setIdNumber(e.target.value)} placeholder="Number on the document" /></Field>
+            <Field label="Customer type"><Select value={tier} onChange={(e) => setTier(e.target.value)}><option>Individual</option><option>SME</option><option>Corporate</option></Select></Field>
+            <Field label="Assigned KYC tier"><Select value={kycTier} onChange={(e) => setKycTier(parseInt(e.target.value))}><option value={1}>Tier 1 — basic ID only ($0–5K)</option><option value={2}>Tier 2 — ID + BVN + address ($5K–50K)</option><option value={3}>Tier 3 — full corporate / EDD ($50K+)</option></Select></Field>
+          </div>
+          <UploadRow label="ID + selfie + proof of address" sublabel="JPG / PDF — usually a phone photo at the counter is fine" done={docsUploaded} onClick={() => { setDocsUploaded(true); push("Docs received · ready to onboard", "success"); }} />
+          <div className="rounded-xl p-4 text-xs" style={{ background: "rgba(15,95,63,0.06)", border: "1px solid rgba(15,95,63,0.2)" }}>
+            <div className="flex items-start gap-2">
+              <Shield size={14} className="mt-0.5 flex-shrink-0" style={{ color: "var(--emerald)" }} />
+              <p style={{ color: "var(--ink)" }}>Customer is added to your roster immediately at the chosen tier. NIBSS BVN check + sanctions screen run automatically — flagged if anything trips.</p>
+            </div>
+          </div>
+          <PrimaryBtn type="submit" full disabled={!docsUploaded}><Plus size={14} /> Onboard customer at counter</PrimaryBtn>
+        </form>
+      )}
+    </Modal>
   );
 }
 
