@@ -156,10 +156,19 @@ export default function XaePay() {
 
 function AppShell() {
   // All hooks must be called unconditionally — declare them up top.
+  const parseQuoteUrl = (raw) => {
+    if (!raw) return null;
+    // UUID v4-ish? → DB-backed quote, fetch via RPC
+    if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(raw)) {
+      return { dbToken: raw };
+    }
+    // Else try to decode as base64 (legacy path before Slice 4)
+    const data = decodeQuoteToken(raw);
+    return data ? { ...data, dbToken: null } : null;
+  };
   const [quoteRoute, setQuoteRoute] = useState(() => {
     if (typeof window === "undefined") return null;
-    const t = new URLSearchParams(window.location.search).get("quote");
-    return t ? decodeQuoteToken(t) : null;
+    return parseQuoteUrl(new URLSearchParams(window.location.search).get("quote"));
   });
   const [onboardRoute, setOnboardRoute] = useState(() => {
     if (typeof window === "undefined") return null;
@@ -194,7 +203,7 @@ function AppShell() {
       const params = new URLSearchParams(window.location.search);
       const q = params.get("quote");
       const o = params.get("onboard");
-      setQuoteRoute(q ? decodeQuoteToken(q) : null);
+      setQuoteRoute(parseQuoteUrl(q));
       setOnboardRoute(o ? decodeQuoteToken(o) : null);
     };
     window.addEventListener("popstate", onPop);
@@ -231,34 +240,120 @@ function AppShell() {
   );
 }
 
-function QuoteApprovalPage({ quote }) {
+function QuoteApprovalPage({ quote: initialQuote }) {
   const { push } = useToast();
+  // dbToken means the quote lives in Supabase; legacy quotes are inline-decoded payloads.
+  const isDbBacked = !!initialQuote?.dbToken;
+  const [quote, setQuote] = useState(initialQuote);
+  const [loading, setLoading] = useState(isDbBacked);
+  const [submitting, setSubmitting] = useState(false);
   const [decision, setDecision] = useState(() => new URLSearchParams(window.location.search).get("approved") === "1" ? "approved" : null);
-  const [secondsLeft, setSecondsLeft] = useState(() => {
-    const exp = quote?.expiresAt ? new Date(quote.expiresAt).getTime() : Date.now() + 4 * 60 * 1000;
-    return Math.max(0, Math.floor((exp - Date.now()) / 1000));
-  });
-  useEffect(() => {
-    if (decision || secondsLeft <= 0) return;
-    const i = setInterval(() => setSecondsLeft((s) => Math.max(0, s - 1)), 1000);
-    return () => clearInterval(i);
-  }, [decision, secondsLeft]);
+  const [secondsLeft, setSecondsLeft] = useState(0);
 
-  const expired = secondsLeft <= 0 && decision !== "approved";
+  // Fetch DB-backed quote on mount; for legacy in-URL quotes we already have the data.
+  useEffect(() => {
+    if (!isDbBacked) { setLoading(false); return; }
+    let cancelled = false;
+    (async () => {
+      const { data, error } = await supabase.rpc("get_quote", { p_token: initialQuote.dbToken });
+      if (cancelled) return;
+      if (error || !data || data.length === 0) {
+        // eslint-disable-next-line no-console
+        console.error("get_quote failed:", error);
+        setQuote(null);
+      } else {
+        const row = data[0];
+        setQuote({
+          dbToken: initialQuote.dbToken,
+          id: `QU-${row.id.slice(0, 4).toUpperCase()}`,
+          customer: row.customer_name,
+          amount: parseFloat(row.amount),
+          currency: row.currency,
+          rate: parseFloat(row.rate),
+          ngnTotal: row.ngn_total,
+          rail: row.rail,
+          settlement: row.settlement_text,
+          beneficiary: row.beneficiary,
+          bdcName: row.bdc_name,
+          expiresAt: row.expires_at,
+          status: row.status,
+        });
+        if (row.status === "customer_approved") setDecision("approved");
+        else if (row.status === "customer_declined") setDecision("declined");
+      }
+      setLoading(false);
+    })();
+    return () => { cancelled = true; };
+  }, [isDbBacked, initialQuote?.dbToken]);
+
+  // Countdown
+  useEffect(() => {
+    if (!quote?.expiresAt) return;
+    const tick = () => setSecondsLeft(Math.max(0, Math.floor((new Date(quote.expiresAt).getTime() - Date.now()) / 1000)));
+    tick();
+    if (decision) return;
+    const i = setInterval(tick, 1000);
+    return () => clearInterval(i);
+  }, [quote?.expiresAt, decision]);
+
+  const expired = secondsLeft <= 0 && decision !== "approved" && !loading;
   const mins = Math.floor(secondsLeft / 60);
   const secs = secondsLeft % 60;
 
-  const approve = () => {
+  const approve = async () => {
+    if (submitting) return;
+    setSubmitting(true);
+    if (isDbBacked) {
+      const { error } = await supabase.rpc("approve_quote", { p_token: initialQuote.dbToken });
+      setSubmitting(false);
+      if (error) {
+        push(error.message || "Couldn't approve — try again.", "warn");
+        return;
+      }
+    } else {
+      setSubmitting(false);
+    }
     setDecision("approved");
     const url = new URL(window.location.href);
     url.searchParams.set("approved", "1");
     window.history.replaceState({}, "", url);
     push("Quote approved.", "success");
   };
-  const decline = () => {
+  const decline = async () => {
+    if (submitting) return;
+    setSubmitting(true);
+    if (isDbBacked) {
+      const { error } = await supabase.rpc("decline_quote", { p_token: initialQuote.dbToken });
+      setSubmitting(false);
+      if (error) {
+        push(error.message || "Couldn't decline — try again.", "warn");
+        return;
+      }
+    } else {
+      setSubmitting(false);
+    }
     setDecision("declined");
     push("Quote declined.", "info");
   };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center font-ui" style={{ background: "var(--paper)", color: "var(--muted)" }}>
+        <div className="flex items-center gap-2"><Loader2 size={16} className="spin" /> Loading quote…</div>
+      </div>
+    );
+  }
+  if (!quote) {
+    return (
+      <div className="min-h-screen flex items-center justify-center font-ui px-6 text-center" style={{ background: "var(--paper)", color: "var(--ink)" }}>
+        <div>
+          <h1 className="font-display text-2xl font-semibold">Quote not found</h1>
+          <p className="mt-2 text-sm" style={{ color: "var(--muted)" }}>This link may have expired or been mistyped. Message your operator on WhatsApp for a fresh quote.</p>
+          <a href={WHATSAPP_URL} target="_blank" rel="noreferrer" className="mt-5 inline-flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold" style={{ background: "var(--ink)", color: "var(--bone)" }}><MessageCircle size={14} /> WhatsApp</a>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen font-ui flex flex-col" style={{ background: "var(--paper)", color: "var(--ink)" }}>
@@ -309,10 +404,10 @@ function QuoteApprovalPage({ quote }) {
 
         {!decision && !expired && (
           <div className="mt-6 grid gap-3 sm:grid-cols-3">
-            <button onClick={approve} className="sm:col-span-2 inline-flex items-center justify-center gap-2 rounded-xl px-5 py-3.5 text-sm font-semibold transition glow-lime" style={{ background: "var(--lime)", color: "var(--ink)" }}>
-              <CheckCircle2 size={16} strokeWidth={2.5} /> Approve & execute
+            <button onClick={approve} disabled={submitting} className="sm:col-span-2 inline-flex items-center justify-center gap-2 rounded-xl px-5 py-3.5 text-sm font-semibold transition glow-lime disabled:opacity-50" style={{ background: "var(--lime)", color: "var(--ink)" }}>
+              {submitting ? <><Loader2 size={16} className="spin" /> Approving…</> : <><CheckCircle2 size={16} strokeWidth={2.5} /> Approve & execute</>}
             </button>
-            <button onClick={decline} className="inline-flex items-center justify-center gap-2 rounded-xl px-5 py-3.5 text-sm font-semibold transition" style={{ background: "white", border: "1px solid var(--line)", color: "var(--ink)" }}>
+            <button onClick={decline} disabled={submitting} className="inline-flex items-center justify-center gap-2 rounded-xl px-5 py-3.5 text-sm font-semibold transition disabled:opacity-50" style={{ background: "white", border: "1px solid var(--line)", color: "var(--ink)" }}>
               Decline
             </button>
           </div>
@@ -2532,6 +2627,8 @@ const LP_USDT_NGN = 1388;
 
 function BDCRailQuotes({ onOrderSubmitted }) {
   const { push } = useToast();
+  const auth = useAuth();
+  const isSignedIn = !!auth.user;
   const [direction, setDirection] = useState("off-ramp"); // off-ramp = NGN customer → foreign supplier (outbound); on-ramp = foreign sender → NGN beneficiary (diaspora inbound)
   const [amount, setAmount] = useState("50000");
   const [destinationCcy, setDestinationCcy] = useState("USD");
@@ -2546,6 +2643,8 @@ function BDCRailQuotes({ onOrderSubmitted }) {
   const [beneficiary, setBeneficiary] = useState("");
   const [approvalStatus, setApprovalStatus] = useState("idle"); // idle | sent | approved | declined
   const [chosenRail, setChosenRail] = useState(null); // "Triple-A" | "Cedar Money"
+  const [currentQuoteId, setCurrentQuoteId] = useState(null); // Supabase quote.id when DB-backed
+  const [currentQuoteRef, setCurrentQuoteRef] = useState(null); // short ref shown to customer
 
   const [orders, setOrders] = useState([
     { id: "ORD-2218", rail: "Cedar Money", customer: "Sahara Foods Import", amount: 32000, customerRate: 1421.40, ts: "12 min ago", status: "filled" },
@@ -2636,57 +2735,137 @@ function BDCRailQuotes({ onOrderSubmitted }) {
     if (cheapest && !chosenRail) setChosenRail(cheapest.name);
   }, [cheapest, chosenRail]);
 
-  const sendQuoteOnWhatsApp = () => {
+  const sendQuoteOnWhatsApp = async () => {
     if (!customerPhone) { push("Enter a customer WhatsApp number first.", "warn"); return; }
     const phoneDigits = customerPhone.replace(/[^\d]/g, "");
-    const quoteId = `QU-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
     const expiresAt = new Date(Date.now() + 4 * 60 * 1000).toISOString();
-    const token = encodeQuoteToken({
-      id: quoteId,
-      customer: customerName,
-      amount: parseFloat(amount),
-      currency: destinationCcy,
-      rate: parseFloat(customerRate.toFixed(2)),
-      ngnTotal: Math.round(ngnTotal),
-      rail: chosenRail || cheapest?.name,
-      settlement: cheapest?.settlement,
-      beneficiary: beneficiary || destinationCorridor,
-      bdcName: "Corporate Exchange BDC", // TODO: pull from session.name once wired
-      expiresAt,
-    });
-    const approvalUrl = `${window.location.origin}/?quote=${token}`;
+    const railName = chosenRail || cheapest?.name;
+    const settlement = cheapest?.settlement;
+
+    let urlToken; // what we put in the WhatsApp URL
+    let displayRef; // short customer-facing reference
+
+    if (isSignedIn) {
+      // DB-backed: insert into Supabase, use the row id as the URL token
+      const { data, error } = await supabase
+        .from("quotes")
+        .insert({
+          bdc_user_id: auth.user.id,
+          bdc_name: auth.user.user_metadata?.company || "Corporate Exchange BDC",
+          customer_name: customerName,
+          customer_phone: customerPhone,
+          amount: parseFloat(amount),
+          currency: destinationCcy,
+          beneficiary: beneficiary || destinationCorridor,
+          destination: destinationCorridor,
+          rate: parseFloat(customerRate.toFixed(2)),
+          ngn_total: Math.round(ngnTotal),
+          rail: railName,
+          settlement_text: settlement,
+          cost_basis_ngn: cheapest?.nativeCostNGN,
+          markup_pct: parseFloat(markupPct || 0),
+          status: "pending_approval",
+          expires_at: expiresAt,
+        })
+        .select("id")
+        .single();
+      if (error) {
+        // eslint-disable-next-line no-console
+        console.error("Insert quote failed:", error);
+        push("Couldn't save quote — try again.", "warn");
+        return;
+      }
+      urlToken = data.id; // UUID
+      displayRef = `QU-${data.id.slice(0, 4).toUpperCase()}`;
+      setCurrentQuoteId(data.id);
+      setCurrentQuoteRef(displayRef);
+    } else {
+      // Legacy: encode payload in URL (no DB)
+      displayRef = `QU-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
+      urlToken = encodeQuoteToken({
+        id: displayRef,
+        customer: customerName,
+        amount: parseFloat(amount),
+        currency: destinationCcy,
+        rate: parseFloat(customerRate.toFixed(2)),
+        ngnTotal: Math.round(ngnTotal),
+        rail: railName,
+        settlement,
+        beneficiary: beneficiary || destinationCorridor,
+        bdcName: "Corporate Exchange BDC",
+        expiresAt,
+      });
+      setCurrentQuoteId(null);
+      setCurrentQuoteRef(displayRef);
+    }
+
+    const approvalUrl = `${window.location.origin}/?quote=${urlToken}`;
     const message =
       `Hello ${customerName || "there"},%0A%0A` +
-      `Trade payment quote via XaePay (ref ${quoteId}):%0A` +
+      `Trade payment quote via XaePay (ref ${displayRef}):%0A` +
       `• Send: $${parseFloat(amount).toLocaleString()} ${destinationCcy} to ${beneficiary || destinationCorridor}%0A` +
       `• Rate: ₦${customerRate.toFixed(2)} / $%0A` +
       `• Total naira: ₦${Math.round(ngnTotal).toLocaleString()}%0A` +
-      `• Settlement: ${cheapest?.settlement || "—"}%0A%0A` +
+      `• Settlement: ${settlement || "—"}%0A%0A` +
       `Tap to review and approve:%0A${encodeURIComponent(approvalUrl)}%0A%0A` +
-      `Quote valid for 4 minutes. Or reply YES ${quoteId} to confirm here.`;
+      `Quote valid for 4 minutes. Or reply YES ${displayRef} to confirm here.`;
     window.open(`https://wa.me/${phoneDigits}?text=${message}`, "_blank");
     setApprovalStatus("sent");
-    push(`Quote ${quoteId} sent to ${customerName || phoneDigits} on WhatsApp`, "success");
+    push(`Quote ${displayRef} sent to ${customerName || phoneDigits} on WhatsApp`, "success");
   };
 
-  const submitOrder = () => {
+  // While we're waiting on customer approval (DB-backed only), poll the quote status every 5s.
+  // Flips approvalStatus → 'approved' or 'declined' the moment customer hits the button on their phone.
+  useEffect(() => {
+    if (!isSignedIn || !currentQuoteId || approvalStatus !== "sent") return;
+    const interval = setInterval(async () => {
+      const { data, error } = await supabase.rpc("get_quote", { p_token: currentQuoteId });
+      if (error || !data || data.length === 0) return;
+      const status = data[0].status;
+      if (status === "customer_approved") {
+        setApprovalStatus("approved");
+        push("Customer approved the quote", "success");
+      } else if (status === "customer_declined") {
+        setApprovalStatus("declined");
+        push("Customer declined the quote", "info");
+      } else if (status === "expired") {
+        setApprovalStatus("idle");
+        push("Quote expired before customer approved", "warn");
+      }
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [isSignedIn, currentQuoteId, approvalStatus, push]);
+
+  const submitOrder = async () => {
     if (!chosenRail || approvalStatus !== "approved") return;
+    const orderRef = currentQuoteRef || `ORD-${2200 + Math.floor(Math.random() * 100)}`;
     const newOrder = {
-      id: `ORD-${2200 + Math.floor(Math.random() * 100)}`,
+      id: orderRef,
       rail: chosenRail,
       customer: customerName || "Unnamed",
       amount: parseFloat(amount),
       customerRate,
       ts: "just now",
       status: "submitted",
-      // Fields used by the Transactions tab when this order flows through
       dest: destinationCorridor,
       date: "Today · just now",
     };
+    // If DB-backed, update quote to submitted_to_rail. Failure here doesn't break the local flow.
+    if (isSignedIn && currentQuoteId) {
+      const { error } = await supabase
+        .from("quotes")
+        .update({ status: "submitted_to_rail", rail: chosenRail, submitted_at: new Date().toISOString() })
+        .eq("id", currentQuoteId);
+      if (error) {
+        // eslint-disable-next-line no-console
+        console.error("Update quote to submitted failed:", error);
+      }
+    }
     setOrders((o) => [newOrder, ...o].slice(0, 8));
     if (onOrderSubmitted) onOrderSubmitted(newOrder);
-    push(`Order ${newOrder.id} submitted to ${chosenRail} — also visible in Transactions`, "success");
+    push(`Order ${orderRef} submitted to ${chosenRail} — also visible in Transactions`, "success");
     setApprovalStatus("idle"); setCustomerName(""); setCustomerPhone(""); setBeneficiary("");
+    setCurrentQuoteId(null); setCurrentQuoteRef(null);
   };
 
   return (
