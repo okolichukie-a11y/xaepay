@@ -7,6 +7,7 @@ import {
   ArrowLeft, Loader2, Layers, TrendingUp, Wallet, DollarSign, Mail,
 } from "lucide-react";
 import { supabase } from "./lib/supabase.js";
+import { useAuth } from "./lib/auth.js";
 
 // ─── Editable in one place ────────────────────────────────────────────────
 // Swap these when you have real values. Search for "TODO:" to find them.
@@ -173,6 +174,21 @@ function AppShell() {
   const [onboardingOpen, setOnboardingOpen] = useState(false);
   const [onboardingType, setOnboardingType] = useState(null);
   const [session, setSession] = useState({ type: null, tier: 0, name: null, company: null });
+  const auth = useAuth();
+  // Reconcile real auth user → session: when a magic-link visitor lands signed-in,
+  // hydrate the local session from their user_metadata so dashboards work without onboarding.
+  useEffect(() => {
+    if (!auth.user) return;
+    const meta = auth.user.user_metadata || {};
+    setSession((prev) => prev.type ? prev : ({
+      type: meta.role || "business",
+      tier: meta.tier ?? 1,
+      name: meta.name || auth.user.email,
+      company: meta.company || null,
+      email: auth.user.email,
+      authUserId: auth.user.id,
+    }));
+  }, [auth.user]);
   useEffect(() => {
     const onPop = () => {
       const params = new URLSearchParams(window.location.search);
@@ -201,18 +217,13 @@ function AppShell() {
   return (
     <div className="min-h-screen font-ui" style={{ background: "var(--paper)", color: "var(--ink)" }}>
       <PreviewBanner onWaitlist={() => setWaitlistOpen(true)} />
-      <TopBar view={view} setView={setView} mobileOpen={mobileOpen} setMobileOpen={setMobileOpen} onSignIn={() => setSignInOpen(true)} onRequestAccess={() => setAccessOpen(true)} onWaitlist={() => setWaitlistOpen(true)} session={session} />
+      <TopBar view={view} setView={setView} mobileOpen={mobileOpen} setMobileOpen={setMobileOpen} onSignIn={() => setSignInOpen(true)} onRequestAccess={() => setAccessOpen(true)} onWaitlist={() => setWaitlistOpen(true)} session={session} authUser={auth.user} onSignOut={async () => { await auth.signOut(); setSession({ type: null, tier: 0, name: null, company: null }); setView("landing"); }} />
       {view === "landing" && <Landing setView={setView} onRequestAccess={() => setAccessOpen(true)} onWaitlist={() => setWaitlistOpen(true)} />}
       {view === "customer" && <CustomerApp session={session} />}
       {view === "bdc" && <BDCDashboard session={session} />}
       {view === "lp" && <LPDashboard session={session} />}
       {view === "diaspora" && <DiasporaApp session={session} />}
-      <SignInModal open={signInOpen} onClose={() => setSignInOpen(false)} onSuccess={(role) => {
-        setSignInOpen(false);
-        const nameMap = { business: "Adeyemi Okafor", bdc: "Corporate Exchange BDC", agent: "Flutterwave Payment Services", lp: "K. Asante", diaspora: "Chioma Nwosu" };
-        setSession({ type: role, tier: (role === "business" || role === "diaspora") ? 2 : null, name: nameMap[role] || role, company: role === "business" ? "Novus Trading Ltd" : null });
-        setView(role === "bdc" || role === "agent" ? "bdc" : role === "lp" ? "lp" : role === "diaspora" ? "diaspora" : "customer");
-      }} />
+      <SignInModal open={signInOpen} onClose={() => setSignInOpen(false)} />
       <RequestAccessModal open={accessOpen} onClose={() => setAccessOpen(false)} onChoose={startOnboarding} onWaitlist={() => { setAccessOpen(false); setWaitlistOpen(true); }} />
       <WaitlistModal open={waitlistOpen} onClose={() => setWaitlistOpen(false)} />
       {onboardingOpen && <OnboardingFlow type={onboardingType} onClose={() => setOnboardingOpen(false)} onComplete={completeOnboarding} onSwitchType={(t) => setOnboardingType(t)} />}
@@ -584,7 +595,7 @@ function WaitlistModal({ open, onClose }) {
   );
 }
 
-function TopBar({ view, setView, mobileOpen, setMobileOpen, onSignIn, onRequestAccess, onWaitlist, session }) {
+function TopBar({ view, setView, mobileOpen, setMobileOpen, onSignIn, onRequestAccess, onWaitlist, session, authUser, onSignOut }) {
   const onLanding = view === "landing";
   return (
     <div className="sticky top-0 z-50 backdrop-blur-xl" style={{ background: onLanding ? "rgba(10,11,13,0.72)" : "rgba(252,251,247,0.85)", borderBottom: `1px solid ${onLanding ? "rgba(255,255,255,0.06)" : "var(--line)"}`, color: onLanding ? "var(--bone)" : "var(--ink)" }}>
@@ -611,7 +622,17 @@ function TopBar({ view, setView, mobileOpen, setMobileOpen, onSignIn, onRequestA
             )}
             <button onClick={onRequestAccess} className={`rounded-lg px-3 py-1.5 text-sm font-medium transition ${onLanding ? "text-stone-300 hover:text-white" : "text-stone-600 hover:text-stone-900"}`}>See preview</button>
             <a href={WHATSAPP_URL} target="_blank" rel="noreferrer" className={`hidden lg:inline-flex items-center gap-1 rounded-lg px-3 py-1.5 text-sm font-medium transition ${onLanding ? "text-stone-300 hover:text-white" : "text-stone-600 hover:text-stone-900"}`}><MessageCircle size={13} /> WhatsApp</a>
-            <button onClick={onWaitlist} className="rounded-lg px-4 py-1.5 text-sm font-medium transition" style={onLanding ? { background: "var(--lime)", color: "var(--ink)" } : { background: "var(--ink)", color: "var(--bone)" }}>Join waitlist</button>
+            {authUser ? (
+              <>
+                <span className="hidden lg:inline font-mono text-[10px] uppercase tracking-wider truncate max-w-[140px]" style={{ color: onLanding ? "rgba(247,245,240,0.6)" : "var(--muted)" }} title={authUser.email}>{authUser.email}</span>
+                <button onClick={onSignOut} className="rounded-lg px-3 py-1.5 text-sm font-medium transition" style={onLanding ? { background: "rgba(255,255,255,0.08)", color: "var(--bone)" } : { background: "var(--bone-2)", color: "var(--ink)" }}>Sign out</button>
+              </>
+            ) : (
+              <>
+                <button onClick={onSignIn} className={`rounded-lg px-3 py-1.5 text-sm font-medium transition ${onLanding ? "text-stone-300 hover:text-white" : "text-stone-600 hover:text-stone-900"}`}>Sign in</button>
+                <button onClick={onWaitlist} className="rounded-lg px-4 py-1.5 text-sm font-medium transition" style={onLanding ? { background: "var(--lime)", color: "var(--ink)" } : { background: "var(--ink)", color: "var(--bone)" }}>Join waitlist</button>
+              </>
+            )}
           </div>
           <button onClick={() => setMobileOpen(!mobileOpen)} className="md:hidden">{mobileOpen ? <X size={22} /> : <Menu size={22} />}</button>
         </div>
@@ -651,28 +672,56 @@ function TierBadge({ tier, small, dark }) {
   return <div className="inline-flex items-center gap-2 rounded-full px-3 py-1" style={{ background: "var(--emerald)", color: "var(--lime)" }}>{tier === 3 ? <Unlock size={12} /> : <Lock size={12} />}<span className="font-mono text-[10px] font-semibold uppercase tracking-wider">{labels[tier]} · {limits[tier]}</span></div>;
 }
 
-function SignInModal({ open, onClose, onSuccess }) {
-  const [role, setRole] = useState("business");
+function SignInModal({ open, onClose }) {
   const [email, setEmail] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [sent, setSent] = useState(false);
+  const [error, setError] = useState("");
   const { push } = useToast();
-  const submit = (e) => { e.preventDefault(); push("Signed in.", "success"); onSuccess(role); setEmail(""); };
-  return (
-    <Modal open={open} onClose={onClose} title="Sign in" size="sm">
-      <form onSubmit={submit} className="space-y-4">
-        <div>
-          <Label>Sign in as</Label>
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-            <RoleBtn active={role === "business"} onClick={() => setRole("business")}>Business</RoleBtn>
-            <RoleBtn active={role === "diaspora"} onClick={() => setRole("diaspora")}>Overseas</RoleBtn>
-            <RoleBtn active={role === "bdc"} onClick={() => setRole("bdc")}>Exchange Op</RoleBtn>
-            <RoleBtn active={role === "agent"} onClick={() => setRole("agent")}>Payment Agent</RoleBtn>
-            <RoleBtn active={role === "lp"} onClick={() => setRole("lp")}>LP</RoleBtn>
+  const auth = useAuth();
+
+  const submit = async (e) => {
+    e.preventDefault();
+    setSubmitting(true); setError("");
+    try {
+      const { error: err } = await auth.signInWithEmail(email);
+      if (err) throw err;
+      setSent(true);
+      push("Magic link sent — check your inbox.", "success");
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error("signInWithEmail failed:", err);
+      setError(err.message || "Couldn't send the link. Try again.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const closeAndReset = () => { setEmail(""); setSent(false); setError(""); onClose(); };
+
+  if (sent) {
+    return (
+      <Modal open={open} onClose={closeAndReset} title="Check your inbox" size="sm">
+        <div className="text-center py-2">
+          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full" style={{ background: "var(--lime)" }}>
+            <Mail size={24} strokeWidth={2.5} style={{ color: "var(--ink)" }} />
           </div>
+          <h3 className="font-display mt-4 text-xl font-semibold" style={{ color: "var(--ink)" }}>Magic link on its way.</h3>
+          <p className="mt-2 text-sm" style={{ color: "var(--muted)" }}>We sent a sign-in link to <span className="font-mono">{email}</span>. Tap it on this device to finish signing in. The link expires in 1 hour.</p>
+          <p className="mt-4 text-[11px]" style={{ color: "var(--muted)" }}>Don't see it? Check spam, or <button onClick={() => setSent(false)} className="underline font-semibold" style={{ color: "var(--emerald)" }}>try a different email</button>.</p>
         </div>
+      </Modal>
+    );
+  }
+
+  return (
+    <Modal open={open} onClose={closeAndReset} title="Sign in" size="sm">
+      <form onSubmit={submit} className="space-y-4">
+        <p className="text-sm" style={{ color: "var(--muted)" }}>Enter your email and we'll send you a one-tap sign-in link. No password to remember.</p>
         <div><Label>Email</Label><Input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@company.com" /></div>
-        <div><Label>Password</Label><Input type="password" required placeholder="••••••••" /></div>
-        <PrimaryBtn type="submit" full><LogIn size={14} /> Sign in</PrimaryBtn>
-        <p className="text-center text-xs" style={{ color: "var(--muted)" }}>Demo · any email and password</p>
+        {error && <div className="rounded-lg p-3 text-xs" style={{ background: "#fee2e2", color: "#991b1b" }}>{error}</div>}
+        <PrimaryBtn type="submit" full disabled={submitting}>{submitting ? <><Loader2 size={14} className="spin" /> Sending…</> : <><LogIn size={14} /> Send magic link</>}</PrimaryBtn>
+        <p className="text-center text-[11px]" style={{ color: "var(--muted)" }}>By signing in you agree to our terms. We don't share your email.</p>
       </form>
     </Modal>
   );
