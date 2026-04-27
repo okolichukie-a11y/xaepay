@@ -134,6 +134,18 @@ function Drawer({ open, onClose, title, children }) {
   );
 }
 
+// Human-friendly relative timestamp for table rows ("12 min ago", "Today · 14:22").
+function relativeTime(iso) {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return "—";
+  const diffSec = Math.round((Date.now() - d.getTime()) / 1000);
+  if (diffSec < 60) return "just now";
+  if (diffSec < 3600) return `${Math.floor(diffSec / 60)} min ago`;
+  if (diffSec < 86400) return `${Math.floor(diffSec / 3600)} hr ago`;
+  return d.toLocaleDateString(undefined, { month: "short", day: "numeric" }) + " · " + d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+}
+
 // ─── Quote-link encoding ──────────────────────────────────────────────────
 // Quote details ride in the URL so the customer-side approval page works without a backend.
 // btoa/atob handle base64; we strip URL-unsafe chars and padding for clean URLs.
@@ -2428,10 +2440,8 @@ function HistoryDrawer({ open, onClose }) {
 function BDCDashboard({ session }) {
   const [tab, setTab] = useState("overview");
   const [newTxOpen, setNewTxOpen] = useState(false);
-  // Orders submitted from Rail Quotes flow through to Transactions. Lifted here so both tabs see the same list.
-  const [submittedOrders, setSubmittedOrders] = useState([]);
-  const addOrder = (o) => setSubmittedOrders((prev) => [o, ...prev].slice(0, 20));
-  // Newly onboarded customers persist across tab switches.
+  // Newly onboarded customers persist across tab switches (used by unsigned demo path; signed-in users
+  // pull from DB).
   const [addedCustomers, setAddedCustomers] = useState([]);
   const addCustomer = (c) => setAddedCustomers((prev) => [c, ...prev].slice(0, 50));
   return (
@@ -2467,8 +2477,8 @@ function BDCDashboard({ session }) {
       </div>
       <div className="fade-in">
         {tab === "overview" && <BDCOverview onJumpTab={setTab} />}
-        {tab === "quotes" && <BDCRailQuotes onOrderSubmitted={addOrder} />}
-        {tab === "transactions" && <BDCTransactions submittedOrders={submittedOrders} />}
+        {tab === "quotes" && <BDCRailQuotes />}
+        {tab === "transactions" && <BDCTransactions />}
         {tab === "customers" && <BDCCustomers addedCustomers={addedCustomers} onAddCustomer={addCustomer} />}
         {tab === "liquidity" && <BDCLiquidity />}
         {tab === "agent" && <BDCPaymentAgent />}
@@ -2625,7 +2635,7 @@ function BDCLiquidity() {
 // In production this would come from the Liquidity tab's live LP feed.
 const LP_USDT_NGN = 1388;
 
-function BDCRailQuotes({ onOrderSubmitted }) {
+function BDCRailQuotes() {
   const { push } = useToast();
   const auth = useAuth();
   const isSignedIn = !!auth.user;
@@ -2646,10 +2656,40 @@ function BDCRailQuotes({ onOrderSubmitted }) {
   const [currentQuoteId, setCurrentQuoteId] = useState(null); // Supabase quote.id when DB-backed
   const [currentQuoteRef, setCurrentQuoteRef] = useState(null); // short ref shown to customer
 
-  const [orders, setOrders] = useState([
+  // Orders shown at the bottom of the Rail Quotes tab. Signed-in users see real submitted quotes
+  // from the DB; unsigned visitors see two demo rows so the section isn't empty.
+  const DEMO_ORDERS = [
     { id: "ORD-2218", rail: "Cedar Money", customer: "Sahara Foods Import", amount: 32000, customerRate: 1421.40, ts: "12 min ago", status: "filled" },
     { id: "ORD-2217", rail: "Triple-A", customer: "Novus Trading Ltd", amount: 128000, customerRate: 1422.10, ts: "47 min ago", status: "settling" },
-  ]);
+  ];
+  const [orders, setOrders] = useState(isSignedIn ? [] : DEMO_ORDERS);
+
+  const fetchOrders = async () => {
+    if (!isSignedIn) return;
+    const { data, error } = await supabase
+      .from("quotes")
+      .select("id, customer_name, amount, rate, rail, status, submitted_at, created_at")
+      .in("status", ["submitted_to_rail", "filled"])
+      .order("submitted_at", { ascending: false, nullsFirst: false })
+      .limit(8);
+    if (error) {
+      // eslint-disable-next-line no-console
+      console.error("Fetch orders failed:", error);
+      return;
+    }
+    setOrders((data || []).map((q) => ({
+      id: `ORD-${q.id.slice(0, 4).toUpperCase()}`,
+      dbId: q.id,
+      rail: q.rail,
+      customer: q.customer_name || "Unnamed",
+      amount: parseFloat(q.amount),
+      customerRate: parseFloat(q.rate),
+      ts: relativeTime(q.submitted_at || q.created_at),
+      status: q.status === "filled" ? "filled" : "submitted",
+    })));
+  };
+
+  useEffect(() => { fetchOrders(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [auth.user?.id]);
 
   useEffect(() => {
     const i = setInterval(() => setTick((t) => t + 1), 4000);
@@ -2862,10 +2902,11 @@ function BDCRailQuotes({ onOrderSubmitted }) {
       }
     }
     setOrders((o) => [newOrder, ...o].slice(0, 8));
-    if (onOrderSubmitted) onOrderSubmitted(newOrder);
     push(`Order ${orderRef} submitted to ${chosenRail} — also visible in Transactions`, "success");
     setApprovalStatus("idle"); setCustomerName(""); setCustomerPhone(""); setBeneficiary("");
     setCurrentQuoteId(null); setCurrentQuoteRef(null);
+    // Pull canonical list from DB (replaces the optimistic local insert above).
+    fetchOrders();
   };
 
   return (
@@ -3142,27 +3183,71 @@ function BDCPaymentAgent() {
   );
 }
 
-function BDCTransactions({ submittedOrders = [] }) {
+// Hardcoded sample transactions shown to unsigned visitors so the page isn't empty during demos.
+const DEMO_TRANSACTIONS = [
+  { id: "XP-9841", customer: "Novus Trading Ltd", dest: "AE", amount: 128000, status: "processing", rail: "Triple-A", date: "Today · 14:22" },
+  { id: "XP-9840", customer: "Adeyemi Okafor", dest: "CN", amount: 47500, status: "pending", rail: "Cedar USDT", date: "Today · 13:58" },
+  { id: "XD-4421", customer: "Diaspora → Lagos Build & Supply", dest: "IN", amount: 2500, status: "completed", rail: "Cedar (inbound)", date: "Today · 12:17" },
+  { id: "XP-9839", customer: "Sahara Foods Import", dest: "CN", amount: 82000, status: "completed", rail: "Cedar USDT", date: "Today · 11:42" },
+  { id: "XD-4398", customer: "Diaspora → Adeola Nwosu", dest: "IN", amount: 800, status: "completed", rail: "Cedar (inbound)", date: "Yesterday · 16:55" },
+  { id: "XP-9838", customer: "Funmi Adeleke (Ind.)", dest: "IN", amount: 1800, status: "pending", rail: "BDC USDT", date: "Today · 10:17" },
+  { id: "XP-9837", customer: "Delta Petrochem", dest: "US", amount: 215000, status: "completed", rail: "Triple-A", date: "Yesterday · 17:03" },
+  { id: "XP-9836", customer: "Kaduna Textiles", dest: "CN", amount: 68500, status: "completed", rail: "Cedar USDT", date: "Yesterday · 15:41" },
+  { id: "XP-9835", customer: "Port Harcourt Supply", dest: "UK", amount: 34200, status: "disputed", rail: "Triple-A", date: "Yesterday · 09:18" },
+];
+
+// Quote rows have status values from the workflow state machine; the table UI uses simpler labels.
+const QUOTE_STATUS_TO_TX_STATUS = {
+  pending_approval: "pending",
+  customer_approved: "pending",
+  customer_declined: "disputed",
+  submitted_to_rail: "processing",
+  filled: "completed",
+  expired: "disputed",
+  cancelled: "disputed",
+};
+
+function BDCTransactions() {
   const { push } = useToast();
+  const auth = useAuth();
+  const isSignedIn = !!auth.user;
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState(null);
   const [statusFilter, setStatusFilter] = useState("all");
-  const baseTxs = [
-    { id: "XP-9841", customer: "Novus Trading Ltd", dest: "AE", amount: 128000, status: "processing", rail: "Triple-A", date: "Today · 14:22" },
-    { id: "XP-9840", customer: "Adeyemi Okafor", dest: "CN", amount: 47500, status: "pending", rail: "Cedar USDT", date: "Today · 13:58" },
-    { id: "XD-4421", customer: "Diaspora → Lagos Build & Supply", dest: "IN", amount: 2500, status: "completed", rail: "Cedar (inbound)", date: "Today · 12:17" },
-    { id: "XP-9839", customer: "Sahara Foods Import", dest: "CN", amount: 82000, status: "completed", rail: "Cedar USDT", date: "Today · 11:42" },
-    { id: "XD-4398", customer: "Diaspora → Adeola Nwosu", dest: "IN", amount: 800, status: "completed", rail: "Cedar (inbound)", date: "Yesterday · 16:55" },
-    { id: "XP-9838", customer: "Funmi Adeleke (Ind.)", dest: "IN", amount: 1800, status: "pending", rail: "BDC USDT", date: "Today · 10:17" },
-    { id: "XP-9837", customer: "Delta Petrochem", dest: "US", amount: 215000, status: "completed", rail: "Triple-A", date: "Yesterday · 17:03" },
-    { id: "XP-9836", customer: "Kaduna Textiles", dest: "CN", amount: 68500, status: "completed", rail: "Cedar USDT", date: "Yesterday · 15:41" },
-    { id: "XP-9835", customer: "Port Harcourt Supply", dest: "UK", amount: 34200, status: "disputed", rail: "Triple-A", date: "Yesterday · 09:18" },
-  ];
-  // Merge orders submitted from the Rail Quotes tab in front of the demo data.
-  const orderTxs = submittedOrders.map((o) => ({
-    id: o.id, customer: o.customer, dest: o.dest || "—", amount: o.amount, rail: o.rail, status: o.status === "submitted" ? "pending" : o.status, date: o.date || "Today · just now",
-  }));
-  const txs = [...orderTxs, ...baseTxs];
+  const [realTxs, setRealTxs] = useState([]);
+  const [loading, setLoading] = useState(false);
+
+  const fetchTxs = async () => {
+    if (!isSignedIn) return;
+    setLoading(true);
+    const { data, error } = await supabase
+      .from("quotes")
+      .select("id, customer_name, destination, amount, currency, rate, rail, status, submitted_at, created_at")
+      .order("created_at", { ascending: false })
+      .limit(50);
+    if (error) {
+      // eslint-disable-next-line no-console
+      console.error("Fetch transactions failed:", error);
+      push("Couldn't load transactions — check console.", "warn");
+    } else {
+      setRealTxs((data || []).map((q) => ({
+        id: `XP-${q.id.slice(0, 4).toUpperCase()}`,
+        dbId: q.id,
+        customer: q.customer_name || "Unnamed",
+        dest: q.destination || "—",
+        amount: parseFloat(q.amount),
+        rail: q.rail || "—",
+        status: QUOTE_STATUS_TO_TX_STATUS[q.status] || "pending",
+        date: relativeTime(q.submitted_at || q.created_at),
+      })));
+    }
+    setLoading(false);
+  };
+
+  useEffect(() => { fetchTxs(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [auth.user?.id]);
+
+  const txs = isSignedIn ? realTxs : DEMO_TRANSACTIONS;
+  const showEmptyState = isSignedIn && !loading && realTxs.length === 0;
   const filtered = txs.filter((t) => {
     const q = query.toLowerCase();
     const matchQ = !q || t.id.toLowerCase().includes(q) || t.customer.toLowerCase().includes(q) || t.rail.toLowerCase().includes(q);
@@ -3177,14 +3262,23 @@ function BDCTransactions({ submittedOrders = [] }) {
           <Search size={14} style={{ color: "var(--muted)" }} />
           <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search transactions, customers…" className="w-full bg-transparent text-sm outline-none" />
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap gap-2 items-center">
+          {!isSignedIn && <span className="rounded-full px-2 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-wider" style={{ background: "var(--bone-2)", color: "var(--muted)" }}>Demo data</span>}
           <Select small value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
             <option value="all">All statuses</option><option value="completed">Completed</option><option value="processing">Processing</option><option value="pending">Pending</option><option value="disputed">Disputed</option>
           </Select>
           <SecondaryBtn onClick={() => { setQuery(""); setStatusFilter("all"); push("Filters cleared", "info"); }}><Filter size={14} /> Clear</SecondaryBtn>
           <SecondaryBtn onClick={() => push(`Exporting ${filtered.length} rows to CSV…`, "success")}><Download size={14} /> Export</SecondaryBtn>
+          {isSignedIn && <SecondaryBtn onClick={fetchTxs}><Loader2 size={14} className={loading ? "spin" : ""} /> Refresh</SecondaryBtn>}
         </div>
       </div>
+      {showEmptyState ? (
+        <div className="p-12 text-center">
+          <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full" style={{ background: "var(--bone-2)" }}><Receipt size={20} style={{ color: "var(--muted)" }} /></div>
+          <h3 className="font-display text-lg font-semibold">No transactions yet</h3>
+          <p className="mt-1.5 text-sm max-w-md mx-auto" style={{ color: "var(--muted)" }}>Submitted orders from the Rail Quotes tab will appear here. Send a quote, get customer approval, submit to a rail — it'll show up.</p>
+        </div>
+      ) : (
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead><tr style={{ background: "var(--bone)", borderBottom: "1px solid var(--line)" }}>{["Ref", "Customer", "Dest", "Amount", "Rail", "Status", "Date", ""].map((h, i) => (<th key={i} className={`px-4 py-3 text-left font-mono text-[10px] font-semibold uppercase tracking-wider ${h === "Amount" ? "text-right" : ""}`} style={{ color: "var(--muted)" }}>{h}</th>))}</tr></thead>
@@ -3204,6 +3298,7 @@ function BDCTransactions({ submittedOrders = [] }) {
           </tbody>
         </table>
       </div>
+      )}
     </Card>
     <TxDrawer tx={selected} onClose={() => setSelected(null)} />
     </>
