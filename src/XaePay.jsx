@@ -2084,6 +2084,9 @@ function HistoryDrawer({ open, onClose }) {
 function BDCDashboard({ session }) {
   const [tab, setTab] = useState("overview");
   const [newTxOpen, setNewTxOpen] = useState(false);
+  // Orders submitted from Rail Quotes flow through to Transactions. Lifted here so both tabs see the same list.
+  const [submittedOrders, setSubmittedOrders] = useState([]);
+  const addOrder = (o) => setSubmittedOrders((prev) => [o, ...prev].slice(0, 20));
   return (
     <>
     <div className="mx-auto max-w-7xl px-4 py-10 sm:px-6 lg:px-8 lg:py-14">
@@ -2117,8 +2120,8 @@ function BDCDashboard({ session }) {
       </div>
       <div className="fade-in">
         {tab === "overview" && <BDCOverview onJumpTab={setTab} />}
-        {tab === "quotes" && <BDCRailQuotes />}
-        {tab === "transactions" && <BDCTransactions />}
+        {tab === "quotes" && <BDCRailQuotes onOrderSubmitted={addOrder} />}
+        {tab === "transactions" && <BDCTransactions submittedOrders={submittedOrders} />}
         {tab === "customers" && <BDCCustomers />}
         {tab === "liquidity" && <BDCLiquidity />}
         {tab === "agent" && <BDCPaymentAgent />}
@@ -2275,7 +2278,7 @@ function BDCLiquidity() {
 // In production this would come from the Liquidity tab's live LP feed.
 const LP_USDT_NGN = 1388;
 
-function BDCRailQuotes() {
+function BDCRailQuotes({ onOrderSubmitted }) {
   const { push } = useToast();
   const [direction, setDirection] = useState("off-ramp"); // off-ramp = NGN customer → foreign supplier (outbound); on-ramp = foreign sender → NGN beneficiary (diaspora inbound)
   const [amount, setAmount] = useState("50000");
@@ -2424,9 +2427,13 @@ function BDCRailQuotes() {
       customerRate,
       ts: "just now",
       status: "submitted",
+      // Fields used by the Transactions tab when this order flows through
+      dest: destinationCorridor,
+      date: "Today · just now",
     };
     setOrders((o) => [newOrder, ...o].slice(0, 8));
-    push(`Order ${newOrder.id} submitted to ${chosenRail}`, "success");
+    if (onOrderSubmitted) onOrderSubmitted(newOrder);
+    push(`Order ${newOrder.id} submitted to ${chosenRail} — also visible in Transactions`, "success");
     setApprovalStatus("idle"); setCustomerName(""); setCustomerPhone(""); setBeneficiary("");
   };
 
@@ -2704,12 +2711,12 @@ function BDCPaymentAgent() {
   );
 }
 
-function BDCTransactions() {
+function BDCTransactions({ submittedOrders = [] }) {
   const { push } = useToast();
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState(null);
   const [statusFilter, setStatusFilter] = useState("all");
-  const txs = [
+  const baseTxs = [
     { id: "XP-9841", customer: "Novus Trading Ltd", dest: "AE", amount: 128000, status: "processing", rail: "Triple-A", date: "Today · 14:22" },
     { id: "XP-9840", customer: "Adeyemi Okafor", dest: "CN", amount: 47500, status: "pending", rail: "Cedar USDT", date: "Today · 13:58" },
     { id: "XD-4421", customer: "Diaspora → Lagos Build & Supply", dest: "IN", amount: 2500, status: "completed", rail: "Cedar (inbound)", date: "Today · 12:17" },
@@ -2720,6 +2727,11 @@ function BDCTransactions() {
     { id: "XP-9836", customer: "Kaduna Textiles", dest: "CN", amount: 68500, status: "completed", rail: "Cedar USDT", date: "Yesterday · 15:41" },
     { id: "XP-9835", customer: "Port Harcourt Supply", dest: "UK", amount: 34200, status: "disputed", rail: "Triple-A", date: "Yesterday · 09:18" },
   ];
+  // Merge orders submitted from the Rail Quotes tab in front of the demo data.
+  const orderTxs = submittedOrders.map((o) => ({
+    id: o.id, customer: o.customer, dest: o.dest || "—", amount: o.amount, rail: o.rail, status: o.status === "submitted" ? "pending" : o.status, date: o.date || "Today · just now",
+  }));
+  const txs = [...orderTxs, ...baseTxs];
   const filtered = txs.filter((t) => {
     const q = query.toLowerCase();
     const matchQ = !q || t.id.toLowerCase().includes(q) || t.customer.toLowerCase().includes(q) || t.rail.toLowerCase().includes(q);
@@ -3236,8 +3248,8 @@ function DiasporaApp({ session }) {
         <div className="lg:col-span-8">
           <Stepper step={step} />
           <div className="mt-6 rise" style={{ animationDelay: "0.1s" }}>
-            {step === 1 && <DiasporaStepIntake data={formData} setData={setFormData} onNext={() => setStep(2)} />}
-            {step === 2 && <DiasporaStepCompliance onNext={() => setStep(3)} onBack={() => setStep(1)} data={formData} />}
+            {step === 1 && <DiasporaStepIntake data={formData} setData={setFormData} senderType={senderType} onNext={() => setStep(2)} />}
+            {step === 2 && <DiasporaStepCompliance onNext={() => setStep(3)} onBack={() => setStep(1)} data={formData} senderType={senderType} />}
             {step === 3 && <DiasporaStepReview data={formData} onNext={() => setStep(4)} onBack={() => setStep(2)} />}
             {step === 4 && <DiasporaStepConfirmed data={formData} onNew={() => setStep(1)} onHistory={() => setHistoryOpen(true)} />}
           </div>
@@ -3250,29 +3262,44 @@ function DiasporaApp({ session }) {
   );
 }
 
-function DiasporaStepIntake({ data, setData, onNext }) {
+function DiasporaStepIntake({ data, setData, senderType = "individual", onNext }) {
   const { push } = useToast();
   const handleUpload = () => { setData({ ...data, documentUploaded: true }); push("Document uploaded · parsing recipient metadata…", "info"); };
-  const purposeLabel = {
-    vendor: "Business vendor / supplier", family: "Family support",
-    education: "Education / school fees", medical: "Medical",
-    property: "Property / rent", individual: "Other individual",
-  }[data.recipientType];
+  const purposeOptions = senderType === "business"
+    ? [
+        { id: "vendor", label: "Supplier invoice", placeholder: "Lagos Build & Supply Ltd" },
+        { id: "payroll", label: "Payroll", placeholder: "Local employee — staff name or batch ref" },
+        { id: "distributor", label: "Distributor settlement", placeholder: "Distributor company name" },
+        { id: "services", label: "Services / contractor", placeholder: "Vendor / consultant name" },
+        { id: "property", label: "Property / lease", placeholder: "Landlord or estate company" },
+        { id: "other", label: "Other business", placeholder: "Recipient business name" },
+      ]
+    : [
+        { id: "vendor", label: "Vendor / supplier", placeholder: "Lagos Build & Supply Ltd" },
+        { id: "family", label: "Family support", placeholder: "Recipient full name" },
+        { id: "education", label: "Education", placeholder: "School / accountant office" },
+        { id: "medical", label: "Medical", placeholder: "Hospital / clinic name" },
+        { id: "property", label: "Property / rent", placeholder: "Landlord / estate company" },
+        { id: "individual", label: "Other individual", placeholder: "Recipient full name" },
+      ];
+  // If current recipientType isn't in the new option list (e.g. user switched sender type), reset to first option
+  useEffect(() => {
+    if (!purposeOptions.some((p) => p.id === data.recipientType)) {
+      setData({ ...data, recipientType: purposeOptions[0].id });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [senderType]);
+  const currentOption = purposeOptions.find((p) => p.id === data.recipientType) || purposeOptions[0];
+  const purposeLabel = currentOption.label;
+  const recipientPlaceholder = currentOption.placeholder;
   return (
     <Card>
-      <h2 className="font-display text-xl font-semibold">Payment details</h2>
-      <p className="mt-1 text-sm" style={{ color: "var(--muted)" }}>Who you're paying and why. Each purpose has its own document bundle.</p>
+      <h2 className="font-display text-xl font-semibold">{senderType === "business" ? "Business payment details" : "Payment details"}</h2>
+      <p className="mt-1 text-sm" style={{ color: "var(--muted)" }}>{senderType === "business" ? "Who you're paying in Nigeria and what for. Each purpose has its own compliance bundle." : "Who you're paying and why. Each purpose has its own document bundle."}</p>
       <div className="mt-6">
-        <Label>Purpose of payment</Label>
+        <Label>{senderType === "business" ? "Type of business payment" : "Purpose of payment"}</Label>
         <div className="grid gap-2 sm:grid-cols-3">
-          {[
-            { id: "vendor", label: "Vendor / supplier" },
-            { id: "family", label: "Family support" },
-            { id: "education", label: "Education" },
-            { id: "medical", label: "Medical" },
-            { id: "property", label: "Property / rent" },
-            { id: "individual", label: "Other individual" },
-          ].map((p) => (<RoleBtn key={p.id} active={data.recipientType === p.id} onClick={() => setData({ ...data, recipientType: p.id })}>{p.label}</RoleBtn>))}
+          {purposeOptions.map((p) => (<RoleBtn key={p.id} active={data.recipientType === p.id} onClick={() => setData({ ...data, recipientType: p.id })}>{p.label}</RoleBtn>))}
         </div>
       </div>
       <div className="mt-6 grid gap-4 sm:grid-cols-2">
@@ -3285,7 +3312,7 @@ function DiasporaStepIntake({ data, setData, onNext }) {
         <Field label="Recipient country"><Select value={data.recipientCountry} onChange={(e) => setData({ ...data, recipientCountry: e.target.value })}>
           <option>Nigeria</option><option>Ghana</option><option>Kenya</option><option>South Africa</option><option>Senegal</option><option>Côte d'Ivoire</option>
         </Select></Field>
-        <Field label="Recipient name" full><Input value={data.recipientName} onChange={(e) => setData({ ...data, recipientName: e.target.value })} placeholder={data.recipientType === "vendor" ? "Lagos Build & Supply Ltd" : "Recipient full name"} /></Field>
+        <Field label={senderType === "business" ? "Recipient (company or person)" : "Recipient name"} full><Input value={data.recipientName} onChange={(e) => setData({ ...data, recipientName: e.target.value })} placeholder={recipientPlaceholder} /></Field>
         <Field label="Recipient bank"><Select value={data.recipientBank} onChange={(e) => setData({ ...data, recipientBank: e.target.value })}>
           <option>GTBank</option><option>Access Bank</option><option>Zenith Bank</option><option>UBA</option><option>First Bank</option><option>Kuda</option><option>Opay</option>
         </Select></Field>
