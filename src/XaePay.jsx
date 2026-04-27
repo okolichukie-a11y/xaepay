@@ -3068,123 +3068,219 @@ function TxDrawer({ tx, onClose }) {
   );
 }
 
+// Hardcoded sample data shown to unsigned visitors so the dashboard isn't empty during demos.
+const DEMO_CUSTOMERS = [
+  { name: "Novus Trading Ltd", volume: 1240000, count: 34, tier: "Corporate", kycTier: 3 },
+  { name: "Delta Petrochem", volume: 890000, count: 12, tier: "Corporate", kycTier: 3 },
+  { name: "Sahara Foods Import", volume: 420000, count: 28, tier: "SME", kycTier: 2 },
+  { name: "Kaduna Textiles Ltd", volume: 380000, count: 19, tier: "SME", kycTier: 2 },
+  { name: "Adeyemi Okafor", volume: 142000, count: 8, tier: "SME", kycTier: 2 },
+  { name: "Funmi Adeleke", volume: 6800, count: 4, tier: "Individual", kycTier: 1 },
+];
+
+// Map a Supabase customers row to the shape the table expects
+function dbCustomerToUi(row) {
+  return {
+    id: row.id,
+    name: row.name,
+    phone: row.phone,
+    email: row.email,
+    tier: row.type || "SME",
+    kycTier: row.kyc_tier ?? 0,
+    kycStatus: row.kyc_status,
+    volume: Math.round((row.lifetime_volume_cents || 0) / 100),
+    count: row.transaction_count || 0,
+    onboardedVia: row.onboarded_via,
+    addedAt: row.created_at,
+  };
+}
+
 function BDCCustomers({ addedCustomers = [], onAddCustomer }) {
   const { push } = useToast();
+  const auth = useAuth();
+  const isSignedIn = !!auth.user;
   const [selected, setSelected] = useState(null);
   const [addOpen, setAddOpen] = useState(false);
-  const baseCustomers = [
-    { name: "Novus Trading Ltd", volume: 1240000, count: 34, tier: "Corporate", kycTier: 3 },
-    { name: "Delta Petrochem", volume: 890000, count: 12, tier: "Corporate", kycTier: 3 },
-    { name: "Sahara Foods Import", volume: 420000, count: 28, tier: "SME", kycTier: 2 },
-    { name: "Kaduna Textiles Ltd", volume: 380000, count: 19, tier: "SME", kycTier: 2 },
-    { name: "Adeyemi Okafor", volume: 142000, count: 8, tier: "SME", kycTier: 2 },
-    { name: "Funmi Adeleke", volume: 6800, count: 4, tier: "Individual", kycTier: 1 },
-  ];
-  const customers = [...addedCustomers, ...baseCustomers];
+  const [realCustomers, setRealCustomers] = useState([]);
+  const [loading, setLoading] = useState(false);
+
+  const fetchCustomers = async () => {
+    if (!isSignedIn) return;
+    setLoading(true);
+    const { data, error } = await supabase
+      .from("customers")
+      .select("*")
+      .order("created_at", { ascending: false });
+    if (error) {
+      // eslint-disable-next-line no-console
+      console.error("Fetch customers failed:", error);
+      push("Couldn't load customers — check console.", "warn");
+    } else {
+      setRealCustomers((data || []).map(dbCustomerToUi));
+    }
+    setLoading(false);
+  };
+
+  useEffect(() => { fetchCustomers(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [auth.user?.id]);
+
+  // Signed-in users see only their real DB rows. Unsigned visitors see in-memory adds + demo seed.
+  const customers = isSignedIn ? realCustomers : [...addedCustomers, ...DEMO_CUSTOMERS];
+  const showEmptyState = isSignedIn && !loading && realCustomers.length === 0;
+
   return (
     <>
     <Card padding="none">
       <div className="flex items-center justify-between p-4 gap-2 flex-wrap" style={{ borderBottom: "1px solid var(--line)" }}>
-        <div className="text-sm font-semibold">{customers.length} customers</div>
+        <div className="text-sm font-semibold">
+          {loading ? "Loading…" : `${customers.length} customer${customers.length === 1 ? "" : "s"}`}
+          {!isSignedIn && <span className="ml-2 rounded-full px-2 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-wider" style={{ background: "var(--bone-2)", color: "var(--muted)" }}>Demo data — sign in to manage real customers</span>}
+        </div>
         <div className="flex gap-2">
           <SecondaryBtn onClick={() => push(`Exporting ${customers.length} customers…`, "success")}><Download size={14} /> Export</SecondaryBtn>
           <PrimaryBtn onClick={() => setAddOpen(true)}><Plus size={14} /> Add customer</PrimaryBtn>
         </div>
       </div>
-      <div className="overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead><tr style={{ background: "var(--bone)", borderBottom: "1px solid var(--line)" }}>{["Customer", "Type", "KYC", "Lifetime volume", "Transactions", ""].map((h, i) => (<th key={i} className={`px-4 py-3 text-left font-mono text-[10px] font-semibold uppercase tracking-wider ${["Lifetime volume", "Transactions"].includes(h) ? "text-right" : ""}`} style={{ color: "var(--muted)" }}>{h}</th>))}</tr></thead>
-          <tbody>
-            {customers.map((c) => (
-              <tr key={c.name} onClick={() => setSelected(c)} className="cursor-pointer transition hover:bg-[color:var(--bone)]" style={{ borderBottom: "1px solid var(--line)" }}>
-                <td className="px-4 py-3.5 font-medium">{c.name}{c.kycStatus === "pending" && <span className="ml-2 rounded-full px-1.5 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-wider" style={{ background: "#fef3c7", color: "#92400e" }}>KYC pending</span>}</td>
-                <td className="px-4 py-3.5"><span className="rounded-full px-2 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-wider" style={c.tier === "Corporate" ? { background: "var(--emerald)", color: "var(--lime)" } : c.tier === "SME" ? { background: "#fef3c7", color: "#92400e" } : { background: "var(--bone-2)", color: "var(--muted)" }}>{c.tier}</span></td>
-                <td className="px-4 py-3.5"><span className="font-mono text-[10px] font-semibold" style={{ color: "var(--emerald)" }}>T{c.kycTier}</span></td>
-                <td className="px-4 py-3.5 text-right font-mono font-semibold">${c.volume.toLocaleString()}</td>
-                <td className="px-4 py-3.5 text-right font-mono">{c.count}</td>
-                <td className="px-4 py-3.5"><ChevronRight size={14} style={{ color: "var(--muted)" }} /></td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      {showEmptyState ? (
+        <div className="p-12 text-center">
+          <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full" style={{ background: "var(--bone-2)" }}><User size={20} style={{ color: "var(--muted)" }} /></div>
+          <h3 className="font-display text-lg font-semibold">No customers yet</h3>
+          <p className="mt-1.5 text-sm max-w-md mx-auto" style={{ color: "var(--muted)" }}>Add your first customer — push a KYC link to their WhatsApp, or capture their docs at the counter. They'll show up here once saved.</p>
+          <PrimaryBtn onClick={() => setAddOpen(true)}><Plus size={14} /> Add your first customer</PrimaryBtn>
+        </div>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead><tr style={{ background: "var(--bone)", borderBottom: "1px solid var(--line)" }}>{["Customer", "Type", "KYC", "Lifetime volume", "Transactions", ""].map((h, i) => (<th key={i} className={`px-4 py-3 text-left font-mono text-[10px] font-semibold uppercase tracking-wider ${["Lifetime volume", "Transactions"].includes(h) ? "text-right" : ""}`} style={{ color: "var(--muted)" }}>{h}</th>))}</tr></thead>
+            <tbody>
+              {customers.map((c) => (
+                <tr key={c.id || c.name} onClick={() => setSelected(c)} className="cursor-pointer transition hover:bg-[color:var(--bone)]" style={{ borderBottom: "1px solid var(--line)" }}>
+                  <td className="px-4 py-3.5 font-medium">{c.name}{c.kycStatus === "pending" && <span className="ml-2 rounded-full px-1.5 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-wider" style={{ background: "#fef3c7", color: "#92400e" }}>KYC pending</span>}</td>
+                  <td className="px-4 py-3.5"><span className="rounded-full px-2 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-wider" style={c.tier === "Corporate" ? { background: "var(--emerald)", color: "var(--lime)" } : c.tier === "SME" ? { background: "#fef3c7", color: "#92400e" } : { background: "var(--bone-2)", color: "var(--muted)" }}>{c.tier}</span></td>
+                  <td className="px-4 py-3.5"><span className="font-mono text-[10px] font-semibold" style={{ color: "var(--emerald)" }}>T{c.kycTier}</span></td>
+                  <td className="px-4 py-3.5 text-right font-mono font-semibold">${c.volume.toLocaleString()}</td>
+                  <td className="px-4 py-3.5 text-right font-mono">{c.count}</td>
+                  <td className="px-4 py-3.5"><ChevronRight size={14} style={{ color: "var(--muted)" }} /></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </Card>
     <CustomerDrawer customer={selected} onClose={() => setSelected(null)} />
-    <AddCustomerModal open={addOpen} onClose={() => setAddOpen(false)} onAdd={(c) => { if (onAddCustomer) onAddCustomer(c); setAddOpen(false); }} />
+    <AddCustomerModal open={addOpen} onClose={() => setAddOpen(false)} onAdded={() => { setAddOpen(false); fetchCustomers(); }} onAddLocal={(c) => { if (onAddCustomer) onAddCustomer(c); setAddOpen(false); }} />
     </>
   );
 }
 
-function AddCustomerModal({ open, onClose, onAdd }) {
+function AddCustomerModal({ open, onClose, onAdded, onAddLocal }) {
   const { push } = useToast();
-  const [mode, setMode] = useState("whatsapp"); // whatsapp | counter
-  // Shared
+  const auth = useAuth();
+  const isSignedIn = !!auth.user;
+  const [mode, setMode] = useState("whatsapp");
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [tier, setTier] = useState("SME");
   const [kycTier, setKycTier] = useState(2);
-  // Counter mode (BDC has docs in hand)
   const [bvn, setBvn] = useState("");
   const [idType, setIdType] = useState("NIN");
   const [idNumber, setIdNumber] = useState("");
   const [docsUploaded, setDocsUploaded] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
 
-  const reset = () => { setName(""); setPhone(""); setTier("SME"); setKycTier(2); setBvn(""); setIdType("NIN"); setIdNumber(""); setDocsUploaded(false); setMode("whatsapp"); };
+  const reset = () => { setName(""); setPhone(""); setTier("SME"); setKycTier(2); setBvn(""); setIdType("NIN"); setIdNumber(""); setDocsUploaded(false); setMode("whatsapp"); setSubmitting(false); };
   const closeAndReset = () => { reset(); onClose(); };
 
-  const sendWhatsAppOnboardLink = (e) => {
-    e.preventDefault();
-    if (!name || !phone) { push("Customer name and WhatsApp number required.", "warn"); return; }
-    const phoneDigits = phone.replace(/[^\d]/g, "");
-    const onboardToken = encodeQuoteToken({
-      type: "onboard",
-      customer: name,
-      bdcName: "Corporate Exchange BDC", // TODO: pull from session.name
-      tier,
-      requestedAt: new Date().toISOString(),
-    });
-    const onboardUrl = `${window.location.origin}/?onboard=${onboardToken}`;
-    const message =
-      `Hello ${name},%0A%0A` +
-      `Corporate Exchange BDC has invited you to onboard via XaePay.%0A%0A` +
-      `Tap to securely complete your KYC (BVN, ID, address) — takes about 4 minutes:%0A` +
-      `${encodeURIComponent(onboardUrl)}%0A%0A` +
-      `Once approved, you can request trade payment quotes directly through us. Reply if you have questions.`;
-    window.open(`https://wa.me/${phoneDigits}?text=${message}`, "_blank");
-    onAdd({
-      name,
-      phone,
-      tier,
-      kycTier: 0, // not yet verified
-      kycStatus: "pending",
-      volume: 0,
-      count: 0,
-      onboardedVia: "whatsapp-link",
-      addedAt: "just now",
-    });
-    push(`Onboarding link sent to ${name} on WhatsApp · added as KYC-pending`, "success");
-    closeAndReset();
+  // Persist a customer row. Returns the inserted row's id (or null on local-only path).
+  const persistCustomer = async (row) => {
+    if (!isSignedIn) {
+      onAddLocal({ ...row, volume: 0, count: 0, addedAt: "just now" });
+      return null;
+    }
+    const { data, error } = await supabase
+      .from("customers")
+      .insert({
+        bdc_user_id: auth.user.id,
+        name: row.name,
+        phone: row.phone,
+        type: row.tier,
+        kyc_status: row.kycStatus,
+        kyc_tier: row.kycTier,
+        bvn: row.bvn || null,
+        id_type: row.idType || null,
+        id_number: row.idNumber || null,
+        onboarded_via: row.onboardedVia,
+        onboard_token: row.onboardToken || null,
+        onboard_expires_at: row.onboardExpiresAt || null,
+      })
+      .select("id")
+      .single();
+    if (error) {
+      // eslint-disable-next-line no-console
+      console.error("Insert customer failed:", error);
+      throw error;
+    }
+    return data?.id;
   };
 
-  const submitCounter = (e) => {
+  const sendWhatsAppOnboardLink = async (e) => {
+    e.preventDefault();
+    if (!name || !phone) { push("Customer name and WhatsApp number required.", "warn"); return; }
+    setSubmitting(true);
+    try {
+      const phoneDigits = phone.replace(/[^\d]/g, "");
+      const onboardTokenStr = encodeQuoteToken({
+        type: "onboard",
+        customer: name,
+        bdcName: "Corporate Exchange BDC", // TODO: pull from auth.user.user_metadata once profiles wired
+        tier,
+        requestedAt: new Date().toISOString(),
+      });
+      const onboardExpiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(); // 7 days
+      const onboardUrl = `${window.location.origin}/?onboard=${onboardTokenStr}`;
+
+      await persistCustomer({
+        name, phone, tier,
+        kycTier: 0, kycStatus: "pending",
+        onboardedVia: "whatsapp-link",
+        onboardToken: onboardTokenStr,
+        onboardExpiresAt,
+      });
+
+      const message =
+        `Hello ${name},%0A%0A` +
+        `Corporate Exchange BDC has invited you to onboard via XaePay.%0A%0A` +
+        `Tap to securely complete your KYC (BVN, ID, address) — takes about 4 minutes:%0A` +
+        `${encodeURIComponent(onboardUrl)}%0A%0A` +
+        `Once approved, you can request trade payment quotes directly through us. Reply if you have questions.`;
+      window.open(`https://wa.me/${phoneDigits}?text=${message}`, "_blank");
+
+      push(`Onboarding link sent to ${name} on WhatsApp · added as KYC-pending`, "success");
+      if (isSignedIn) onAdded?.(); else closeAndReset();
+    } catch {
+      push("Couldn't save customer — try again.", "warn");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const submitCounter = async (e) => {
     e.preventDefault();
     if (!name || !phone || !bvn || !idNumber || !docsUploaded) { push("Complete all fields and upload docs to onboard at counter.", "warn"); return; }
-    onAdd({
-      name,
-      phone,
-      bvn,
-      idType,
-      idNumber,
-      tier,
-      kycTier,
-      kycStatus: "verified",
-      volume: 0,
-      count: 0,
-      onboardedVia: "counter",
-      addedAt: "just now",
-    });
-    push(`${name} onboarded at counter · KYC Tier ${kycTier} assigned`, "success");
-    closeAndReset();
+    setSubmitting(true);
+    try {
+      await persistCustomer({
+        name, phone, bvn, idType, idNumber, tier, kycTier,
+        kycStatus: "verified",
+        onboardedVia: "counter",
+      });
+      push(`${name} onboarded at counter · KYC Tier ${kycTier} assigned`, "success");
+      if (isSignedIn) onAdded?.(); else closeAndReset();
+    } catch {
+      push("Couldn't save customer — try again.", "warn");
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -3225,7 +3321,7 @@ function AddCustomerModal({ open, onClose, onAdd }) {
               <p style={{ color: "var(--muted)" }}>Customer receives a secure link on WhatsApp to complete KYC themselves (BVN, ID, address — guided step-by-step). They appear in your customer list immediately as <span className="font-semibold" style={{ color: "var(--ink)" }}>KYC-pending</span> and tier promotes once docs are reviewed.</p>
             </div>
           </div>
-          <PrimaryBtn type="submit" full><MessageCircle size={14} /> Send onboarding link on WhatsApp</PrimaryBtn>
+          <PrimaryBtn type="submit" full disabled={submitting}>{submitting ? <><Loader2 size={14} className="spin" /> Saving…</> : <><MessageCircle size={14} /> Send onboarding link on WhatsApp</>}</PrimaryBtn>
         </form>
       ) : (
         <form onSubmit={submitCounter} className="space-y-4">
@@ -3245,7 +3341,7 @@ function AddCustomerModal({ open, onClose, onAdd }) {
               <p style={{ color: "var(--ink)" }}>Customer is added to your roster immediately at the chosen tier. NIBSS BVN check + sanctions screen run automatically — flagged if anything trips.</p>
             </div>
           </div>
-          <PrimaryBtn type="submit" full disabled={!docsUploaded}><Plus size={14} /> Onboard customer at counter</PrimaryBtn>
+          <PrimaryBtn type="submit" full disabled={!docsUploaded || submitting}>{submitting ? <><Loader2 size={14} className="spin" /> Saving…</> : <><Plus size={14} /> Onboard customer at counter</>}</PrimaryBtn>
         </form>
       )}
     </Modal>
