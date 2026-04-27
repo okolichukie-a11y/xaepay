@@ -300,16 +300,36 @@ function QuoteApprovalPage({ quote }) {
         )}
 
         {decision === "approved" && (
-          <div className="mt-6 rounded-2xl p-5" style={{ background: "rgba(15,95,63,0.06)", border: "1px solid rgba(15,95,63,0.2)" }}>
-            <div className="flex items-start gap-3">
-              <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full" style={{ background: "var(--emerald)", color: "var(--lime)" }}><CheckCircle2 size={18} strokeWidth={2.5} /></div>
-              <div className="text-sm">
-                <div className="font-semibold" style={{ color: "var(--ink)" }}>Approved · ref {quote.id}</div>
-                <p className="mt-1" style={{ color: "var(--muted)" }}>Reply <span className="font-mono font-semibold">YES {quote.id}</span> on WhatsApp to your operator to confirm receipt of this approval, or just keep this page open — they'll see your approval in their dashboard.</p>
-                <a href={WHATSAPP_URL} target="_blank" rel="noreferrer" className="mt-3 inline-flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold transition" style={{ background: "var(--ink)", color: "var(--bone)" }}><MessageCircle size={14} /> Reply on WhatsApp</a>
+          <>
+            <div className="mt-6 rounded-2xl p-5" style={{ background: "rgba(15,95,63,0.06)", border: "1px solid rgba(15,95,63,0.2)" }}>
+              <div className="flex items-start gap-3">
+                <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full" style={{ background: "var(--emerald)", color: "var(--lime)" }}><CheckCircle2 size={18} strokeWidth={2.5} /></div>
+                <div className="text-sm">
+                  <div className="font-semibold" style={{ color: "var(--ink)" }}>Approved · ref {quote.id}</div>
+                  <p className="mt-1" style={{ color: "var(--muted)" }}>Reply <span className="font-mono font-semibold">YES {quote.id}</span> on WhatsApp to your operator so they can submit the order to the rail.</p>
+                  <a href={WHATSAPP_URL} target="_blank" rel="noreferrer" className="mt-3 inline-flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold transition" style={{ background: "var(--ink)", color: "var(--bone)" }}><MessageCircle size={14} /> Reply on WhatsApp</a>
+                </div>
               </div>
             </div>
-          </div>
+            <div className="mt-6">
+              <div className="font-mono text-[10px] font-semibold uppercase tracking-wider mb-3" style={{ color: "var(--muted)" }}>What happens next</div>
+              <ol className="space-y-2.5">
+                {[
+                  { n: 1, title: "Your operator submits to the rail", body: `${quote.bdcName || "Your operator"} sends the order to ${quote.rail || "the chosen rail"}. Typically within minutes of your YES.` },
+                  { n: 2, title: "Funds move on the rail", body: `The wire executes. Settlement window for this quote is ${quote.settlement || "T+0"}.` },
+                  { n: 3, title: "You get a confirmation receipt", body: "Your operator sends you the MT103 / settlement reference on WhatsApp once funds clear at the beneficiary." },
+                ].map((s) => (
+                  <li key={s.n} className="flex items-start gap-3 rounded-xl p-4" style={{ background: "var(--bone)", border: "1px solid var(--line)" }}>
+                    <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full text-xs font-semibold" style={{ background: "var(--ink)", color: "var(--lime)" }}>{s.n}</div>
+                    <div className="flex-1">
+                      <div className="text-sm font-semibold" style={{ color: "var(--ink)" }}>{s.title}</div>
+                      <div className="text-xs mt-0.5" style={{ color: "var(--muted)" }}>{s.body}</div>
+                    </div>
+                  </li>
+                ))}
+              </ol>
+            </div>
+          </>
         )}
 
         {(expired || decision === "declined") && (
@@ -547,7 +567,7 @@ function RoleCard({ icon: Icon, title, subtitle, description, time, available, p
       <div className="flex items-start justify-between">
         <div className="flex h-9 w-9 items-center justify-center rounded-lg" style={{ background: "var(--bone-2)", color: "var(--emerald)" }}><Icon size={18} strokeWidth={1.75} /></div>
         {phase2 && <span className="rounded-full px-2 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-wider" style={{ background: "var(--bone-2)", color: "var(--emerald)" }}>Phase 2</span>}
-        {available && <span className="rounded-full px-2 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-wider" style={{ background: "var(--emerald)", color: "var(--lime)" }}>Live</span>}
+        {available && <span className="rounded-full px-2 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-wider" style={{ background: "var(--emerald)", color: "var(--lime)" }}>Onboarding partners</span>}
       </div>
       <h3 className="font-display mt-4 text-lg font-semibold" style={{ color: "var(--ink)" }}>{title}</h3>
       <p className="font-mono text-[10px] uppercase tracking-wider mt-0.5" style={{ color: "var(--muted)" }}>{subtitle}</p>
@@ -1332,7 +1352,44 @@ function LPOnboarding({ onComplete }) {
 }
 
 function Landing({ setView, onRequestAccess, onWaitlist }) {
-  return (<div><Hero setView={setView} onRequestAccess={onRequestAccess} onWaitlist={onWaitlist} /><Ticker /><ProblemSection /><RailsSection /><AgentsSection /><SidesSection setView={setView} /><PricingSection onRequestAccess={onRequestAccess} onWaitlist={onWaitlist} /><Footer onWaitlist={onWaitlist} /></div>);
+  return (<div><Hero setView={setView} onRequestAccess={onRequestAccess} onWaitlist={onWaitlist} /><Ticker /><ProblemSection /><RailsSection /><AgentsSection /><StructureSection /><SidesSection setView={setView} /><PricingSection onRequestAccess={onRequestAccess} onWaitlist={onWaitlist} /><Footer onWaitlist={onWaitlist} /></div>);
+}
+
+function StructureSection() {
+  const points = [
+    { n: "01", title: "We never custody funds", body: "Customer money goes directly to a CBN-licensed BDC's account. Foreign-currency wires are executed by Triple-A or Cedar Money — both regulated where they operate. XaePay never touches funds, never pools client money, never holds digital assets." },
+    { n: "02", title: "We never act as counterparty", body: "Every transaction is between named parties — customer, BDC, rail partner, beneficiary — disclosed at every step. XaePay is the software layer, not a party to the trade." },
+    { n: "03", title: "We never quote FX", body: "Cedar Money quotes in NGN. Triple-A quotes in USDT. The BDC sets the customer rate. XaePay surfaces the math and disclosures — but the spread belongs to the licensed operator." },
+  ];
+  return (
+    <section className="border-b" style={{ borderColor: "var(--line)", background: "var(--bone)" }}>
+      <div className="mx-auto max-w-7xl px-4 py-20 sm:px-6 lg:px-8 lg:py-28">
+        <div className="grid gap-12 lg:grid-cols-12">
+          <div className="lg:col-span-5">
+            <SectionEyebrow>§04  How we're structured</SectionEyebrow>
+            <h2 className="font-display mt-4 text-4xl font-[450] leading-[1.05] tracking-tight sm:text-5xl">A software<br />layer, not a<br /><span className="italic" style={{ color: "var(--emerald)" }}>fintech</span>.</h2>
+            <p className="mt-6 max-w-md text-base leading-relaxed" style={{ color: "var(--muted)" }}>This isn't legal hedging — it's the design. The defensible position in Nigerian cross-border payments is to own the workflow and the documentation, not the custody.</p>
+            <p className="mt-4 max-w-md text-sm" style={{ color: "var(--muted)" }}>Money is moved by parties already licensed to move it. We give them better tools.</p>
+          </div>
+          <div className="lg:col-span-7">
+            <div className="space-y-3">
+              {points.map((p) => (
+                <div key={p.n} className="card-soft rounded-2xl bg-white p-6" style={{ border: "1px solid var(--line)" }}>
+                  <div className="flex items-start gap-4">
+                    <span className="font-mono text-[11px] font-medium pt-1" style={{ color: "var(--emerald)" }}>{p.n}</span>
+                    <div className="flex-1">
+                      <h3 className="font-display text-lg font-semibold" style={{ color: "var(--ink)" }}>{p.title}</h3>
+                      <p className="mt-1.5 text-sm leading-relaxed" style={{ color: "var(--muted)" }}>{p.body}</p>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
 }
 
 function Hero({ setView, onRequestAccess, onWaitlist }) {
@@ -1527,7 +1584,7 @@ function SidesSection({ setView }) {
   return (
     <section className="mx-auto max-w-7xl px-4 py-20 sm:px-6 lg:px-8 lg:py-28">
       <div className="mb-14 max-w-2xl">
-        <SectionEyebrow>§04  Who it serves</SectionEyebrow>
+        <SectionEyebrow>§05  Who it serves</SectionEyebrow>
         <h2 className="font-display mt-4 text-4xl font-[450] leading-[1.05] tracking-tight sm:text-5xl">Six sides. One<br /><span className="italic" style={{ color: "var(--emerald)" }}>infrastructure</span>.</h2>
       </div>
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -1547,7 +1604,7 @@ function SideMiniCard({ icon: Icon, label, desc, onClick, live, phase2 }) {
     <button onClick={onClick} className="card-soft card-lift rounded-2xl bg-white p-6 text-left" style={{ border: "1px solid var(--line)" }}>
       <div className="flex items-start justify-between">
         <div className="flex h-9 w-9 items-center justify-center rounded-lg" style={{ background: "var(--bone-2)", color: "var(--emerald)" }}><Icon size={18} strokeWidth={1.75} /></div>
-        {live && <span className="rounded-full px-2 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-wider" style={{ background: "var(--emerald)", color: "var(--lime)" }}>Live</span>}
+        {live && <span className="rounded-full px-2 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-wider" style={{ background: "var(--emerald)", color: "var(--lime)" }}>Onboarding partners</span>}
         {phase2 && <span className="rounded-full px-2 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-wider" style={{ background: "var(--bone-2)", color: "var(--emerald)" }}>Phase 2</span>}
       </div>
       <h3 className="font-display mt-5 text-lg font-semibold">{label}</h3>
@@ -1565,7 +1622,7 @@ function PricingSection({ onRequestAccess, onWaitlist }) {
     <section className="border-y" style={{ borderColor: "var(--line)", background: "var(--bone)" }}>
       <div className="mx-auto max-w-7xl px-4 py-20 sm:px-6 lg:px-8 lg:py-28">
         <div className="mb-10 max-w-2xl">
-          <SectionEyebrow>§05  Pricing</SectionEyebrow>
+          <SectionEyebrow>§06  Pricing</SectionEyebrow>
           <h2 className="font-display mt-4 text-4xl font-[450] leading-[1.05] tracking-tight sm:text-5xl">You pay for the <span className="italic" style={{ color: "var(--emerald)" }}>work</span>.<br />Not for the wire.</h2>
           <p className="mt-5 max-w-xl text-base leading-relaxed" style={{ color: "var(--muted)" }}>Flat transaction fees, transparent subscriptions. No percentage of your payment. No hidden FX markup. What you see is what you pay.</p>
         </div>
@@ -1573,9 +1630,7 @@ function PricingSection({ onRequestAccess, onWaitlist }) {
           {[
             { id: "business", label: "Businesses" },
             { id: "diaspora", label: "Overseas Operators" },
-            { id: "bdc", label: "BDCs" },
-            { id: "agent", label: "Payment Agents" },
-            { id: "lp", label: "LPs" },
+            { id: "bdc", label: "Exchange Operators" },
           ].map((t) => (
             <button key={t.id} onClick={() => setAudience(t.id)} className="whitespace-nowrap rounded-lg px-4 py-2 text-sm font-medium transition" style={audience === t.id ? { background: "var(--ink)", color: "var(--bone)" } : { color: "var(--muted)" }}>{t.label}</button>
           ))}
@@ -1583,8 +1638,12 @@ function PricingSection({ onRequestAccess, onWaitlist }) {
         {audience === "business" && <BusinessPricing onRequestAccess={cta} />}
         {audience === "diaspora" && <DiasporaPricing onRequestAccess={cta} />}
         {audience === "bdc" && <BDCPricing onRequestAccess={cta} />}
-        {audience === "agent" && <PaymentAgentPricing onRequestAccess={cta} />}
-        {audience === "lp" && <LPPricing onRequestAccess={cta} />}
+        <div className="mt-6 rounded-xl p-4 text-xs" style={{ background: "white", border: "1px solid var(--line)" }}>
+          <div className="flex items-start gap-2">
+            <Layers size={14} className="mt-0.5 flex-shrink-0" style={{ color: "var(--muted)" }} />
+            <p style={{ color: "var(--muted)" }}><span className="font-semibold" style={{ color: "var(--ink)" }}>Payment Agents (IMTO / SCUML / CAC + bank-partner)</span> and <span className="font-semibold" style={{ color: "var(--ink)" }}>USDT Liquidity Providers</span> have separate pricing — published when those tiers open. <button onClick={cta} className="underline font-semibold" style={{ color: "var(--emerald)" }}>Talk to us →</button></p>
+          </div>
+        </div>
         <div className="mt-10 grid gap-4 sm:grid-cols-2">
           <div className="rounded-2xl p-6" style={{ background: "white", border: "1px solid var(--line)" }}>
             <div className="flex items-start gap-3">
