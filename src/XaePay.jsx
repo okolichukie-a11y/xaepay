@@ -3622,8 +3622,99 @@ function AddCustomerModal({ open, onClose, onAdded, onAddLocal }) {
   );
 }
 
+// Doc type labels shown in the drawer's upload picker + doc list
+const DOC_TYPES = [
+  { id: "id_front", label: "ID — front" },
+  { id: "id_back", label: "ID — back" },
+  { id: "selfie", label: "Selfie with ID" },
+  { id: "bvn_slip", label: "BVN slip" },
+  { id: "address_proof", label: "Proof of address" },
+  { id: "other", label: "Other" },
+];
+
 function CustomerDrawer({ customer, onClose }) {
   const { push } = useToast();
+  // hooks must always run — guard the body, not the hooks
+  const isRealCustomer = !!customer?.id && /^[0-9a-f-]{36}$/i.test(customer.id);
+  const [docs, setDocs] = useState([]);
+  const [loadingDocs, setLoadingDocs] = useState(false);
+  const [docType, setDocType] = useState("id_front");
+  const [uploading, setUploading] = useState(false);
+
+  const fetchDocs = async () => {
+    if (!isRealCustomer) { setDocs([]); return; }
+    setLoadingDocs(true);
+    const { data, error } = await supabase
+      .from("customer_documents")
+      .select("*")
+      .eq("customer_id", customer.id)
+      .order("created_at", { ascending: false });
+    if (error) {
+      // eslint-disable-next-line no-console
+      console.error("Fetch docs failed:", error);
+    } else {
+      setDocs(data || []);
+    }
+    setLoadingDocs(false);
+  };
+
+  useEffect(() => { fetchDocs(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [customer?.id]);
+
+  const onFilePicked = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = ""; // allow re-pick of same file
+    if (!file || !isRealCustomer) return;
+    setUploading(true);
+    try {
+      const ext = (file.name.split(".").pop() || "bin").toLowerCase();
+      const path = `${customer.id}/${docType}-${Date.now()}.${ext}`;
+      const { error: upErr } = await supabase.storage.from("kyc-docs").upload(path, file, { contentType: file.type, upsert: false });
+      if (upErr) throw upErr;
+      const { error: dbErr } = await supabase.from("customer_documents").insert({
+        customer_id: customer.id,
+        doc_type: docType,
+        storage_path: path,
+        file_name: file.name,
+        size_bytes: file.size,
+        mime_type: file.type,
+      });
+      if (dbErr) throw dbErr;
+      push(`Uploaded · ${DOC_TYPES.find(d => d.id === docType)?.label || docType}`, "success");
+      fetchDocs();
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error("Upload failed:", err);
+      push("Upload failed — check file size (5MB max) and type (JPG/PNG/WebP/PDF).", "warn");
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const viewDoc = async (doc) => {
+    const { data, error } = await supabase.storage.from("kyc-docs").createSignedUrl(doc.storage_path, 60 * 5); // 5 min
+    if (error || !data?.signedUrl) {
+      push("Couldn't generate view link.", "warn");
+      return;
+    }
+    window.open(data.signedUrl, "_blank");
+  };
+
+  const deleteDoc = async (doc) => {
+    if (!window.confirm(`Delete this ${DOC_TYPES.find(d => d.id === doc.doc_type)?.label || doc.doc_type}?`)) return;
+    const { error: storageErr } = await supabase.storage.from("kyc-docs").remove([doc.storage_path]);
+    if (storageErr) {
+      // eslint-disable-next-line no-console
+      console.error("Storage delete failed:", storageErr);
+    }
+    const { error: dbErr } = await supabase.from("customer_documents").delete().eq("id", doc.id);
+    if (dbErr) {
+      push("Couldn't delete — check console.", "warn");
+      return;
+    }
+    push("Document removed.", "success");
+    fetchDocs();
+  };
+
   if (!customer) return null;
   return (
     <Drawer open={!!customer} onClose={onClose} title={customer.name}>
@@ -3632,8 +3723,62 @@ function CustomerDrawer({ customer, onClose }) {
           <div className="absolute -right-12 -top-12 h-32 w-32 rounded-full opacity-30 blur-3xl" style={{ background: "var(--lime)" }} />
           <div className="relative font-mono text-[10px] uppercase tracking-wider" style={{ color: "rgba(247,245,240,0.5)" }}>Lifetime volume</div>
           <div className="relative font-display mt-1 text-4xl font-[500] tracking-tight" style={{ color: "var(--lime)" }}>${customer.volume.toLocaleString()}</div>
-          <div className="relative mt-1 font-mono text-[11px]" style={{ color: "rgba(247,245,240,0.6)" }}>{customer.count} transactions · KYC Tier {customer.kycTier}</div>
+          <div className="relative mt-1 font-mono text-[11px]" style={{ color: "rgba(247,245,240,0.6)" }}>{customer.count} transactions · KYC Tier {customer.kycTier}{customer.kycStatus === "pending" ? " · pending verification" : ""}</div>
         </div>
+
+        {isRealCustomer && (
+          <>
+            <div>
+              <Label>KYC documents</Label>
+              {loadingDocs ? (
+                <div className="rounded-xl p-4 text-sm flex items-center gap-2" style={{ background: "var(--bone)", border: "1px solid var(--line)", color: "var(--muted)" }}>
+                  <Loader2 size={14} className="spin" /> Loading…
+                </div>
+              ) : docs.length === 0 ? (
+                <div className="rounded-xl p-4 text-sm" style={{ background: "var(--bone)", border: "1px solid var(--line)", color: "var(--muted)" }}>
+                  No documents uploaded yet. Use the picker below.
+                </div>
+              ) : (
+                <div className="space-y-1.5">
+                  {docs.map((d) => (
+                    <div key={d.id} className="flex items-start gap-3 rounded-xl p-3" style={{ background: "var(--bone)", border: "1px solid var(--line)" }}>
+                      <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg" style={{ background: "white", color: "var(--emerald)", border: "1px solid var(--line)" }}>
+                        <FileText size={14} />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-sm font-medium truncate">{DOC_TYPES.find(t => t.id === d.doc_type)?.label || d.doc_type}</div>
+                        <div className="font-mono text-[10px] mt-0.5 truncate" style={{ color: "var(--muted)" }}>{d.file_name || "—"} · {d.size_bytes ? `${Math.round(d.size_bytes / 1024)} KB` : "—"}</div>
+                      </div>
+                      <button onClick={() => viewDoc(d)} className="rounded-lg px-2.5 py-1 font-mono text-[10px] font-semibold uppercase tracking-wider transition" style={{ background: "var(--ink)", color: "var(--bone)" }}>View</button>
+                      <button onClick={() => deleteDoc(d)} className="rounded-lg px-2 py-1 transition" style={{ background: "white", border: "1px solid var(--line)", color: "var(--muted)" }} title="Delete"><X size={12} /></button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="rounded-xl p-4" style={{ background: "white", border: "1px solid var(--line)" }}>
+              <Label>Upload a document</Label>
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                <Select value={docType} onChange={(e) => setDocType(e.target.value)}>
+                  {DOC_TYPES.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
+                </Select>
+                <label className="inline-flex items-center justify-center gap-2 rounded-xl px-4 py-3 text-sm font-semibold cursor-pointer transition flex-shrink-0" style={{ background: "var(--ink)", color: "var(--bone)", opacity: uploading ? 0.6 : 1 }}>
+                  {uploading ? <><Loader2 size={14} className="spin" /> Uploading…</> : <><Upload size={14} /> Choose file</>}
+                  <input type="file" accept="image/jpeg,image/png,image/webp,application/pdf" onChange={onFilePicked} disabled={uploading} className="hidden" />
+                </label>
+              </div>
+              <p className="mt-2 font-mono text-[10px] uppercase tracking-wider" style={{ color: "var(--muted)" }}>JPG / PNG / WebP / PDF · 5 MB max · stored privately, BDC-only access</p>
+            </div>
+          </>
+        )}
+
+        {!isRealCustomer && (
+          <div className="rounded-xl p-4 text-sm" style={{ background: "var(--bone)", border: "1px solid var(--line)", color: "var(--muted)" }}>
+            Demo customer — sign in and add real customers via the <span className="font-semibold" style={{ color: "var(--ink)" }}>Add customer</span> button to upload KYC documents.
+          </div>
+        )}
+
         <div className="flex flex-col gap-2 pt-4" style={{ borderTop: "1px solid var(--line)" }}>
           <PrimaryBtn onClick={() => push(`Generating report for ${customer.name}`, "success")} full><FileText size={14} /> Generate report</PrimaryBtn>
           <SecondaryBtn onClick={() => push(`Opening transactions for ${customer.name}`, "info")} full>View transactions</SecondaryBtn>
