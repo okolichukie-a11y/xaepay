@@ -2647,14 +2647,15 @@ function BDCRailQuotes() {
   const [markupPct, setMarkupPct] = useState("1.80");
   const [tick, setTick] = useState(0);
 
-  // Customer + approval state
+  // Customer form (resets after every Send, so BDC can compose more quotes back-to-back)
   const [customerName, setCustomerName] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
   const [beneficiary, setBeneficiary] = useState("");
-  const [approvalStatus, setApprovalStatus] = useState("idle"); // idle | sent | approved | declined
-  const [chosenRail, setChosenRail] = useState(null); // "Triple-A" | "Cedar Money"
-  const [currentQuoteId, setCurrentQuoteId] = useState(null); // Supabase quote.id when DB-backed
-  const [currentQuoteRef, setCurrentQuoteRef] = useState(null); // short ref shown to customer
+  const [chosenRail, setChosenRail] = useState(null);
+  const [sendingQuote, setSendingQuote] = useState(false);
+
+  // Pending quotes list — fetched from DB; supports many concurrent quotes per BDC
+  const [pendingQuotes, setPendingQuotes] = useState([]);
 
   // Orders shown at the bottom of the Rail Quotes tab. Signed-in users see real submitted quotes
   // from the DB; unsigned visitors see two demo rows so the section isn't empty.
@@ -2775,18 +2776,34 @@ function BDCRailQuotes() {
     if (cheapest && !chosenRail) setChosenRail(cheapest.name);
   }, [cheapest, chosenRail]);
 
+  // Build the WhatsApp message body for a given quote — used both for new sends and re-sends from the pending list
+  const buildQuoteMessage = (q, displayRef, urlToken) => {
+    const approvalUrl = `${window.location.origin}/?quote=${urlToken}`;
+    return (
+      `Hello ${q.customer_name || "there"},%0A%0A` +
+      `Trade payment quote via XaePay (ref ${displayRef}):%0A` +
+      `• Send: $${parseFloat(q.amount).toLocaleString()} ${q.currency || "USD"} to ${q.beneficiary || q.destination || "destination"}%0A` +
+      `• Rate: ₦${parseFloat(q.rate).toFixed(2)} / $%0A` +
+      `• Total naira: ₦${Math.round(q.ngn_total || 0).toLocaleString()}%0A` +
+      `• Settlement: ${q.settlement_text || "—"}%0A%0A` +
+      `Tap to review and approve:%0A${encodeURIComponent(approvalUrl)}%0A%0A` +
+      `Or reply YES ${displayRef} to confirm here.`
+    );
+  };
+
   const sendQuoteOnWhatsApp = async () => {
-    if (!customerPhone) { push("Enter a customer WhatsApp number first.", "warn"); return; }
+    if (!customerPhone || sendingQuote) { if (!customerPhone) push("Enter a customer WhatsApp number first.", "warn"); return; }
+    if (!cheapest) { push("Pick valid amount/urgency first — no eligible rail.", "warn"); return; }
+    setSendingQuote(true);
     const phoneDigits = customerPhone.replace(/[^\d]/g, "");
     const expiresAt = new Date(Date.now() + 4 * 60 * 1000).toISOString();
-    const railName = chosenRail || cheapest?.name;
-    const settlement = cheapest?.settlement;
+    const railName = chosenRail || cheapest.name;
+    const settlement = cheapest.settlement;
 
-    let urlToken; // what we put in the WhatsApp URL
-    let displayRef; // short customer-facing reference
+    let urlToken;
+    let displayRef;
 
     if (isSignedIn) {
-      // DB-backed: insert into Supabase, use the row id as the URL token
       const { data, error } = await supabase
         .from("quotes")
         .insert({
@@ -2802,25 +2819,25 @@ function BDCRailQuotes() {
           ngn_total: Math.round(ngnTotal),
           rail: railName,
           settlement_text: settlement,
-          cost_basis_ngn: cheapest?.nativeCostNGN,
+          cost_basis_ngn: cheapest.nativeCostNGN,
           markup_pct: parseFloat(markupPct || 0),
           status: "pending_approval",
           expires_at: expiresAt,
         })
-        .select("id")
+        .select("*")
         .single();
       if (error) {
         // eslint-disable-next-line no-console
         console.error("Insert quote failed:", error);
         push("Couldn't save quote — try again.", "warn");
+        setSendingQuote(false);
         return;
       }
-      urlToken = data.id; // UUID
+      urlToken = data.id;
       displayRef = `QU-${data.id.slice(0, 4).toUpperCase()}`;
-      setCurrentQuoteId(data.id);
-      setCurrentQuoteRef(displayRef);
+      // Optimistic insert: prepend to the pending list immediately
+      setPendingQuotes((prev) => [{ ...data, displayRef }, ...prev]);
     } else {
-      // Legacy: encode payload in URL (no DB)
       displayRef = `QU-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
       urlToken = encodeQuoteToken({
         id: displayRef,
@@ -2835,78 +2852,81 @@ function BDCRailQuotes() {
         bdcName: "Corporate Exchange BDC",
         expiresAt,
       });
-      setCurrentQuoteId(null);
-      setCurrentQuoteRef(displayRef);
     }
 
-    const approvalUrl = `${window.location.origin}/?quote=${urlToken}`;
-    const message =
-      `Hello ${customerName || "there"},%0A%0A` +
-      `Trade payment quote via XaePay (ref ${displayRef}):%0A` +
-      `• Send: $${parseFloat(amount).toLocaleString()} ${destinationCcy} to ${beneficiary || destinationCorridor}%0A` +
-      `• Rate: ₦${customerRate.toFixed(2)} / $%0A` +
-      `• Total naira: ₦${Math.round(ngnTotal).toLocaleString()}%0A` +
-      `• Settlement: ${settlement || "—"}%0A%0A` +
-      `Tap to review and approve:%0A${encodeURIComponent(approvalUrl)}%0A%0A` +
-      `Quote valid for 4 minutes. Or reply YES ${displayRef} to confirm here.`;
+    const message = buildQuoteMessage({
+      customer_name: customerName, amount, currency: destinationCcy,
+      beneficiary, destination: destinationCorridor, rate: customerRate,
+      ngn_total: ngnTotal, settlement_text: settlement,
+    }, displayRef, urlToken);
     window.open(`https://wa.me/${phoneDigits}?text=${message}`, "_blank");
-    setApprovalStatus("sent");
-    push(`Quote ${displayRef} sent to ${customerName || phoneDigits} on WhatsApp`, "success");
+    push(`Quote ${displayRef} sent to ${customerName || phoneDigits}`, "success");
+
+    // Reset form so BDC can compose another quote immediately
+    setCustomerName(""); setCustomerPhone(""); setBeneficiary("");
+    setSendingQuote(false);
   };
 
-  // While we're waiting on customer approval (DB-backed only), poll the quote status every 5s.
-  // Flips approvalStatus → 'approved' or 'declined' the moment customer hits the button on their phone.
-  useEffect(() => {
-    if (!isSignedIn || !currentQuoteId || approvalStatus !== "sent") return;
-    const interval = setInterval(async () => {
-      const { data, error } = await supabase.rpc("get_quote", { p_token: currentQuoteId });
-      if (error || !data || data.length === 0) return;
-      const status = data[0].status;
-      if (status === "customer_approved") {
-        setApprovalStatus("approved");
-        push("Customer approved the quote", "success");
-      } else if (status === "customer_declined") {
-        setApprovalStatus("declined");
-        push("Customer declined the quote", "info");
-      } else if (status === "expired") {
-        setApprovalStatus("idle");
-        push("Quote expired before customer approved", "warn");
-      }
-    }, 5000);
-    return () => clearInterval(interval);
-  }, [isSignedIn, currentQuoteId, approvalStatus, push]);
-
-  const submitOrder = async () => {
-    if (!chosenRail || approvalStatus !== "approved") return;
-    const orderRef = currentQuoteRef || `ORD-${2200 + Math.floor(Math.random() * 100)}`;
-    const newOrder = {
-      id: orderRef,
-      rail: chosenRail,
-      customer: customerName || "Unnamed",
-      amount: parseFloat(amount),
-      customerRate,
-      ts: "just now",
-      status: "submitted",
-      dest: destinationCorridor,
-      date: "Today · just now",
-    };
-    // If DB-backed, update quote to submitted_to_rail. Failure here doesn't break the local flow.
-    if (isSignedIn && currentQuoteId) {
-      const { error } = await supabase
-        .from("quotes")
-        .update({ status: "submitted_to_rail", rail: chosenRail, submitted_at: new Date().toISOString() })
-        .eq("id", currentQuoteId);
-      if (error) {
-        // eslint-disable-next-line no-console
-        console.error("Update quote to submitted failed:", error);
-      }
+  // Fetch all in-flight quotes for this BDC (pending / approved / declined). Replaces the per-row polling
+  // we had with a single list-fetch every 5s.
+  const fetchPendingQuotes = async () => {
+    if (!isSignedIn) return;
+    const { data, error } = await supabase
+      .from("quotes")
+      .select("*")
+      .in("status", ["pending_approval", "customer_approved", "customer_declined"])
+      .order("created_at", { ascending: false })
+      .limit(20);
+    if (error) {
+      // eslint-disable-next-line no-console
+      console.error("Fetch pending quotes failed:", error);
+      return;
     }
-    setOrders((o) => [newOrder, ...o].slice(0, 8));
-    push(`Order ${orderRef} submitted to ${chosenRail} — also visible in Transactions`, "success");
-    setApprovalStatus("idle"); setCustomerName(""); setCustomerPhone(""); setBeneficiary("");
-    setCurrentQuoteId(null); setCurrentQuoteRef(null);
-    // Pull canonical list from DB (replaces the optimistic local insert above).
+    setPendingQuotes((data || []).map((q) => ({ ...q, displayRef: `QU-${q.id.slice(0, 4).toUpperCase()}` })));
+  };
+
+  useEffect(() => { fetchPendingQuotes(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [auth.user?.id]);
+
+  // Continuous polling — keeps the pending list and statuses fresh
+  useEffect(() => {
+    if (!isSignedIn) return;
+    const interval = setInterval(fetchPendingQuotes, 5000);
+    return () => clearInterval(interval);
+    /* eslint-disable-next-line react-hooks/exhaustive-deps */
+  }, [isSignedIn]);
+
+  const submitPendingOrder = async (q) => {
+    const railToUse = q.rail || cheapest?.name;
+    if (!railToUse) { push("No rail set on this quote.", "warn"); return; }
+    const { error } = await supabase
+      .from("quotes")
+      .update({ status: "submitted_to_rail", rail: railToUse, submitted_at: new Date().toISOString() })
+      .eq("id", q.id);
+    if (error) {
+      // eslint-disable-next-line no-console
+      console.error("Submit failed:", error);
+      push("Couldn't submit — try again.", "warn");
+      return;
+    }
+    push(`Order ${q.displayRef} submitted to ${railToUse}`, "success");
+    fetchPendingQuotes();
     fetchOrders();
+  };
+
+  const cancelPendingQuote = async (q) => {
+    if (!window.confirm(`Cancel quote ${q.displayRef}?`)) return;
+    const { error } = await supabase.from("quotes").update({ status: "cancelled" }).eq("id", q.id);
+    if (error) { push("Couldn't cancel.", "warn"); return; }
+    push(`Quote ${q.displayRef} cancelled`, "info");
+    fetchPendingQuotes();
+  };
+
+  const resendPendingQuote = (q) => {
+    const phoneDigits = (q.customer_phone || "").replace(/[^\d]/g, "");
+    if (!phoneDigits) { push("No phone on this quote.", "warn"); return; }
+    const message = buildQuoteMessage(q, q.displayRef, q.id);
+    window.open(`https://wa.me/${phoneDigits}?text=${message}`, "_blank");
+    push(`Re-opened WhatsApp for ${q.displayRef}`, "info");
   };
 
   return (
@@ -3038,62 +3058,91 @@ function BDCRailQuotes() {
         )}
       </div>
 
-      {/* Customer approval + rail submission */}
+      {/* Compose: customer details + send. Resets after each send so multiple quotes can be sent back-to-back. */}
       {cheapest && (
         <div className="card-soft rounded-2xl p-6" style={{ background: "white", border: "1px solid var(--line)" }}>
           <div className="flex items-start justify-between gap-4 flex-wrap mb-5">
             <div>
-              <h3 className="font-display text-lg font-semibold">Customer approval & rail submission</h3>
-              <p className="mt-1 text-sm" style={{ color: "var(--muted)" }}>Send the rate to your customer on WhatsApp. They reply YES. Then submit to the rail.</p>
+              <h3 className="font-display text-lg font-semibold">Send quote to customer</h3>
+              <p className="mt-1 text-sm" style={{ color: "var(--muted)" }}>Fill in customer details and send. The form resets after each send — you can have many quotes in-flight at once.</p>
             </div>
-            <ApprovalBadge status={approvalStatus} />
           </div>
-
           <div className="grid gap-4 sm:grid-cols-3">
             <Field label="Customer name"><Input value={customerName} onChange={(e) => setCustomerName(e.target.value)} placeholder="Adeyemi Okafor" /></Field>
             <Field label="Customer WhatsApp"><Input value={customerPhone} onChange={(e) => setCustomerPhone(e.target.value)} placeholder="+234 803 ..." /></Field>
             <Field label="Beneficiary / supplier"><Input value={beneficiary} onChange={(e) => setBeneficiary(e.target.value)} placeholder="Shenzhen Electronics Co." /></Field>
           </div>
-
-          <div className="mt-5 grid gap-3 sm:grid-cols-2">
-            <button onClick={sendQuoteOnWhatsApp} disabled={!customerPhone || approvalStatus === "approved"} className="inline-flex items-center justify-center gap-2 rounded-xl px-5 py-3 text-sm font-semibold transition disabled:opacity-40 disabled:cursor-not-allowed" style={{ background: "var(--ink)", color: "var(--bone)" }}>
-              <MessageCircle size={14} /> {approvalStatus === "sent" ? "Re-send quote on WhatsApp" : "Send quote on WhatsApp"}
+          <div className="mt-5">
+            <button onClick={sendQuoteOnWhatsApp} disabled={!customerPhone || sendingQuote} className="w-full inline-flex items-center justify-center gap-2 rounded-xl px-5 py-3 text-sm font-semibold transition disabled:opacity-40 disabled:cursor-not-allowed" style={{ background: "var(--ink)", color: "var(--bone)" }}>
+              {sendingQuote ? <><Loader2 size={14} className="spin" /> Saving…</> : <><MessageCircle size={14} /> Send quote on WhatsApp · ₦{Math.round(ngnTotal).toLocaleString()}</>}
             </button>
-            <div className="flex gap-2">
-              <button onClick={() => { setApprovalStatus("approved"); push("Customer approved · ready to submit", "success"); }} disabled={approvalStatus !== "sent"} className="flex-1 inline-flex items-center justify-center gap-2 rounded-xl px-5 py-3 text-sm font-semibold transition disabled:opacity-40 disabled:cursor-not-allowed" style={{ background: "var(--emerald)", color: "var(--lime)" }}>
-                <CheckCircle2 size={14} /> Mark customer approved
-              </button>
-              <button onClick={() => { setApprovalStatus("declined"); push("Marked declined.", "info"); }} disabled={approvalStatus !== "sent"} className="rounded-xl px-4 py-3 text-sm font-semibold transition disabled:opacity-40 disabled:cursor-not-allowed" style={{ background: "white", border: "1px solid var(--line)" }} title="Customer declined / no reply">
-                <X size={14} />
-              </button>
-            </div>
+            <p className="mt-2 text-xs" style={{ color: "var(--muted)" }}>WhatsApp opens with a pre-filled message — click send in the WhatsApp window. Customer's reply auto-flips the row below within ~5 sec.</p>
           </div>
+        </div>
+      )}
 
-          {approvalStatus === "sent" && <p className="mt-3 text-xs" style={{ color: "var(--muted)" }}>Waiting on customer reply. (Real WhatsApp Business API webhook would auto-detect "YES" — for now, mark approved manually once they confirm.)</p>}
-          {approvalStatus === "declined" && <p className="mt-3 text-xs" style={{ color: "#92400e" }}>Quote declined. Adjust markup or re-send a fresh quote.</p>}
-
-          {approvalStatus === "approved" && (
-            <div className="mt-6 pt-5" style={{ borderTop: "1px solid var(--line)" }}>
-              <Label>Choose rail to execute on</Label>
-              <div className="grid gap-2 sm:grid-cols-2 mb-4">
-                {[tripleA, cedar].filter((r) => parseFloat(amount) >= r.minTicket).map((r) => (
-                  <button key={r.name} onClick={() => setChosenRail(r.name)} className="rounded-xl p-3 text-left transition" style={chosenRail === r.name ? { background: "var(--ink)", color: "var(--bone)", border: "1px solid var(--ink)" } : { background: "white", border: "1px solid var(--line)" }}>
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <div className="text-sm font-semibold">{r.name}</div>
-                        <div className="font-mono text-[10px] mt-0.5" style={chosenRail === r.name ? { color: "rgba(247,245,240,0.6)" } : { color: "var(--muted)" }}>₦{r.nativeCostNGN.toFixed(2)}/$ · {r.settlement}</div>
+      {/* Pending quotes — supports many in-flight quotes at once */}
+      {isSignedIn && (
+        <Card padding="none">
+          <div className="flex items-center justify-between p-4 gap-2 flex-wrap" style={{ borderBottom: "1px solid var(--line)" }}>
+            <div>
+              <h3 className="font-display text-lg font-semibold">In-flight quotes</h3>
+              <p className="text-xs mt-0.5" style={{ color: "var(--muted)" }}>Pending customer reply, approved (ready to submit), or declined. Polls every 5 sec.</p>
+            </div>
+            <SecondaryBtn onClick={fetchPendingQuotes}><Loader2 size={14} /> Refresh</SecondaryBtn>
+          </div>
+          {pendingQuotes.length === 0 ? (
+            <div className="p-8 text-center text-sm" style={{ color: "var(--muted)" }}>No quotes in flight. Send one above.</div>
+          ) : (
+            <div className="divide-y" style={{ borderColor: "var(--line)" }}>
+              {pendingQuotes.map((q) => {
+                const isApproved = q.status === "customer_approved";
+                const isDeclined = q.status === "customer_declined";
+                const expired = q.expires_at && new Date(q.expires_at).getTime() < Date.now() && q.status === "pending_approval";
+                const status = expired ? "expired" : q.status;
+                const statusStyles = {
+                  pending_approval: { bg: "#fef3c7", color: "#92400e", label: "Awaiting reply" },
+                  customer_approved: { bg: "var(--emerald)", color: "var(--lime)", label: "Approved · ready to submit" },
+                  customer_declined: { bg: "#fee2e2", color: "#991b1b", label: "Declined" },
+                  expired: { bg: "var(--bone-2)", color: "var(--muted)", label: "Expired" },
+                }[status] || { bg: "var(--bone-2)", color: "var(--muted)", label: status };
+                return (
+                  <div key={q.id} className="p-4" style={{ background: isApproved ? "rgba(15,95,63,0.04)" : "white" }}>
+                    <div className="flex items-start justify-between gap-3 flex-wrap">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-mono text-xs font-semibold">{q.displayRef}</span>
+                          <span className="rounded-full px-2 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-wider whitespace-nowrap" style={{ background: statusStyles.bg, color: statusStyles.color }}>{statusStyles.label}</span>
+                          <span className="font-mono text-[10px]" style={{ color: "var(--muted)" }}>{relativeTime(q.created_at)}</span>
+                        </div>
+                        <div className="mt-1 text-sm font-medium">{q.customer_name || "Unnamed"} <span className="font-mono text-xs" style={{ color: "var(--muted)" }}>· {q.customer_phone || "—"}</span></div>
+                        <div className="mt-1 font-mono text-xs" style={{ color: "var(--muted)" }}>${parseFloat(q.amount).toLocaleString()} {q.currency} → {q.beneficiary || q.destination || "—"} · ₦{parseFloat(q.rate).toFixed(2)}/$ · total ₦{Math.round(q.ngn_total || 0).toLocaleString()} · rail {q.rail || "—"}</div>
+                        {q.markup_pct != null && <div className="mt-1 font-mono text-[10px]" style={{ color: "var(--muted)" }}>Markup: {parseFloat(q.markup_pct).toFixed(2)}% · cost basis ₦{parseFloat(q.cost_basis_ngn || 0).toFixed(2)}/$</div>}
                       </div>
-                      {chosenRail === r.name && <CheckCircle2 size={16} style={{ color: "var(--lime)" }} />}
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                        {status === "pending_approval" && (
+                          <>
+                            <button onClick={() => resendPendingQuote(q)} className="rounded-lg px-3 py-1.5 font-mono text-[10px] font-semibold uppercase tracking-wider transition" style={{ border: "1px solid var(--line)" }}><MessageCircle size={11} className="inline mr-1" />Resend</button>
+                            <button onClick={() => cancelPendingQuote(q)} className="rounded-lg px-2 py-1.5 transition" style={{ border: "1px solid var(--line)", color: "var(--muted)" }} title="Cancel quote"><X size={12} /></button>
+                          </>
+                        )}
+                        {isApproved && (
+                          <>
+                            <button onClick={() => submitPendingOrder(q)} className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 font-mono text-[10px] font-semibold uppercase tracking-wider transition glow-lime" style={{ background: "var(--lime)", color: "var(--ink)" }}><Send size={11} /> Submit to {q.rail}</button>
+                            <button onClick={() => cancelPendingQuote(q)} className="rounded-lg px-2 py-1.5 transition" style={{ border: "1px solid var(--line)", color: "var(--muted)" }} title="Cancel quote"><X size={12} /></button>
+                          </>
+                        )}
+                        {(isDeclined || expired) && (
+                          <button onClick={() => cancelPendingQuote(q)} className="rounded-lg px-3 py-1.5 font-mono text-[10px] font-semibold uppercase tracking-wider transition" style={{ border: "1px solid var(--line)", color: "var(--muted)" }}>Dismiss</button>
+                        )}
+                      </div>
                     </div>
-                  </button>
-                ))}
-              </div>
-              <button onClick={submitOrder} disabled={!chosenRail} className="w-full inline-flex items-center justify-center gap-2 rounded-xl px-5 py-3 text-sm font-semibold transition disabled:opacity-40 glow-lime" style={{ background: "var(--lime)", color: "var(--ink)" }}>
-                <Send size={14} /> Submit order to {chosenRail || "rail"} · ₦{Math.round(ngnTotal).toLocaleString()}
-              </button>
+                  </div>
+                );
+              })}
             </div>
           )}
-        </div>
+        </Card>
       )}
 
       {/* Recent orders */}
@@ -3127,16 +3176,6 @@ function BDCRailQuotes() {
       </Card>
     </div>
   );
-}
-
-function ApprovalBadge({ status }) {
-  const map = {
-    idle: { label: "No quote sent yet", bg: "var(--bone-2)", color: "var(--muted)" },
-    sent: { label: "Awaiting customer reply", bg: "#fef3c7", color: "#92400e" },
-    approved: { label: "Approved · ready to submit", bg: "var(--emerald)", color: "var(--lime)" },
-    declined: { label: "Declined", bg: "#fee2e2", color: "#991b1b" },
-  }[status];
-  return <span className="rounded-full px-2.5 py-1 font-mono text-[10px] font-semibold uppercase tracking-wider whitespace-nowrap" style={{ background: map.bg, color: map.color }}>{map.label}</span>;
 }
 
 function BDCPaymentAgent() {
@@ -3222,7 +3261,7 @@ function BDCTransactions() {
     setLoading(true);
     const { data, error } = await supabase
       .from("quotes")
-      .select("id, customer_name, destination, amount, currency, rate, rail, status, submitted_at, created_at")
+      .select("id, customer_name, customer_phone, beneficiary, destination, amount, currency, rate, ngn_total, rail, status, submitted_at, created_at, markup_pct, cost_basis_ngn")
       .order("created_at", { ascending: false })
       .limit(50);
     if (error) {
@@ -3234,8 +3273,15 @@ function BDCTransactions() {
         id: `XP-${q.id.slice(0, 4).toUpperCase()}`,
         dbId: q.id,
         customer: q.customer_name || "Unnamed",
+        customerPhone: q.customer_phone,
+        beneficiary: q.beneficiary,
         dest: q.destination || "—",
         amount: parseFloat(q.amount),
+        currency: q.currency,
+        rate: parseFloat(q.rate),
+        ngnTotal: q.ngn_total,
+        markupPct: q.markup_pct != null ? parseFloat(q.markup_pct) : null,
+        costBasisNgn: q.cost_basis_ngn != null ? parseFloat(q.cost_basis_ngn) : null,
         rail: q.rail || "—",
         status: QUOTE_STATUS_TO_TX_STATUS[q.status] || "pending",
         date: relativeTime(q.submitted_at || q.created_at),
@@ -3318,13 +3364,26 @@ function TxDrawer({ tx, onClose }) {
           <div className="relative font-display mt-1 text-4xl font-[500] tracking-tight" style={{ color: "var(--lime)" }}>${tx.amount.toLocaleString()}</div>
           <div className="relative mt-1 font-mono text-[11px]" style={{ color: "rgba(247,245,240,0.6)" }}>{tx.customer} → {tx.dest} · via {tx.rail}</div>
         </div>
+
+        {(tx.rate != null || tx.markupPct != null) && (
+          <div>
+            <Label>Pricing breakdown</Label>
+            <div className="space-y-1.5 rounded-xl p-4 text-xs font-mono" style={{ background: "var(--bone)", border: "1px solid var(--line)" }}>
+              {tx.costBasisNgn != null && <div className="flex items-baseline justify-between"><span style={{ color: "var(--muted)" }}>Rail cost basis</span><span className="font-semibold">₦{tx.costBasisNgn.toFixed(2)}/$</span></div>}
+              {tx.markupPct != null && <div className="flex items-baseline justify-between"><span style={{ color: "var(--muted)" }}>Your markup</span><span className="font-semibold">{tx.markupPct.toFixed(2)}%</span></div>}
+              {tx.rate != null && <div className="flex items-baseline justify-between pt-1.5" style={{ borderTop: "1px solid var(--line)" }}><span className="font-semibold">Customer rate</span><span className="font-semibold">₦{tx.rate.toFixed(2)}/$</span></div>}
+              {tx.ngnTotal != null && <div className="flex items-baseline justify-between"><span style={{ color: "var(--muted)" }}>Customer pays</span><span className="font-semibold">₦{Math.round(tx.ngnTotal).toLocaleString()}</span></div>}
+              {tx.markupPct != null && tx.costBasisNgn != null && tx.amount && <div className="flex items-baseline justify-between pt-1.5" style={{ borderTop: "1px solid var(--line)" }}><span style={{ color: "var(--emerald)" }}>BDC margin (est.)</span><span className="font-semibold" style={{ color: "var(--emerald)" }}>₦{Math.round((tx.rate - tx.costBasisNgn) * tx.amount).toLocaleString()}</span></div>}
+            </div>
+          </div>
+        )}
+
         <div>
           <Label>Audit trail</Label>
           <div className="space-y-1.5 rounded-xl p-4 text-xs font-mono" style={{ background: "var(--bone)", border: "1px solid var(--line)" }}>
-            <div>1. Customer → BDC ← ₦{(tx.amount * 1395).toLocaleString()}</div>
-            <div>2. BDC → LP-2841 ← {tx.amount.toLocaleString()} USDT</div>
-            <div>3. USDT → off-ramp → ${tx.amount.toLocaleString()} USD</div>
-            <div>4. USD → MT103 → supplier</div>
+            <div>1. Customer → BDC ← ₦{Math.round((tx.ngnTotal || tx.amount * 1395)).toLocaleString()}</div>
+            <div>2. BDC → {tx.rail || "rail"} ← {tx.amount.toLocaleString()} {tx.rail === "Triple-A" ? "USDT" : "USD"}</div>
+            <div>3. {tx.rail || "Rail"} → MT103 → {tx.beneficiary || "beneficiary"}</div>
           </div>
         </div>
         <div>
