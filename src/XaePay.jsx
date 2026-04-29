@@ -6,7 +6,7 @@ import {
   ExternalLink, Sparkles, User, Building2, Briefcase, Coins, Lock, Unlock,
   ArrowLeft, Loader2, Layers, TrendingUp, Wallet, DollarSign, Mail,
 } from "lucide-react";
-import { supabase } from "./lib/supabase.js";
+import { supabase, sendWhatsAppText } from "./lib/supabase.js";
 import { useAuth } from "./lib/auth.js";
 
 // ─── Editable in one place ────────────────────────────────────────────────
@@ -2791,6 +2791,21 @@ function BDCRailQuotes() {
     );
   };
 
+  // Plain-text version of the same message — used by the Cloud API send (real \n, real URL).
+  const buildQuoteMessagePlain = (q, displayRef, urlToken) => {
+    const approvalUrl = `${window.location.origin}/?quote=${urlToken}`;
+    return (
+      `Hello ${q.customer_name || "there"},\n\n` +
+      `Trade payment quote via XaePay (ref ${displayRef}):\n` +
+      `• Send: $${parseFloat(q.amount).toLocaleString()} ${q.currency || "USD"} to ${q.beneficiary || q.destination || "destination"}\n` +
+      `• Rate: ₦${parseFloat(q.rate).toFixed(2)} / $\n` +
+      `• Total naira: ₦${Math.round(q.ngn_total || 0).toLocaleString()}\n` +
+      `• Settlement: ${q.settlement_text || "—"}\n\n` +
+      `Tap to review and approve:\n${approvalUrl}\n\n` +
+      `Or reply YES ${displayRef} to confirm here.`
+    );
+  };
+
   const sendQuoteOnWhatsApp = async () => {
     if (!customerPhone || sendingQuote) { if (!customerPhone) push("Enter a customer WhatsApp number first.", "warn"); return; }
     if (!cheapest) { push("Pick valid amount/urgency first — no eligible rail.", "warn"); return; }
@@ -2867,6 +2882,68 @@ function BDCRailQuotes() {
     setSendingQuote(false);
   };
 
+  // Auto-send variant: same DB insert as sendQuoteOnWhatsApp, but pushes the message via Cloud API
+  // instead of opening wa.me. Beta — only fires when BDC clicks the dedicated button.
+  const sendQuoteAuto = async () => {
+    if (!isSignedIn) { push("Sign in first to use auto-send.", "warn"); return; }
+    if (!customerPhone || sendingQuote) { if (!customerPhone) push("Enter a customer WhatsApp number first.", "warn"); return; }
+    if (!cheapest) { push("Pick valid amount/urgency first — no eligible rail.", "warn"); return; }
+    setSendingQuote(true);
+    const phoneDigits = customerPhone.replace(/[^\d]/g, "");
+    const expiresAt = new Date(Date.now() + 4 * 60 * 1000).toISOString();
+    const railName = chosenRail || cheapest.name;
+    const settlement = cheapest.settlement;
+
+    const { data, error } = await supabase
+      .from("quotes")
+      .insert({
+        bdc_user_id: auth.user.id,
+        bdc_name: auth.user.user_metadata?.company || "Corporate Exchange BDC",
+        customer_name: customerName,
+        customer_phone: customerPhone,
+        amount: parseFloat(amount),
+        currency: destinationCcy,
+        beneficiary: beneficiary || destinationCorridor,
+        destination: destinationCorridor,
+        rate: parseFloat(customerRate.toFixed(2)),
+        ngn_total: Math.round(ngnTotal),
+        rail: railName,
+        settlement_text: settlement,
+        cost_basis_ngn: cheapest.nativeCostNGN,
+        markup_pct: parseFloat(markupPct || 0),
+        status: "pending_approval",
+        expires_at: expiresAt,
+      })
+      .select("*")
+      .single();
+    if (error) {
+      // eslint-disable-next-line no-console
+      console.error("Insert quote failed:", error);
+      push("Couldn't save quote — try again.", "warn");
+      setSendingQuote(false);
+      return;
+    }
+    const displayRef = `QU-${data.id.slice(0, 4).toUpperCase()}`;
+    setPendingQuotes((prev) => [{ ...data, displayRef }, ...prev]);
+
+    const text = buildQuoteMessagePlain({
+      customer_name: customerName, amount, currency: destinationCcy,
+      beneficiary, destination: destinationCorridor, rate: customerRate,
+      ngn_total: ngnTotal, settlement_text: settlement,
+    }, displayRef, data.id);
+
+    const result = await sendWhatsAppText(phoneDigits, text);
+    if (result.ok) {
+      push(`Auto-sent ${displayRef} to ${customerName || phoneDigits}`, "success");
+      setCustomerName(""); setCustomerPhone(""); setBeneficiary("");
+    } else {
+      // eslint-disable-next-line no-console
+      console.error("Auto-send failed:", result);
+      push(`Auto-send failed (${result.status}) — quote saved, use manual Resend.`, "warn");
+    }
+    setSendingQuote(false);
+  };
+
   // Fetch all in-flight quotes for this BDC (pending / approved / declined). Replaces the per-row polling
   // we had with a single list-fetch every 5s.
   const fetchPendingQuotes = async () => {
@@ -2927,6 +3004,20 @@ function BDCRailQuotes() {
     const message = buildQuoteMessage(q, q.displayRef, q.id);
     window.open(`https://wa.me/${phoneDigits}?text=${message}`, "_blank");
     push(`Re-opened WhatsApp for ${q.displayRef}`, "info");
+  };
+
+  const resendPendingQuoteAuto = async (q) => {
+    const phoneDigits = (q.customer_phone || "").replace(/[^\d]/g, "");
+    if (!phoneDigits) { push("No phone on this quote.", "warn"); return; }
+    const text = buildQuoteMessagePlain(q, q.displayRef, q.id);
+    const result = await sendWhatsAppText(phoneDigits, text);
+    if (result.ok) {
+      push(`Auto-resent ${q.displayRef}`, "success");
+    } else {
+      // eslint-disable-next-line no-console
+      console.error("Auto-resend failed:", result);
+      push(`Auto-resend failed (${result.status}) — try manual Resend.`, "warn");
+    }
   };
 
   return (
@@ -3077,6 +3168,11 @@ function BDCRailQuotes() {
               {sendingQuote ? <><Loader2 size={14} className="spin" /> Saving…</> : <><MessageCircle size={14} /> Send quote on WhatsApp · ₦{Math.round(ngnTotal).toLocaleString()}</>}
             </button>
             <p className="mt-2 text-xs" style={{ color: "var(--muted)" }}>WhatsApp opens with a pre-filled message — click send in the WhatsApp window. Customer's reply auto-flips the row below within ~5 sec.</p>
+            {isSignedIn && (
+              <button onClick={sendQuoteAuto} disabled={!customerPhone || sendingQuote} className="mt-2 w-full inline-flex items-center justify-center gap-2 rounded-xl px-5 py-2.5 text-xs font-semibold transition disabled:opacity-40 disabled:cursor-not-allowed" style={{ border: "1px solid var(--line)", color: "var(--ink)", background: "var(--bone-2)" }}>
+                {sendingQuote ? <><Loader2 size={12} className="spin" /> Saving…</> : <><Send size={12} /> Send auto via XaePay <span className="font-mono text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded" style={{ background: "var(--lime)", color: "var(--ink)" }}>beta</span></>}
+              </button>
+            )}
           </div>
         </div>
       )}
@@ -3123,6 +3219,7 @@ function BDCRailQuotes() {
                         {status === "pending_approval" && (
                           <>
                             <button onClick={() => resendPendingQuote(q)} className="rounded-lg px-3 py-1.5 font-mono text-[10px] font-semibold uppercase tracking-wider transition" style={{ border: "1px solid var(--line)" }}><MessageCircle size={11} className="inline mr-1" />Resend</button>
+                            <button onClick={() => resendPendingQuoteAuto(q)} className="rounded-lg px-3 py-1.5 font-mono text-[10px] font-semibold uppercase tracking-wider transition" style={{ border: "1px solid var(--line)", background: "var(--bone-2)" }} title="Re-send via XaePay Cloud API (beta)"><Send size={11} className="inline mr-1" />Auto</button>
                             <button onClick={() => cancelPendingQuote(q)} className="rounded-lg px-2 py-1.5 transition" style={{ border: "1px solid var(--line)", color: "var(--muted)" }} title="Cancel quote"><X size={12} /></button>
                           </>
                         )}

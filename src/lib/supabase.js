@@ -10,3 +10,16 @@ if (!url || !anonKey) {
 }
 
 export const supabase = createClient(url, anonKey);
+
+// Programmatic WhatsApp send via the hyper-function Edge Function.
+// Returns { ok, status, data }. Caller decides how to surface success/failure.
+export async function sendWhatsAppText(phoneDigits, text) {
+  const res = await fetch(`${url}/functions/v1/hyper-function`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ to: phoneDigits, text }),
+  });
+  let data = null;
+  try { data = await res.json(); } catch { /* non-JSON response */ }
+  return { ok: res.ok, status: res.status, data };
+}
