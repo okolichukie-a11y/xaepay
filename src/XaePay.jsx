@@ -2646,6 +2646,9 @@ function BDCRailQuotes() {
   const [urgency, setUrgency] = useState("standard");
   const [markupPct, setMarkupPct] = useState("1.80");
   const [tick, setTick] = useState(0);
+  // Funding method controls which rail(s) appear. Triple-A requires USDT inventory;
+  // Cedar runs on NGN fiat. "compare" shows both side-by-side so the BDC can decide.
+  const [fundingMethod, setFundingMethod] = useState("ngn-fiat"); // 'ngn-fiat' | 'usdt' | 'compare'
 
   // Customer form (resets after every Send, so BDC can compose more quotes back-to-back)
   const [customerName, setCustomerName] = useState("");
@@ -2764,7 +2767,14 @@ function BDCRailQuotes() {
     };
   }
 
-  const eligibleRails = [tripleA, cedar].filter((r) => parseFloat(amount) >= r.minTicket);
+  // On off-ramp the BDC picks the rail based on what they're funding with (NGN fiat vs USDT).
+  // On on-ramp the foreign sender funds the rail, so funding method doesn't apply — show both.
+  const railsByFunding = direction === "off-ramp"
+    ? (fundingMethod === "ngn-fiat" ? [cedar]
+      : fundingMethod === "usdt" ? [tripleA]
+      : [tripleA, cedar])
+    : [tripleA, cedar];
+  const eligibleRails = railsByFunding.filter((r) => parseFloat(amount) >= r.minTicket);
   const cheapest = eligibleRails.length > 0 ? eligibleRails.reduce((a, b) => (a.nativeCostNGN < b.nativeCostNGN ? a : b)) : null;
   const customerRate = cheapest ? cheapest.nativeCostNGN * (1 + parseFloat(markupPct || 0) / 100) : 0;
   const grossMarginPerUSD = cheapest ? customerRate - cheapest.nativeCostNGN : 0;
@@ -2775,6 +2785,10 @@ function BDCRailQuotes() {
   useEffect(() => {
     if (cheapest && !chosenRail) setChosenRail(cheapest.name);
   }, [cheapest, chosenRail]);
+
+  // Drop the chosen rail when the funding-method filter or direction switches —
+  // the previously chosen rail may no longer be on the visible set.
+  useEffect(() => { setChosenRail(null); }, [fundingMethod, direction]);
 
   // Build the WhatsApp message body for a given quote — used both for new sends and re-sends from the pending list
   const buildQuoteMessage = (q, displayRef, urlToken) => {
@@ -3058,10 +3072,44 @@ function BDCRailQuotes() {
         </div>
       </div>
 
+      {/* Funding method — only meaningful on off-ramp (BDC-funded) */}
+      {direction === "off-ramp" && (
+        <div className="rounded-2xl p-4" style={{ background: "var(--bone)", border: "1px solid var(--line)" }}>
+          <div className="flex items-start justify-between gap-3 flex-wrap">
+            <div>
+              <div className="font-display text-sm font-semibold">Funding method</div>
+              <p className="mt-0.5 text-xs" style={{ color: "var(--muted)" }}>What inventory are you funding the wire with? Triple-A needs USDT; Cedar runs on naira.</p>
+            </div>
+            <div className="flex rounded-xl overflow-hidden" style={{ border: "1px solid var(--line)" }}>
+              {[
+                { id: "ngn-fiat", label: "NGN fiat", sub: "→ Cedar Money" },
+                { id: "usdt", label: "USDT", sub: "→ Triple-A" },
+                { id: "compare", label: "Compare both", sub: "Side-by-side" },
+              ].map((opt) => (
+                <button
+                  key={opt.id}
+                  onClick={() => setFundingMethod(opt.id)}
+                  className="px-4 py-2 text-xs font-semibold transition"
+                  style={fundingMethod === opt.id
+                    ? { background: "var(--ink)", color: "var(--bone)" }
+                    : { background: "white", color: "var(--ink)" }}
+                  title={opt.sub}
+                >
+                  {opt.label}
+                  <div className="font-mono text-[9px] uppercase tracking-wider mt-0.5" style={fundingMethod === opt.id ? { color: "rgba(247,245,240,0.6)" } : { color: "var(--muted)" }}>{opt.sub}</div>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Rail comparison cards (view-only) */}
-      <div className="grid gap-4 lg:grid-cols-2">
-        {[tripleA, cedar].map((rail) => {
-          const isCheapest = cheapest && rail.name === cheapest.name;
+      <div className={`grid gap-4 ${railsByFunding.length > 1 ? "lg:grid-cols-2" : ""}`}>
+        {railsByFunding.map((rail) => {
+          // Only highlight a "cheapest" winner when more than one rail is on screen.
+          // When only one rail shows (because the BDC picked a single funding method), there's nothing to compare.
+          const isCheapest = railsByFunding.length > 1 && cheapest && rail.name === cheapest.name;
           const ineligible = parseFloat(amount) < rail.minTicket;
           return (
             <div key={rail.name} className="card-soft rounded-2xl p-6 relative overflow-hidden" style={isCheapest ? { background: "var(--ink)", color: "var(--bone)", border: "1px solid var(--ink)" } : { background: "white", border: "1px solid var(--line)", opacity: ineligible ? 0.55 : 1 }}>
