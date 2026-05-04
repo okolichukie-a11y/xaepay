@@ -2883,9 +2883,12 @@ function BDCRailQuotes() {
       : [tripleA, cedar];
   const eligibleRails = railsByFunding.filter((r) => parseFloat(amount) >= r.minTicket);
   const cheapest = eligibleRails.length > 0 ? eligibleRails.reduce((a, b) => (a.nativeCostNGN < b.nativeCostNGN ? a : b)) : null;
-  // Customer rate = wholesale (rail cost basis) + operator markup in ₦/$.
-  // Total margin (NGN) = markupAmount * amount; converted to USD via customerRate for split.
-  const customerRate = cheapest ? cheapest.nativeCostNGN + markupAmount : 0;
+  // Customer rate inverts by direction:
+  //   off-ramp (outbound, NG → World): customer buys foreign currency → rate = wholesale + markup
+  //   on-ramp  (inbound,  World → NG): customer/sender buys NGN        → rate = wholesale − markup
+  // Total margin (NGN) = markupAmount * amount in both cases — converted to USD via customerRate.
+  const isInbound = direction === "on-ramp";
+  const customerRate = cheapest ? (isInbound ? cheapest.nativeCostNGN - markupAmount : cheapest.nativeCostNGN + markupAmount) : 0;
   const grossMarginPerUSD = markupAmount;
   const grossMarginTotal = grossMarginPerUSD * parseFloat(amount || 0);
   const ngnTotal = customerRate * parseFloat(amount || 0);
@@ -3303,7 +3306,9 @@ function BDCRailQuotes() {
         <div className="flex items-start justify-between gap-4 flex-wrap">
           <div>
             <h3 className="font-display text-lg font-semibold">Customer rate calculator</h3>
-            <p className="mt-1 text-sm" style={{ color: "var(--muted)" }}>Set your markup in ₦ per $ on top of the wholesale rate. Must be at or above the {tier.name} tier minimum (₦{tier.minMarkup.toFixed(2)}/$).</p>
+            <p className="mt-1 text-sm" style={{ color: "var(--muted)" }}>{isInbound
+              ? `Inbound: your markup is subtracted from wholesale (recipient gets fewer naira per dollar). Must be at or above the ${tier.name} tier minimum (₦${tier.minMarkup.toFixed(2)}/$).`
+              : `Set your markup in ₦ per $ on top of the wholesale rate. Must be at or above the ${tier.name} tier minimum (₦${tier.minMarkup.toFixed(2)}/$).`}</p>
           </div>
           {cheapest && <div className="rounded-full px-2.5 py-1 font-mono text-[10px] font-semibold uppercase tracking-wider whitespace-nowrap" style={{ background: "var(--bone-2)", color: "var(--emerald)" }}>Basis · {cheapest.displayName || cheapest.name}</div>}
         </div>
@@ -3325,7 +3330,7 @@ function BDCRailQuotes() {
               </Field>
               <div className="space-y-1.5 rounded-xl p-4 text-sm" style={{ background: "var(--bone)", border: "1px solid var(--line)" }}>
                 <div className="flex items-baseline justify-between"><span style={{ color: "var(--muted)" }}>Cost basis ({cheapest.displayName || cheapest.name})</span><span className="font-mono font-semibold">₦{cheapest.nativeCostNGN.toFixed(2)}</span></div>
-                <div className="flex items-baseline justify-between"><span style={{ color: "var(--muted)" }}>+ Your markup</span><span className="font-mono font-semibold">₦{markupAmount.toFixed(2)}</span></div>
+                <div className="flex items-baseline justify-between"><span style={{ color: "var(--muted)" }}>{isInbound ? "− Your spread" : "+ Your markup"}</span><span className="font-mono font-semibold">{isInbound ? "−" : ""}₦{markupAmount.toFixed(2)}</span></div>
               </div>
               <div className="space-y-1.5 rounded-xl p-4 text-sm" style={{ background: "var(--bone)", border: "1px solid var(--line)" }}>
                 <div className="font-mono text-[10px] uppercase tracking-wider mb-1" style={{ color: "var(--muted)" }}>Margin split · {tier.name} tier</div>
@@ -3335,9 +3340,9 @@ function BDCRailQuotes() {
             </div>
             <div className="rounded-xl p-5 relative overflow-hidden" style={{ background: "var(--ink)", color: "var(--bone)" }}>
               <div className="absolute -right-12 -top-12 h-32 w-32 rounded-full opacity-30 blur-3xl" style={{ background: "var(--lime)" }} />
-              <div className="relative font-mono text-[10px] uppercase tracking-wider" style={{ color: "rgba(247,245,240,0.5)" }}>Quote to customer</div>
+              <div className="relative font-mono text-[10px] uppercase tracking-wider" style={{ color: "rgba(247,245,240,0.5)" }}>{isInbound ? "Recipient receives at" : "Quote to customer"}</div>
               <div className="relative font-display mt-1 text-4xl font-[500] tracking-tight" style={{ color: "var(--lime)" }}>₦{customerRate.toFixed(2)}<span className="font-mono text-base ml-1.5" style={{ color: "rgba(247,245,240,0.6)" }}>/ $</span></div>
-              <div className="relative mt-1.5 font-mono text-[11px]" style={{ color: "rgba(247,245,240,0.6)" }}>Total: ₦{Math.round(ngnTotal).toLocaleString()} for ${parseFloat(amount).toLocaleString()}</div>
+              <div className="relative mt-1.5 font-mono text-[11px]" style={{ color: "rgba(247,245,240,0.6)" }}>{isInbound ? `Recipient gets ₦${Math.round(ngnTotal).toLocaleString()} on $${parseFloat(amount).toLocaleString()} sent` : `Total: ₦${Math.round(ngnTotal).toLocaleString()} for $${parseFloat(amount).toLocaleString()}`}</div>
               <div className="relative mt-3 grid grid-cols-2 gap-3 text-xs pt-3" style={{ borderTop: "1px solid rgba(255,255,255,0.08)" }}>
                 <div>
                   <div className="font-mono uppercase tracking-wider" style={{ color: "rgba(247,245,240,0.5)" }}>Margin / $1</div>
