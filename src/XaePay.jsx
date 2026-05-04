@@ -2753,6 +2753,9 @@ function BDCRailQuotes() {
   const tier = TIERS[selectedTier];
   const markupValid = markupAmount >= tier.minMarkup;
 
+  // Invoice preview — shows the operator what the customer will receive when they confirm
+  const [invoicePreviewOpen, setInvoicePreviewOpen] = useState(false);
+
   // Customer form (resets after every Send, so BDC can compose more quotes back-to-back)
   const [customerName, setCustomerName] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
@@ -3377,6 +3380,9 @@ function BDCRailQuotes() {
             <Field label="Beneficiary / supplier"><Input value={beneficiary} onChange={(e) => setBeneficiary(e.target.value)} placeholder="Shenzhen Electronics Co." /></Field>
           </div>
           <div className="mt-5">
+            <div className="mb-2 flex justify-end">
+              <button onClick={() => setInvoicePreviewOpen(true)} disabled={!cheapest || !markupValid} className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 font-mono text-[10px] font-semibold uppercase tracking-wider transition disabled:opacity-40" style={{ border: "1px solid var(--line)", color: "var(--ink)" }}><FileText size={11} /> Preview invoice</button>
+            </div>
             <button onClick={sendQuoteOnWhatsApp} disabled={!customerPhone || sendingQuote || !markupValid} className="w-full inline-flex items-center justify-center gap-2 rounded-xl px-5 py-3 text-sm font-semibold transition disabled:opacity-40 disabled:cursor-not-allowed" style={{ background: "var(--ink)", color: "var(--bone)" }}>
               {sendingQuote ? <><Loader2 size={14} className="spin" /> Saving…</> : <><MessageCircle size={14} /> Send quote on WhatsApp · ₦{Math.round(ngnTotal).toLocaleString()}</>}
             </button>
@@ -3484,7 +3490,129 @@ function BDCRailQuotes() {
           </div>
         )}
       </Card>
+      <InvoicePreviewModal
+        open={invoicePreviewOpen}
+        onClose={() => setInvoicePreviewOpen(false)}
+        data={{
+          customerName, customerPhone,
+          beneficiary: beneficiary || destinationCorridor,
+          country: destinationCorridor,
+          direction, amount: parseFloat(amount || 0), currency: destinationCcy,
+          tier, markupAmount,
+          customerRate, ngnTotal,
+          railName: cheapest?.displayName || cheapest?.name,
+          settlement: cheapest?.settlement,
+          operatorCompany: auth.user?.user_metadata?.company || "Your operator",
+        }}
+      />
     </div>
+  );
+}
+
+function InvoicePreviewModal({ open, onClose, data }) {
+  if (!open) return null;
+  const { push } = useToast();
+  const isInbound = data.direction === "on-ramp";
+  // Stable preview reference — XPT-XXXX format. Real refs come from the DB on send.
+  const ref = `XPT-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
+  const issued = new Date().toLocaleString("en-NG", { timeZone: "Africa/Lagos", month: "short", day: "numeric", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: false });
+  return (
+    <Modal open={open} onClose={onClose} title="Invoice + payment instructions · preview" size="lg">
+      <p className="text-sm mb-4" style={{ color: "var(--muted)" }}>This is what XaePay generates when your customer confirms the quote. Delivered via WhatsApp + email. PDF generation lands with the backend pass.</p>
+
+      <div className="rounded-xl overflow-hidden" style={{ border: "1px solid var(--line)" }}>
+        <div className="px-5 py-3 flex items-center justify-between" style={{ background: "var(--bone)", borderBottom: "1px solid var(--line)" }}>
+          <div className="flex items-center gap-2">
+            <FileText size={14} style={{ color: "var(--emerald)" }} />
+            <span className="font-mono text-[11px] font-semibold uppercase tracking-wider">Invoice + payment instructions</span>
+          </div>
+          <span className="font-mono text-[10px]" style={{ color: "var(--muted)" }}>Auto-generated · preview</span>
+        </div>
+        <div className="p-6 bg-white">
+          <div className="flex items-start justify-between mb-6 pb-4" style={{ borderBottom: "1px solid var(--line)" }}>
+            <div>
+              <div className="flex items-center gap-2 mb-1">
+                <div className="flex h-6 w-6 items-center justify-center rounded" style={{ background: "linear-gradient(135deg, var(--emerald), var(--emerald-deep))" }}>
+                  <span className="font-display text-xs font-semibold" style={{ color: "var(--lime)" }}>X</span>
+                </div>
+                <span className="font-display text-sm font-semibold">XaePay</span>
+              </div>
+              <div className="font-mono text-[9px]" style={{ color: "var(--muted)" }}>Issued by {data.operatorCompany}</div>
+            </div>
+            <div className="text-right">
+              <div className="font-mono text-[9px] uppercase tracking-wider" style={{ color: "var(--muted)" }}>Reference</div>
+              <div className="font-mono text-sm font-semibold">{ref}</div>
+              <div className="font-mono text-[9px] mt-1" style={{ color: "var(--muted)" }}>{issued} WAT</div>
+            </div>
+          </div>
+
+          <div className="mb-5">
+            <div className="font-mono text-[9px] uppercase tracking-wider mb-1" style={{ color: "var(--muted)" }}>Bill to</div>
+            <div className="text-sm font-semibold">{data.customerName || "(customer name)"}</div>
+            <div className="font-mono text-[10px]" style={{ color: "var(--muted)" }}>{data.customerPhone || "(customer WhatsApp)"}</div>
+          </div>
+
+          <div className="mb-5 grid grid-cols-2 gap-4">
+            <div>
+              <div className="font-mono text-[9px] uppercase tracking-wider mb-1" style={{ color: "var(--muted)" }}>{isInbound ? "Recipient" : "Beneficiary (supplier)"}</div>
+              <div className="text-sm font-semibold">{data.beneficiary || "(beneficiary)"}</div>
+              <div className="font-mono text-[10px]" style={{ color: "var(--muted)" }}>{isInbound ? "Nigeria" : data.country || "—"}</div>
+            </div>
+            <div>
+              <div className="font-mono text-[9px] uppercase tracking-wider mb-1" style={{ color: "var(--muted)" }}>Service tier</div>
+              <div className="text-sm font-semibold">{data.tier.name}</div>
+              <div className="font-mono text-[10px]" style={{ color: "var(--muted)" }}>{data.tier.tagline}</div>
+            </div>
+          </div>
+
+          <div className="rounded-lg p-4 mb-5" style={{ background: "var(--bone)" }}>
+            <div className="space-y-1.5 text-sm">
+              <div className="flex justify-between"><span style={{ color: "var(--muted)" }}>Amount ({isInbound ? "incoming" : "outgoing"})</span><span className="font-mono">${data.amount.toLocaleString()} {data.currency}</span></div>
+              <div className="flex justify-between"><span style={{ color: "var(--muted)" }}>Locked rate</span><span className="font-mono">₦{data.customerRate.toFixed(2)}/$</span></div>
+              <div className="flex justify-between"><span style={{ color: "var(--muted)" }}>Settlement</span><span className="font-mono text-xs">{data.settlement || "—"}</span></div>
+              <div className="flex justify-between pt-2 mt-2 font-semibold" style={{ borderTop: "1px solid var(--line)" }}>
+                <span>{isInbound ? "Recipient receives" : "Total NGN to fund"}</span>
+                <span className="font-mono">₦{Math.round(data.ngnTotal).toLocaleString()}</span>
+              </div>
+            </div>
+          </div>
+
+          {!isInbound && (
+            <div className="rounded-lg p-4 mb-5" style={{ background: "rgba(15,95,63,0.06)", border: "1px solid rgba(15,95,63,0.2)" }}>
+              <div className="font-mono text-[9px] uppercase tracking-wider mb-2" style={{ color: "var(--emerald)" }}>Payment instructions — fund this transaction</div>
+              <div className="space-y-1 text-sm">
+                <div className="flex justify-between"><span style={{ color: "var(--muted)" }}>Bank</span><span>(operator's collection bank)</span></div>
+                <div className="flex justify-between"><span style={{ color: "var(--muted)" }}>Account name</span><span>{data.operatorCompany} Collections</span></div>
+                <div className="flex justify-between"><span style={{ color: "var(--muted)" }}>Account number</span><span className="font-mono">(operator-provided)</span></div>
+                <div className="flex justify-between"><span style={{ color: "var(--muted)" }}>Reference (must include)</span><span className="font-mono font-semibold" style={{ color: "var(--emerald)" }}>{ref}</span></div>
+                <div className="flex justify-between"><span style={{ color: "var(--muted)" }}>Amount</span><span className="font-mono font-semibold">₦{Math.round(data.ngnTotal).toLocaleString()}</span></div>
+                <div className="flex justify-between pt-2 mt-2" style={{ borderTop: "1px dashed var(--line)" }}><span style={{ color: "var(--muted)" }}>Quote validity</span><span className="font-mono" style={{ color: "var(--amber)" }}>4 minutes from confirmation</span></div>
+              </div>
+              <p className="mt-3 text-[10px]" style={{ color: "var(--muted)" }}>The actual collection bank, account name, and account number will be filled in from the operator's banking details when the customer confirms.</p>
+            </div>
+          )}
+
+          {isInbound && (
+            <div className="rounded-lg p-4 mb-5" style={{ background: "rgba(212,168,44,0.08)", border: "1px solid rgba(212,168,44,0.25)" }}>
+              <div className="font-mono text-[9px] uppercase tracking-wider mb-2" style={{ color: "var(--amber)" }}>Inbound — sender funds in foreign currency</div>
+              <p className="text-xs" style={{ color: "var(--ink)" }}>The sender pays our licensed payment partner in {data.currency}. Once cleared, the recipient receives ₦{Math.round(data.ngnTotal).toLocaleString()} to their Nigerian bank account. Operator does not collect NGN on inbound — payment instructions for the foreign side are generated separately at confirmation.</p>
+            </div>
+          )}
+
+          <div className="text-[9px] leading-relaxed" style={{ color: "var(--muted)" }}>Payment execution by licensed payment partner. XaePay is a software and compliance documentation platform. This invoice is generated upon quote confirmation and represents the locked terms of the transaction. Reference number must be included in the wire transfer for proper allocation.</div>
+        </div>
+      </div>
+
+      <div className="grid gap-2 sm:grid-cols-3 mt-4">
+        <SecondaryBtn full onClick={() => push("PDF generation lands with backend pass", "info")}><Download size={14} /> Download PDF</SecondaryBtn>
+        <SecondaryBtn full onClick={() => push("WhatsApp delivery lands with backend pass", "info")}><MessageCircle size={14} /> Send via WhatsApp</SecondaryBtn>
+        <SecondaryBtn full onClick={() => push("Email delivery lands with backend pass", "info")}><Send size={14} /> Email customer</SecondaryBtn>
+      </div>
+
+      <div className="flex justify-end pt-3">
+        <PrimaryBtn onClick={onClose}>Close preview</PrimaryBtn>
+      </div>
+    </Modal>
   );
 }
 
