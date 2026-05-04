@@ -725,36 +725,22 @@ function TopBar({ view, setView, mobileOpen, setMobileOpen, onSignIn, onRequestA
     <div className="sticky top-0 z-50 backdrop-blur-xl" style={{ background: onLanding ? "rgba(10,11,13,0.72)" : "rgba(252,251,247,0.85)", borderBottom: `1px solid ${onLanding ? "rgba(255,255,255,0.06)" : "var(--line)"}`, color: onLanding ? "var(--bone)" : "var(--ink)" }}>
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         <div className="flex h-16 items-center justify-between">
-          <button onClick={() => setView("landing")} className="group flex items-center gap-2.5">
-            <div className="relative flex h-8 w-8 items-center justify-center rounded-lg" style={{ background: "linear-gradient(135deg, var(--emerald), var(--emerald-deep))" }}>
+          <button onClick={() => setView("landing")} className="flex items-center gap-2.5">
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg" style={{ background: "linear-gradient(135deg, var(--emerald), var(--emerald-deep))" }}>
               <span className="font-display text-lg font-semibold" style={{ color: "var(--lime)" }}>X</span>
             </div>
             <span className="font-display text-[22px] font-semibold tracking-tight">XaePay</span>
           </button>
-          <nav className="hidden items-center gap-0.5 md:flex">
-            <NavBtn active={view === "landing"} onLanding={onLanding} onClick={() => setView("landing")}>Overview</NavBtn>
-            <NavBtn active={view === "bdc"} onLanding={onLanding} onClick={() => setView("bdc")}>For Exchange Operators</NavBtn>
-            <NavBtn active={view === "customer"} onLanding={onLanding} onClick={() => setView("customer")}>For Businesses</NavBtn>
-            <NavBtn active={view === "diaspora"} onLanding={onLanding} onClick={() => setView("diaspora")}>For Overseas Operators</NavBtn>
-          </nav>
           <div className="hidden items-center gap-2 md:flex">
-            {session.type && (
-              <div className="flex items-center gap-2 rounded-lg px-2.5 py-1" style={{ background: onLanding ? "rgba(255,255,255,0.06)" : "var(--bone-2)" }}>
-                {(session.type === "business" || session.type === "individual") && <TierBadge tier={session.tier} small dark={onLanding} />}
-                <span className="font-mono text-[10px] uppercase tracking-wider" style={{ color: onLanding ? "rgba(247,245,240,0.7)" : "var(--muted)" }}>{session.type}</span>
-              </div>
-            )}
-            <button onClick={onRequestAccess} className={`rounded-lg px-3 py-1.5 text-sm font-medium transition ${onLanding ? "text-stone-300 hover:text-white" : "text-stone-600 hover:text-stone-900"}`}>See preview</button>
-            <a href={WHATSAPP_URL} target="_blank" rel="noreferrer" className={`hidden lg:inline-flex items-center gap-1 rounded-lg px-3 py-1.5 text-sm font-medium transition ${onLanding ? "text-stone-300 hover:text-white" : "text-stone-600 hover:text-stone-900"}`}><MessageCircle size={13} /> WhatsApp</a>
             {authUser ? (
               <>
-                <span className="hidden lg:inline font-mono text-[10px] uppercase tracking-wider truncate max-w-[140px]" style={{ color: onLanding ? "rgba(247,245,240,0.6)" : "var(--muted)" }} title={authUser.email}>{authUser.email}</span>
-                <button onClick={onSignOut} className="rounded-lg px-3 py-1.5 text-sm font-medium transition" style={onLanding ? { background: "rgba(255,255,255,0.08)", color: "var(--bone)" } : { background: "var(--bone-2)", color: "var(--ink)" }}>Sign out</button>
+                <span className="hidden lg:inline font-mono text-[10px] uppercase tracking-wider truncate max-w-[200px]" style={{ color: onLanding ? "rgba(247,245,240,0.6)" : "var(--muted)" }} title={authUser.email}>{authUser.email}</span>
+                <button onClick={onSignOut} className="rounded-lg px-3 py-1.5 text-sm font-medium transition" style={{ color: onLanding ? "var(--bone)" : "var(--ink)" }}>Sign out</button>
               </>
             ) : (
               <>
                 <button onClick={onSignIn} className={`rounded-lg px-3 py-1.5 text-sm font-medium transition ${onLanding ? "text-stone-300 hover:text-white" : "text-stone-600 hover:text-stone-900"}`}>Sign in</button>
-                <button onClick={onWaitlist} className="rounded-lg px-4 py-1.5 text-sm font-medium transition" style={onLanding ? { background: "var(--lime)", color: "var(--ink)" } : { background: "var(--ink)", color: "var(--bone)" }}>Join waitlist</button>
+                <button onClick={onRequestAccess} className="rounded-lg px-4 py-1.5 text-sm font-medium transition" style={onLanding ? { background: "var(--lime)", color: "var(--ink)" } : { background: "var(--ink)", color: "var(--bone)" }}>Become a partner</button>
               </>
             )}
           </div>
@@ -762,17 +748,14 @@ function TopBar({ view, setView, mobileOpen, setMobileOpen, onSignIn, onRequestA
         </div>
         {mobileOpen && (
           <div className="py-4 md:hidden" style={{ borderTop: `1px solid ${onLanding ? "rgba(255,255,255,0.06)" : "var(--line)"}` }}>
-            <div className="flex flex-col gap-1">
-              <MobileNavBtn onLanding={onLanding} onClick={() => { setView("landing"); setMobileOpen(false); }}>Overview</MobileNavBtn>
-              <MobileNavBtn onLanding={onLanding} onClick={() => { setView("bdc"); setMobileOpen(false); }}>For Exchange Operators</MobileNavBtn>
-              <MobileNavBtn onLanding={onLanding} onClick={() => { setView("customer"); setMobileOpen(false); }}>For Businesses</MobileNavBtn>
-              <MobileNavBtn onLanding={onLanding} onClick={() => { setView("diaspora"); setMobileOpen(false); }}>For Overseas Operators</MobileNavBtn>
-              <div className="mt-3 flex flex-col gap-2 pt-3" style={{ borderTop: `1px solid ${onLanding ? "rgba(255,255,255,0.06)" : "var(--line)"}` }}>
-                <a href={WHATSAPP_URL} target="_blank" rel="noreferrer" className="inline-flex items-center justify-center gap-2 w-full rounded-lg px-4 py-2.5 text-sm font-medium" style={{ border: `1px solid ${onLanding ? "rgba(255,255,255,0.1)" : "var(--line)"}`, color: onLanding ? "var(--bone)" : "var(--ink)" }}><MessageCircle size={14} /> Chat on WhatsApp</a>
-                <button onClick={() => { onRequestAccess(); setMobileOpen(false); }} className="w-full rounded-lg px-4 py-2.5 text-sm font-medium" style={{ border: `1px solid ${onLanding ? "rgba(255,255,255,0.1)" : "var(--line)"}`, color: onLanding ? "var(--bone)" : "var(--ink)" }}>See preview</button>
-                <button onClick={() => { onWaitlist(); setMobileOpen(false); }} className="w-full rounded-lg px-4 py-2.5 text-sm font-medium" style={onLanding ? { background: "var(--lime)", color: "var(--ink)" } : { background: "var(--ink)", color: "var(--bone)" }}>Join waitlist</button>
+            {authUser ? (
+              <button onClick={() => { onSignOut(); setMobileOpen(false); }} className="w-full rounded-lg px-4 py-3 text-left text-sm font-medium" style={{ color: onLanding ? "var(--bone)" : "var(--ink)" }}>Sign out · {authUser.email}</button>
+            ) : (
+              <div className="flex flex-col gap-2">
+                <button onClick={() => { onSignIn(); setMobileOpen(false); }} className="w-full rounded-lg px-4 py-2.5 text-sm font-medium" style={{ border: `1px solid ${onLanding ? "rgba(255,255,255,0.1)" : "var(--line)"}`, color: onLanding ? "var(--bone)" : "var(--ink)" }}>Sign in</button>
+                <button onClick={() => { onRequestAccess(); setMobileOpen(false); }} className="w-full rounded-lg px-4 py-2.5 text-sm font-medium" style={onLanding ? { background: "var(--lime)", color: "var(--ink)" } : { background: "var(--ink)", color: "var(--bone)" }}>Become a partner</button>
               </div>
-            </div>
+            )}
           </div>
         )}
       </div>
@@ -1733,7 +1716,16 @@ function LPOnboarding({ onComplete }) {
 }
 
 function Landing({ setView, onRequestAccess, onWaitlist }) {
-  return (<div><Hero setView={setView} onRequestAccess={onRequestAccess} onWaitlist={onWaitlist} /><Ticker /><ProblemSection /><RailsSection /><AgentsSection /><StructureSection /><SidesSection setView={setView} /><PricingSection onRequestAccess={onRequestAccess} onWaitlist={onWaitlist} /><Footer onWaitlist={onWaitlist} /></div>);
+  return (
+    <div>
+      <Hero onGetStarted={onRequestAccess} />
+      <HowItWorks />
+      <FourTiers onGetStarted={onRequestAccess} />
+      <PartnerEconomics onGetStarted={onRequestAccess} />
+      <CTA onGetStarted={onRequestAccess} />
+      <Footer onWaitlist={onWaitlist} />
+    </div>
+  );
 }
 
 function StructureSection() {
@@ -1773,23 +1765,275 @@ function StructureSection() {
   );
 }
 
-function Hero({ setView, onRequestAccess, onWaitlist }) {
+function Hero({ onGetStarted }) {
   return (
     <section className="relative overflow-hidden hero-mesh" style={{ color: "var(--bone)" }}>
       <div className="absolute inset-0 hero-grid" />
-      <div className="absolute inset-0 noise" />
       <div className="relative mx-auto max-w-7xl px-4 py-20 sm:px-6 lg:px-8 lg:py-28">
         <div className="grid gap-14 lg:grid-cols-12 lg:gap-10">
           <div className="lg:col-span-7">
-            <h1 className="rise font-display text-[44px] font-[450] leading-[1.02] tracking-tight sm:text-6xl lg:text-[82px]">The intelligence<br /><span className="italic" style={{ color: "var(--lime)" }}>layer</span> for cross-<br />border payments.</h1>
-            <p className="rise mt-8 max-w-xl text-base leading-relaxed sm:text-lg" style={{ color: "rgba(247,245,240,0.65)", animationDelay: "0.16s" }}>The AI compliance and routing infrastructure for Nigerian cross-border payments — built for agent operators worldwide. Full audit trail, fiat or stablecoin, every transaction.</p>
+            <div className="rise inline-flex items-center gap-2 rounded-full border px-3 py-1 mb-6" style={{ borderColor: "rgba(197,242,74,0.3)", background: "rgba(197,242,74,0.05)" }}>
+              <div className="h-1.5 w-1.5 rounded-full pulse-dot" style={{ background: "var(--lime)", boxShadow: "0 0 8px var(--lime)" }} />
+              <span className="font-mono text-[10px] font-medium uppercase tracking-[0.12em]" style={{ color: "var(--lime)" }}>For Nigerian Agent Operators</span>
+            </div>
+            <h1 className="rise font-display text-[44px] font-[450] leading-[1.02] tracking-tight sm:text-6xl lg:text-[72px]">Your customers' cross-border payments.<br /><span className="italic" style={{ color: "var(--lime)" }}>Fully handled.</span></h1>
+            <p className="rise mt-8 max-w-xl text-base leading-relaxed sm:text-lg" style={{ color: "rgba(247,245,240,0.65)", animationDelay: "0.16s" }}>The plug-in for agent operators worldwide. Whether your customers send <span className="font-semibold" style={{ color: "var(--bone)" }}>to or from Nigeria</span>, you set the rate. We handle quotes, KYC, compliance, documents, and execution via our licensed payment infrastructure. You earn 55–70% of every transaction's margin — recurring.</p>
             <div className="rise mt-10 flex flex-col gap-3 sm:flex-row" style={{ animationDelay: "0.24s" }}>
-              <button onClick={onWaitlist} className="glow-lime group inline-flex items-center justify-center gap-2 rounded-xl px-6 py-3.5 text-sm font-semibold transition" style={{ background: "var(--lime)", color: "var(--ink)" }}>Join waitlist <ArrowRight size={16} /></button>
-              <a href={WHATSAPP_URL} target="_blank" rel="noreferrer" className="group inline-flex items-center justify-center gap-2 rounded-xl px-6 py-3.5 text-sm font-semibold transition hover:bg-white/5" style={{ border: "1px solid rgba(255,255,255,0.15)", color: "var(--bone)" }}><MessageCircle size={16} /> Talk to us on WhatsApp</a>
-              <button onClick={onRequestAccess} className="group inline-flex items-center justify-center gap-2 rounded-xl px-6 py-3.5 text-sm font-semibold transition hover:bg-white/5" style={{ color: "rgba(247,245,240,0.7)" }}>See preview <ArrowUpRight size={16} /></button>
+              <button onClick={onGetStarted} className="glow-lime inline-flex items-center justify-center gap-2 rounded-xl px-6 py-3.5 text-sm font-semibold transition" style={{ background: "var(--lime)", color: "var(--ink)" }}>Become a partner <ArrowRight size={16} /></button>
+              <a href={WHATSAPP_URL} target="_blank" rel="noreferrer" className="inline-flex items-center justify-center gap-2 rounded-xl px-6 py-3.5 text-sm font-semibold transition hover:bg-white/5" style={{ border: "1px solid rgba(255,255,255,0.15)", color: "var(--bone)" }}><MessageCircle size={16} /> Talk on WhatsApp</a>
+            </div>
+            <div className="rise mt-12 flex flex-wrap gap-x-8 gap-y-3" style={{ animationDelay: "0.32s" }}>
+              <div>
+                <div className="font-mono text-[10px] uppercase tracking-wider" style={{ color: "rgba(247,245,240,0.45)" }}>Your share</div>
+                <div className="font-display text-lg font-semibold mt-0.5">55–70% of margin</div>
+              </div>
+              <div>
+                <div className="font-mono text-[10px] uppercase tracking-wider" style={{ color: "rgba(247,245,240,0.45)" }}>Direction</div>
+                <div className="font-display text-lg font-semibold mt-0.5 flex items-center gap-2">
+                  <span>NGN</span>
+                  <ArrowLeftRight size={16} style={{ color: "var(--lime)" }} strokeWidth={2} />
+                  <span>World</span>
+                </div>
+              </div>
+              <div>
+                <div className="font-mono text-[10px] uppercase tracking-wider" style={{ color: "rgba(247,245,240,0.45)" }}>Powered by</div>
+                <div className="font-display text-lg font-semibold mt-0.5">Licensed partners</div>
+              </div>
             </div>
           </div>
-          <div className="rise lg:col-span-5" style={{ animationDelay: "0.3s" }}><HeroWidget /></div>
+          <div className="rise lg:col-span-5" style={{ animationDelay: "0.3s" }}><HeroChat /></div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function HeroChat() {
+  const [step, setStep] = useState(0);
+  useEffect(() => {
+    const i = setInterval(() => setStep((s) => Math.min(s + 1, 5)), 1800);
+    return () => clearInterval(i);
+  }, []);
+  const messages = [
+    { from: "customer", text: "I need to pay $25K to my Shenzhen supplier" },
+    { from: "operator", text: "Sure. Send the invoice. I'll get you a quote in 2 minutes." },
+    { from: "operator", text: "[forwards to XaePay]" },
+    { from: "xae", text: "Wholesale rate: ₦1,395/$ — Documented tier (Form M + audit pack) minimum: ₦1,398.50/$ — earnings at minimum markup: $26.83 — set your own markup higher to earn more" },
+    { from: "operator", text: "₦1,400/$. ₦35,000,000 total. Form M + audit pack included.\n\nLocked 4 minutes. Reply CONFIRM to proceed." },
+    { from: "customer", text: "CONFIRM" },
+  ];
+
+  return (
+    <div className="card-soft rounded-2xl p-5 sm:p-6" style={{ background: "white", border: "1px solid var(--line)" }}>
+      <div className="mb-4 flex items-center justify-between pb-3" style={{ borderBottom: "1px solid var(--line)" }}>
+        <div className="flex items-center gap-2">
+          <div className="flex h-7 w-7 items-center justify-center rounded-lg" style={{ background: "var(--bone-2)", color: "var(--emerald)" }}><MessageCircle size={14} /></div>
+          <span className="text-sm font-semibold" style={{ color: "var(--ink)" }}>WhatsApp</span>
+        </div>
+        <span className="font-mono text-[10px]" style={{ color: "var(--emerald)" }}>● live demo</span>
+      </div>
+      <div className="space-y-2">
+        {messages.slice(0, step + 1).map((m, i) => (
+          <div key={i} className={`flex ${m.from === "customer" ? "justify-end" : "justify-start"} fade-in`}>
+            <div className="max-w-[85%]">
+              <div className="font-mono text-[9px] mb-1 uppercase tracking-wider" style={{ color: m.from === "customer" ? "var(--muted)" : m.from === "operator" ? "var(--emerald)" : "var(--ink)", textAlign: m.from === "customer" ? "right" : "left" }}>
+                {m.from === "customer" ? "Customer" : m.from === "operator" ? "You · the operator" : "XaePay · internal"}
+              </div>
+              <div className="rounded-2xl px-3.5 py-2.5 text-sm whitespace-pre-line" style={
+                m.from === "customer" ? { background: "rgba(15,95,63,0.08)", color: "var(--ink)" } :
+                m.from === "operator" ? { background: "var(--bone)", color: "var(--ink)", border: "1px solid var(--line)" } :
+                { background: "var(--ink)", color: "var(--bone)", fontFamily: "ui-monospace, monospace", fontSize: "11px" }
+              }>
+                {m.text}
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function HowItWorks() {
+  return (
+    <section className="mx-auto max-w-7xl px-4 py-20 sm:px-6 lg:px-8 lg:py-28">
+      <div className="mb-14 max-w-2xl">
+        <SectionEyebrow>How it works</SectionEyebrow>
+        <h2 className="font-display mt-4 text-4xl font-[450] leading-[1.05] tracking-tight sm:text-5xl">Three stages. <span className="italic" style={{ color: "var(--emerald)" }}>One platform.</span></h2>
+        <p className="mt-5 max-w-xl text-base leading-relaxed" style={{ color: "var(--muted)" }}>Everything starts with onboarding your customer through our compliance partner's KYC. Once approved (5–15 days), they can transact through you indefinitely.</p>
+      </div>
+      <div className="grid gap-5 lg:grid-cols-3">
+        {[
+          { n: "01", title: "Customer KYC onboarding", body: "You forward your customer's details to XaePay. We submit to our licensed payment partner's compliance team. They review and approve (5–15 business days). Customer becomes 'Approved' status. Only approved customers can transact.", footer: "First-time only · per customer" },
+          { n: "02", title: "Per-transaction quote", body: "Customer messages you with payment details. You forward to XaePay. We quote four tiers, you pick one and set your markup. Customer confirms, gets funding instructions, deposits NGN. Our licensed partner executes the wire same day.", footer: "Every transaction" },
+          { n: "03", title: "Documentation + earnings", body: "XaePay handles invoice validation, BOL collection, audit pack assembly per the tier you selected. Earnings calculated on each transaction. Bi-weekly payouts to your Nigerian bank account.", footer: "Automatic · ongoing" },
+        ].map((s) => (
+          <div key={s.n} className="card-soft rounded-2xl bg-white p-6" style={{ border: "1px solid var(--line)" }}>
+            <div className="font-mono text-[11px] font-medium" style={{ color: "var(--emerald)" }}>{s.n}</div>
+            <h3 className="font-display mt-4 text-lg font-semibold" style={{ color: "var(--ink)" }}>{s.title}</h3>
+            <p className="mt-2 text-sm leading-relaxed" style={{ color: "var(--muted)" }}>{s.body}</p>
+            <div className="mt-4 pt-3 font-mono text-[10px] uppercase tracking-wider" style={{ borderTop: "1px solid var(--line)", color: "var(--muted)" }}>{s.footer}</div>
+          </div>
+        ))}
+      </div>
+      <div className="mt-8 rounded-2xl p-5" style={{ background: "var(--bone)", border: "1px solid var(--line)" }}>
+        <div className="flex items-start gap-3">
+          <Shield size={16} className="mt-0.5 flex-shrink-0" style={{ color: "var(--emerald)" }} />
+          <div className="text-sm" style={{ color: "var(--ink)" }}>
+            <span className="font-semibold">Why customer KYC is the gating step.</span> Our licensed payment partner is the regulated entity executing every wire. Their AML obligations require KYC approval before any customer can transact, regardless of how the customer was introduced. XaePay handles the submission and chases approval, but the timeline (5–15 days) sits with the partner's compliance team. Plan for it as the first conversation with any new customer — not a barrier you discover after they're ready to send.
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function FourTiers({ onGetStarted }) {
+  return (
+    <section className="border-y" style={{ borderColor: "var(--line)", background: "var(--bone)" }}>
+      <div className="mx-auto max-w-7xl px-4 py-20 sm:px-6 lg:px-8 lg:py-28">
+        <div className="mb-14 max-w-2xl">
+          <SectionEyebrow>Service tiers</SectionEyebrow>
+          <h2 className="font-display mt-4 text-4xl font-[450] leading-[1.05] tracking-tight sm:text-5xl">Four tiers. <span className="italic" style={{ color: "var(--emerald)" }}>You pick</span> per transaction.</h2>
+          <p className="mt-5 max-w-xl text-base leading-relaxed" style={{ color: "var(--muted)" }}>Each tier has a minimum markup that reflects how much validation work XaePay does. Above the minimum, you set whatever rate your customer can bear. Pick based on whether you're handling invoice review yourself or paying us to do it.</p>
+        </div>
+        <div className="grid gap-4 lg:grid-cols-4">
+          {Object.values(TIERS).map((t, i) => {
+            const isPro = t.id === "pro";
+            const features = TIER_FEATURES[t.id] || [];
+            return (
+              <div key={t.id} className="card-soft card-lift relative overflow-hidden rounded-2xl p-6" style={isPro ? { background: "var(--ink)", color: "var(--bone)", border: "1px solid var(--ink)" } : { background: "white", border: "1px solid var(--line)" }}>
+                {isPro && <div className="absolute -right-16 -top-16 h-40 w-40 rounded-full opacity-30 blur-2xl" style={{ background: "var(--lime)" }} />}
+                <div className="relative">
+                  <div className="font-mono text-[10px] uppercase tracking-wider" style={{ color: isPro ? "rgba(247,245,240,0.5)" : "var(--muted)" }}>Tier {i + 1}</div>
+                  <div className="font-display mt-1 text-xl font-semibold">{t.name}</div>
+                  <div className="mt-1 text-xs" style={{ color: isPro ? "rgba(247,245,240,0.7)" : "var(--muted)" }}>{t.tagline}</div>
+                </div>
+                <div className="relative mt-5 pt-4" style={{ borderTop: `1px solid ${isPro ? "rgba(255,255,255,0.08)" : "var(--line)"}` }}>
+                  <div className="font-mono text-[10px] uppercase tracking-wider mb-1" style={{ color: isPro ? "rgba(247,245,240,0.5)" : "var(--muted)" }}>Minimum markup</div>
+                  <div className="font-display text-2xl font-[500] tracking-tight" style={{ color: isPro ? "var(--lime)" : "var(--ink)" }}>₦{t.minMarkup.toFixed(2)} <span className="text-sm" style={{ color: isPro ? "rgba(247,245,240,0.6)" : "var(--muted)" }}>/ $</span></div>
+                </div>
+                <ul className="relative mt-5 space-y-2">
+                  {features.map((f, j) => (
+                    <li key={j} className="flex items-start gap-2 text-xs">
+                      <CheckCircle2 size={11} className="mt-0.5 flex-shrink-0" style={{ color: isPro ? "var(--lime)" : "var(--emerald)" }} strokeWidth={2.25} />
+                      <span style={{ color: isPro ? "rgba(247,245,240,0.85)" : "var(--ink)" }}>{f}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            );
+          })}
+        </div>
+        <div className="mt-8 rounded-2xl p-5" style={{ background: "white", border: "1px solid var(--line)" }}>
+          <div className="flex items-start gap-3">
+            <Sparkles size={16} className="mt-0.5 flex-shrink-0" style={{ color: "var(--emerald)" }} />
+            <div className="text-sm" style={{ color: "var(--ink)" }}>
+              <span className="font-semibold">How tier selection actually works.</span> If you're a sophisticated agent who already vets your customers' invoices carefully, use Standard tier and capture maximum margin. If you'd rather have XaePay catch invoice issues and bounce them back to your customer for fixes, use Verified tier. If you want a defensible audit report per transaction, use Documented. For high-stakes transactions or aggregator workflows, use Compliance Pro. Same operator, different tiers per transaction — your judgment.
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+// Per-tier feature copy used in the FourTiers landing section. Keeps TIERS itself
+// focused on numeric pricing fields; copy lives here so it's easy to edit.
+const TIER_FEATURES = {
+  standard: [
+    "Same-day wire execution via licensed partner",
+    "Agent self-validates customer invoices",
+    "Sanctions screening (OFAC, UN, EU)",
+    "Supplier KYB pre-screen",
+    "Transaction receipt + MT103 reference",
+    "70% to you · 30% to XaePay",
+  ],
+  verified: [
+    "Everything in Standard",
+    "OCR invoice extraction + match check",
+    "Reject + reason sent back if invoice fails",
+    "Customer fixes and resubmits via you",
+    "Saves you from invoice review work",
+    "65% to you · 35% to XaePay",
+  ],
+  documented: [
+    "Everything in Verified",
+    "Full Invoice Validation Report",
+    "Form M reference + format check",
+    "BOL + customs + delivery follow-up agent",
+    "Per-transaction audit pack",
+    "Document archive (multi-year)",
+    "60% to you · 40% to XaePay",
+  ],
+  pro: [
+    "Everything in Documented",
+    "Deep invoice validation + supplier authentication",
+    "Historical pattern checking",
+    "Quarterly compliance pack (auto-prepared)",
+    "Regulatory inquiry response service",
+    "Priority compliance review",
+    "Dedicated documentation officer",
+    "55% to you · 45% to XaePay",
+  ],
+};
+
+function PartnerEconomics({ onGetStarted }) {
+  return (
+    <section className="mx-auto max-w-7xl px-4 py-20 sm:px-6 lg:px-8 lg:py-28">
+      <div className="grid gap-12 lg:grid-cols-12 lg:gap-16">
+        <div className="lg:col-span-5">
+          <SectionEyebrow>Your economics</SectionEyebrow>
+          <h2 className="font-display mt-4 text-4xl font-[450] leading-[1.05] tracking-tight sm:text-5xl">You keep <span className="italic" style={{ color: "var(--emerald)" }}>55–70%</span><br />based on tier.</h2>
+          <p className="mt-6 text-base leading-relaxed" style={{ color: "var(--muted)" }}>Your share of the markup depends on which tier you pick for each transaction. Lower tiers leave more work to you and your share is higher. Higher tiers have us doing more work, so our share grows. Both sides win at every tier.</p>
+          <button onClick={onGetStarted} className="mt-7 inline-flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold transition" style={{ background: "var(--ink)", color: "var(--bone)" }}>Become a partner <ArrowRight size={14} /></button>
+        </div>
+        <div className="lg:col-span-7 space-y-3">
+          {Object.values(TIERS).map((t) => {
+            const exampleAmount = 25000;
+            const exampleMarkup = t.minMarkup + 1.5;
+            const margin = (exampleAmount * exampleMarkup) / (1395 + exampleMarkup);
+            const opEarn = margin * t.operatorShare;
+            return (
+              <div key={t.id} className="card-soft rounded-2xl bg-white p-5" style={{ border: "1px solid var(--line)" }}>
+                <div className="flex items-baseline justify-between mb-1">
+                  <div>
+                    <div className="font-display text-base font-semibold" style={{ color: "var(--ink)" }}>{t.name}</div>
+                    <div className="font-mono text-[10px] uppercase tracking-wider" style={{ color: "var(--muted)" }}>min ₦{t.minMarkup.toFixed(2)}/$ · markup at ₦{exampleMarkup.toFixed(2)} on $25K</div>
+                  </div>
+                  <div className="text-right">
+                    <div className="font-display text-lg font-semibold" style={{ color: "var(--emerald)" }}>${opEarn.toFixed(2)}</div>
+                    <div className="font-mono text-[10px] uppercase tracking-wider" style={{ color: "var(--muted)" }}>your share ({(t.operatorShare * 100).toFixed(0)}%)</div>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+          <div className="card-soft rounded-2xl bg-white p-5" style={{ border: "1px solid var(--line)" }}>
+            <div className="flex items-start gap-2">
+              <Sparkles size={14} className="mt-0.5 flex-shrink-0" style={{ color: "var(--emerald)" }} />
+              <div className="text-xs" style={{ color: "var(--ink)" }}>
+                <span className="font-semibold">A partner doing 30 transactions/month at $40K average</span> across mixed tiers earns roughly <span className="font-semibold" style={{ color: "var(--emerald)" }}>$2,400–$3,800/month</span> depending on tier mix and markup levels. Recurring as long as customers keep transacting.
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function CTA({ onGetStarted }) {
+  return (
+    <section className="border-t" style={{ borderColor: "var(--line)", background: "var(--bone)" }}>
+      <div className="mx-auto max-w-7xl px-4 py-20 sm:px-6 lg:px-8 lg:py-24">
+        <div className="text-center max-w-2xl mx-auto">
+          <h2 className="font-display text-4xl font-[450] leading-[1.05] tracking-tight sm:text-5xl">Ready to plug in?</h2>
+          <p className="mt-5 text-base leading-relaxed" style={{ color: "var(--muted)" }}>Sign up in 4 minutes. Refer your first customer this week. Get them transacting in 5–10 business days. Earnings start with their first payment.</p>
+          <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:justify-center">
+            <button onClick={onGetStarted} className="inline-flex items-center justify-center gap-2 rounded-xl px-6 py-3.5 text-sm font-semibold transition" style={{ background: "var(--ink)", color: "var(--bone)" }}>Become a partner <ArrowRight size={16} /></button>
+            <a href={WHATSAPP_URL} target="_blank" rel="noreferrer" className="inline-flex items-center justify-center gap-2 rounded-xl px-6 py-3.5 text-sm font-semibold transition hover:bg-white" style={{ border: "1px solid var(--line)", color: "var(--ink)" }}><MessageCircle size={16} /> Ask questions</a>
+          </div>
         </div>
       </div>
     </section>
@@ -2228,21 +2472,32 @@ function Footer({ onWaitlist }) {
       <div className="relative mx-auto max-w-7xl px-4 py-14 sm:px-6 lg:px-8">
         <div className="grid gap-10 md:grid-cols-12">
           <div className="md:col-span-6">
-            <div className="flex items-center gap-2.5"><div className="flex h-9 w-9 items-center justify-center rounded-lg" style={{ background: "linear-gradient(135deg, var(--emerald), var(--emerald-deep))" }}><span className="font-display text-xl font-semibold" style={{ color: "var(--lime)" }}>X</span></div><span className="font-display text-2xl font-semibold tracking-tight">XaePay</span></div>
-            <p className="mt-5 max-w-sm text-sm leading-relaxed" style={{ color: "rgba(247,245,240,0.6)" }}>The intelligence layer for cross-border payments. Built. Governed. Optimized.</p>
-            <div className="mt-6 flex flex-wrap gap-3">
-              {onWaitlist && <button onClick={onWaitlist} className="inline-flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold transition" style={{ background: "var(--lime)", color: "var(--ink)" }}><Mail size={14} /> Join waitlist</button>}
-              <a href={WHATSAPP_URL} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold transition hover:bg-white/5" style={{ border: "1px solid rgba(255,255,255,0.15)", color: "var(--bone)" }}><MessageCircle size={14} /> WhatsApp</a>
+            <div className="flex items-center gap-2.5">
+              <div className="flex h-9 w-9 items-center justify-center rounded-lg" style={{ background: "linear-gradient(135deg, var(--emerald), var(--emerald-deep))" }}>
+                <span className="font-display text-xl font-semibold" style={{ color: "var(--lime)" }}>X</span>
+              </div>
+              <span className="font-display text-2xl font-semibold tracking-tight">XaePay</span>
             </div>
+            <p className="mt-5 max-w-sm text-sm leading-relaxed" style={{ color: "rgba(247,245,240,0.6)" }}>The cross-border payment infrastructure for Nigerian agent operators. Powered by licensed payment partners.</p>
+            {onWaitlist && (
+              <div className="mt-6 flex flex-wrap gap-3">
+                <button onClick={onWaitlist} className="inline-flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold transition" style={{ background: "var(--lime)", color: "var(--ink)" }}><Mail size={14} /> Join waitlist</button>
+                <a href={WHATSAPP_URL} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold transition hover:bg-white/5" style={{ border: "1px solid rgba(255,255,255,0.15)", color: "var(--bone)" }}><MessageCircle size={14} /> WhatsApp</a>
+              </div>
+            )}
           </div>
           <div className="md:col-span-6">
             <div className="font-mono text-[10px] uppercase tracking-wider" style={{ color: "rgba(247,245,240,0.4)" }}>Compliance posture</div>
-            <p className="mt-3 max-w-md text-xs leading-relaxed" style={{ color: "rgba(247,245,240,0.55)" }}>XaePay is a software and compliance layer. All funds and stablecoins are moved by licensed partners or directly between counterparties. XaePay does not custody, pool, or transmit customer funds or digital assets, and never acts as counterparty.</p>
+            <p className="mt-3 max-w-md text-xs leading-relaxed" style={{ color: "rgba(247,245,240,0.55)" }}>XaePay is a software and compliance documentation layer. Payment execution is performed by our licensed financial services partners under their respective regulatory authorizations. XaePay does not hold funds, quote FX on its own book, or transmit money. Specific licensed partner details are disclosed in the customer Terms of Service.</p>
           </div>
         </div>
         <div className="mt-12 flex flex-col items-start justify-between gap-3 pt-8 sm:flex-row sm:items-center" style={{ borderTop: "1px solid rgba(255,255,255,0.08)" }}>
           <div className="font-mono text-[10px] uppercase tracking-wider" style={{ color: "rgba(247,245,240,0.4)" }}>© 2026 XaePay · Lagos · Los Angeles</div>
-          <div className="flex gap-5 font-mono text-[10px] uppercase tracking-wider" style={{ color: "rgba(247,245,240,0.4)" }}><span>Privacy</span><span>Terms</span><span>Regulatory</span></div>
+          <div className="flex gap-5 font-mono text-[10px] uppercase tracking-wider" style={{ color: "rgba(247,245,240,0.4)" }}>
+            <a href="/privacy.html" className="hover:text-white transition" style={{ color: "inherit" }}>Privacy</a>
+            <a href="/data-deletion.html" className="hover:text-white transition" style={{ color: "inherit" }}>Data deletion</a>
+            <span>Compliance</span>
+          </div>
         </div>
       </div>
     </footer>
