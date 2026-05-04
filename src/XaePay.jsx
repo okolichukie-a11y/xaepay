@@ -2773,59 +2773,118 @@ function HistoryDrawer({ open, onClose }) {
 }
 
 function BDCDashboard({ session }) {
-  const [tab, setTab] = useState("overview");
-  const [newTxOpen, setNewTxOpen] = useState(false);
-  // Newly onboarded customers persist across tab switches (used by unsigned demo path; signed-in users
-  // pull from DB).
+  const [tab, setTab] = useState("quote");
   const [addedCustomers, setAddedCustomers] = useState([]);
   const addCustomer = (c) => setAddedCustomers((prev) => [c, ...prev].slice(0, 50));
+  const tabs = [
+    { id: "quote", label: "Quote tool", icon: Plus },
+    { id: "transactions", label: "Transactions", icon: Receipt },
+    { id: "customers", label: "Customers", icon: User },
+    { id: "recipients", label: "Recipients", icon: Briefcase },
+    { id: "earnings", label: "Earnings", icon: TrendingUp },
+  ];
+  // Operator name + role line. Demo session passes a single string; real auth-backed
+  // sessions may carry user_metadata.company. Fall back gracefully.
+  const operatorName = session?.name || "Corporate Exchange BDC";
+  const operatorRoleLine = session?.type === "agent"
+    ? "IMTO / SCUML / CAC-registered · Payment Agent"
+    : "CBN-licensed BDC · Partner active";
   return (
-    <>
-    <div className="mx-auto max-w-7xl px-4 py-10 sm:px-6 lg:px-8 lg:py-14">
-      <div className="mb-8 flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-end">
+    <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8 lg:py-10">
+      <div className="mb-6 flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-end">
         <div className="rise">
-          <SectionEyebrow>{session.type === "agent" ? "Payment Agent portal" : "Operator portal"}</SectionEyebrow>
-          <h1 className="font-display mt-3 text-3xl font-[450] tracking-tight sm:text-[40px]">{session.name || "Corporate Exchange BDC"}</h1>
-          <div className="mt-2 font-mono text-xs" style={{ color: "var(--muted)" }}>
-            {session.type === "agent" ? "IMTO / SCUML / CAC-registered · Lagos · Payment Agent tier" : "CBN Tier 2 · Lagos · Licensed Nov 27, 2025"}
+          <SectionEyebrow>Operator dashboard</SectionEyebrow>
+          <h1 className="font-display mt-3 text-3xl font-[450] tracking-tight sm:text-[40px]">{operatorName}</h1>
+          <div className="mt-2 font-mono text-xs" style={{ color: "var(--muted)" }}>{operatorRoleLine}</div>
+        </div>
+        <div className="flex items-center gap-2">
+          <div className="hidden sm:inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 font-mono text-[10px] font-semibold uppercase tracking-wider" style={{ background: "var(--lime)", color: "var(--ink)" }}>
+            <div className="h-1.5 w-1.5 rounded-full" style={{ background: "var(--ink)" }} />
+            Production
           </div>
         </div>
-        <button onClick={() => setNewTxOpen(true)} className="rise inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition" style={{ background: "var(--ink)", color: "var(--bone)", animationDelay: "0.05s" }}><Plus size={14} /> New transaction</button>
       </div>
-      <div className="mb-6 flex gap-1 overflow-x-auto" style={{ borderBottom: "1px solid var(--line)" }}>
-        {[
-          { id: "overview", label: "Overview" },
-          { id: "quotes", label: "Rail Quotes" },
-          { id: "transactions", label: "Transactions" },
-          { id: "customers", label: "Customers" },
-          { id: "recipients", label: "Recipients" },
-          // Liquidity tab is the USDT marketplace — only relevant alongside Triple-A.
-          ...(SHOW_TRIPLE_A ? [{ id: "liquidity", label: "Liquidity", phase2: true }] : []),
-          { id: "agent", label: "Payment Agent", phase2: true },
-          { id: "compliance", label: "Compliance" },
-          { id: "evidence", label: "Evidence Packs" },
-        ].map((t) => (
-          <button key={t.id} onClick={() => setTab(t.id)} className="relative whitespace-nowrap px-4 py-3 text-sm font-medium transition flex items-center gap-1.5" style={{ color: tab === t.id ? "var(--ink)" : "var(--muted)" }}>
-            {t.label}
-            {t.phase2 && <span className="rounded-full px-1.5 py-0.5 font-mono text-[8px] font-semibold uppercase tracking-wider" style={{ background: "var(--bone-2)", color: "var(--emerald)" }}>P2</span>}
-            {tab === t.id && <div className="absolute bottom-[-1px] left-0 right-0 h-[2px]" style={{ background: "var(--ink)" }} />}
-          </button>
-        ))}
-      </div>
-      <div className="fade-in">
-        {tab === "overview" && <BDCOverview onJumpTab={setTab} />}
-        {tab === "quotes" && <BDCRailQuotes />}
-        {tab === "transactions" && <BDCTransactions />}
-        {tab === "customers" && <BDCCustomers addedCustomers={addedCustomers} onAddCustomer={addCustomer} />}
-        {tab === "recipients" && <BDCRecipients />}
-        {tab === "liquidity" && <BDCLiquidity />}
-        {tab === "agent" && <BDCPaymentAgent />}
-        {tab === "compliance" && <BDCCompliance />}
-        {tab === "evidence" && <BDCEvidence />}
+
+      <div className="lg:flex lg:gap-8">
+        <aside className="hidden lg:block lg:w-56 lg:flex-shrink-0">
+          <nav className="sticky top-24 space-y-1">
+            {tabs.map((t) => {
+              const Icon = t.icon;
+              const active = tab === t.id;
+              return (
+                <button key={t.id} onClick={() => setTab(t.id)} className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2.5 text-left text-sm transition" style={active ? { background: "var(--ink)", color: "var(--bone)" } : { color: "var(--muted)" }}>
+                  <Icon size={15} strokeWidth={1.75} />
+                  <span className="font-medium">{t.label}</span>
+                </button>
+              );
+            })}
+          </nav>
+        </aside>
+
+        <div className="lg:hidden mb-6 flex gap-1 overflow-x-auto" style={{ borderBottom: "1px solid var(--line)" }}>
+          {tabs.map((t) => (
+            <button key={t.id} onClick={() => setTab(t.id)} className="relative whitespace-nowrap px-4 py-3 text-sm font-medium transition" style={{ color: tab === t.id ? "var(--ink)" : "var(--muted)" }}>
+              {t.label}
+              {tab === t.id && <div className="absolute bottom-[-1px] left-0 right-0 h-[2px]" style={{ background: "var(--ink)" }} />}
+            </button>
+          ))}
+        </div>
+
+        <div className="flex-1 fade-in min-w-0">
+          {tab === "quote" && <BDCRailQuotes />}
+          {tab === "transactions" && <BDCTransactions />}
+          {tab === "customers" && <BDCCustomers addedCustomers={addedCustomers} onAddCustomer={addCustomer} />}
+          {tab === "recipients" && <BDCRecipients />}
+          {tab === "earnings" && <BDCEarnings />}
+        </div>
       </div>
     </div>
-    <NewTransactionModal open={newTxOpen} onClose={() => setNewTxOpen(false)} />
-    </>
+  );
+}
+
+function BDCEarnings() {
+  // Static demo for now; real per-month aggregation lands with the backend pass.
+  const months = [
+    { m: "April 2026", tx: 19, volume: 1200000, earned: 4280 },
+    { m: "March 2026", tx: 14, volume: 825000, earned: 2440 },
+    { m: "February 2026", tx: 8, volume: 412000, earned: 1180 },
+    { m: "January 2026", tx: 4, volume: 188000, earned: 540 },
+  ];
+  return (
+    <div className="space-y-6">
+      <div className="grid gap-4 sm:grid-cols-3">
+        <StatCard label="Lifetime earnings" value="$8,440" sub="Across 4 months" />
+        <StatCard label="Avg per transaction" value="$185" sub="Trending up" positive />
+        <StatCard label="Pending payout" value="$2,140" sub="Settles April 30" />
+      </div>
+      <Card padding="none">
+        <div className="p-4" style={{ borderBottom: "1px solid var(--line)" }}><div className="text-sm font-semibold">Monthly earnings</div></div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead><tr style={{ background: "var(--bone)", borderBottom: "1px solid var(--line)" }}>{["Month", "Transactions", "Volume", "You earned"].map((h, i) => (<th key={i} className={`px-4 py-3 text-left font-mono text-[10px] font-semibold uppercase tracking-wider ${["Volume", "Transactions", "You earned"].includes(h) ? "text-right" : ""}`} style={{ color: "var(--muted)" }}>{h}</th>))}</tr></thead>
+            <tbody>
+              {months.map((m) => (
+                <tr key={m.m} style={{ borderBottom: "1px solid var(--line)" }}>
+                  <td className="px-4 py-3.5 font-medium">{m.m}</td>
+                  <td className="px-4 py-3.5 text-right font-mono">{m.tx}</td>
+                  <td className="px-4 py-3.5 text-right font-mono">${m.volume.toLocaleString()}</td>
+                  <td className="px-4 py-3.5 text-right font-mono font-semibold" style={{ color: "var(--emerald)" }}>${m.earned.toLocaleString()}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </Card>
+      <Card>
+        <div className="flex items-start gap-3">
+          <DollarSign size={16} className="mt-0.5 flex-shrink-0" style={{ color: "var(--emerald)" }} />
+          <div className="text-sm" style={{ color: "var(--ink)" }}>
+            <div className="font-semibold mb-1">Bi-weekly payouts</div>
+            <p style={{ color: "var(--muted)" }}>Earnings are paid every two weeks to your registered Nigerian bank account. Next payout: <span className="font-semibold" style={{ color: "var(--ink)" }}>April 30, 2026</span> · ₦2,983,200 (~$2,140 USD).</p>
+          </div>
+        </div>
+      </Card>
+    </div>
   );
 }
 
@@ -5429,12 +5488,12 @@ function Row({ label, value, sub, mono }) {
   );
 }
 
-function StatCard({ label, value, change, positive }) {
+function StatCard({ label, value, change, sub, positive }) {
   return (
     <div className="card-soft rounded-2xl bg-white p-5" style={{ border: "1px solid var(--line)" }}>
       <div className="font-mono text-[10px] uppercase tracking-wider" style={{ color: "var(--muted)" }}>{label}</div>
       <div className="font-display mt-2 text-3xl font-[500] tracking-tight">{value}</div>
-      {change && <div className="mt-1.5 font-mono text-[10px]" style={{ color: positive ? "var(--emerald)" : "var(--muted)" }}>{change}</div>}
+      {(change || sub) && <div className="mt-1.5 font-mono text-[10px]" style={{ color: positive ? "var(--emerald)" : "var(--muted)" }}>{change || sub}</div>}
     </div>
   );
 }
