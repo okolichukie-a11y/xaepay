@@ -206,7 +206,8 @@ function AppShell() {
   });
   const [view, setView] = useState("landing");
   const [mobileOpen, setMobileOpen] = useState(false);
-  const [accessOpen, setAccessOpen] = useState(false);
+  const [accessOpen, setAccessOpen] = useState(false); // legacy multi-role picker (kept for direct callers)
+  const [becomePartnerOpen, setBecomePartnerOpen] = useState(false); // MVP 4-step partner onboarding
   const [signInOpen, setSignInOpen] = useState(false);
   const [waitlistOpen, setWaitlistOpen] = useState(false);
   const [onboardingOpen, setOnboardingOpen] = useState(false);
@@ -258,13 +259,14 @@ function AppShell() {
   return (
     <div className="min-h-screen font-ui" style={{ background: "var(--paper)", color: "var(--ink)" }}>
       <PreviewBanner onWaitlist={() => setWaitlistOpen(true)} />
-      <TopBar view={view} setView={setView} mobileOpen={mobileOpen} setMobileOpen={setMobileOpen} onSignIn={() => setSignInOpen(true)} onRequestAccess={() => setAccessOpen(true)} onWaitlist={() => setWaitlistOpen(true)} session={session} authUser={auth.user} onSignOut={async () => { await auth.signOut(); setSession({ type: null, tier: 0, name: null, company: null }); setView("landing"); }} />
-      {view === "landing" && <Landing setView={setView} onRequestAccess={() => setAccessOpen(true)} onWaitlist={() => setWaitlistOpen(true)} />}
+      <TopBar view={view} setView={setView} mobileOpen={mobileOpen} setMobileOpen={setMobileOpen} onSignIn={() => setSignInOpen(true)} onRequestAccess={() => setBecomePartnerOpen(true)} onWaitlist={() => setWaitlistOpen(true)} session={session} authUser={auth.user} onSignOut={async () => { await auth.signOut(); setSession({ type: null, tier: 0, name: null, company: null }); setView("landing"); }} />
+      {view === "landing" && <Landing setView={setView} onRequestAccess={() => setBecomePartnerOpen(true)} onWaitlist={() => setWaitlistOpen(true)} />}
       {view === "customer" && <CustomerApp session={session} />}
       {view === "bdc" && <BDCDashboard session={session} />}
       {view === "lp" && <LPDashboard session={session} />}
       {view === "diaspora" && <DiasporaApp session={session} />}
       <SignInModal open={signInOpen} onClose={() => setSignInOpen(false)} />
+      <BecomePartnerModal open={becomePartnerOpen} onClose={() => setBecomePartnerOpen(false)} onComplete={(data) => { setBecomePartnerOpen(false); completeOnboarding(data); }} />
       <RequestAccessModal open={accessOpen} onClose={() => setAccessOpen(false)} onChoose={startOnboarding} onWaitlist={() => { setAccessOpen(false); setWaitlistOpen(true); }} />
       <WaitlistModal open={waitlistOpen} onClose={() => setWaitlistOpen(false)} />
       {onboardingOpen && <OnboardingFlow type={onboardingType} onClose={() => setOnboardingOpen(false)} onComplete={completeOnboarding} onSwitchType={(t) => setOnboardingType(t)} />}
@@ -834,6 +836,137 @@ function SignInModal({ open, onClose }) {
         <p className="text-center text-[11px]" style={{ color: "var(--muted)" }}>By signing in you agree to our terms. We don't share your email.</p>
       </form>
     </Modal>
+  );
+}
+
+// MVP 4-step "Become a partner" modal. Replaces the legacy RequestAccessModal +
+// per-role onboarding routes. Single agent-operator role; on completion we set
+// session.type=bdc and route into the operator dashboard.
+function BecomePartnerModal({ open, onClose, onComplete }) {
+  const empty = { company: "", contactName: "", phone: "", email: "", license: "", licenseNumber: "" };
+  const [step, setStep] = useState(1);
+  const [data, setData] = useState(empty);
+  useEffect(() => {
+    if (!open) {
+      const t = setTimeout(() => { setStep(1); setData(empty); }, 250);
+      return () => clearTimeout(t);
+    }
+  }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
+  const next = () => setStep((s) => Math.min(s + 1, 4));
+  const back = () => setStep((s) => Math.max(s - 1, 1));
+  const wrapperDef = [...OPERATOR_WRAPPERS_NG, ...OPERATOR_WRAPPERS_FOREIGN].find((w) => w.id === data.license);
+  const wrapperRequiresLicense = wrapperDef?.requiresLicense;
+  const canAdvanceStep2 = !!data.license && (!wrapperRequiresLicense || !!data.licenseNumber.trim());
+  const finish = () => {
+    onComplete({
+      type: "bdc",
+      tier: 1,
+      name: data.contactName || data.company || "Operator",
+      company: data.company || data.contactName || "Operator",
+      wrapper: data.license,
+    });
+  };
+  return (
+    <Modal open={open} onClose={onClose} title={`Become a partner · Step ${step} of 4`} size="lg">
+      {step === 1 && (
+        <div className="space-y-5">
+          <div>
+            <h3 className="font-display text-lg font-semibold mb-2">Tell us about your business</h3>
+            <p className="text-sm" style={{ color: "var(--muted)" }}>Agent operators of every kind welcome — BDCs, IMTOs, freight forwarders, customs agents, trade facilitators, and consolidation aggregators.</p>
+          </div>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field label="Business name" full><Input value={data.company} onChange={(e) => setData({ ...data, company: e.target.value })} placeholder="Corporate Exchange BDC" /></Field>
+            <Field label="Your name"><Input value={data.contactName} onChange={(e) => setData({ ...data, contactName: e.target.value })} placeholder="Olusegun Adeyemi" /></Field>
+            <Field label="Phone (WhatsApp)"><Input value={data.phone} onChange={(e) => setData({ ...data, phone: e.target.value })} placeholder="+234 803 123 4567" /></Field>
+            <Field label="Email" full><Input type="email" value={data.email} onChange={(e) => setData({ ...data, email: e.target.value })} placeholder="you@operator.com" /></Field>
+          </div>
+          <div className="flex justify-end pt-2"><PrimaryBtn onClick={next} disabled={!data.company || !data.contactName || !data.email}>Continue <ArrowRight size={14} /></PrimaryBtn></div>
+        </div>
+      )}
+
+      {step === 2 && (
+        <div className="space-y-5">
+          <div>
+            <h3 className="font-display text-lg font-semibold mb-2">Regulatory wrapper</h3>
+            <p className="text-sm" style={{ color: "var(--muted)" }}>You're not selling FX. Your customers send payment requests, you forward them to XaePay, our licensed payment partner executes the wire. We just need to know how you're set up.</p>
+          </div>
+          <div className="space-y-2">
+            <div className="font-mono text-[10px] uppercase tracking-wider mb-1" style={{ color: "var(--muted)" }}>Nigerian wrappers</div>
+            {OPERATOR_WRAPPERS_NG.map((opt) => (
+              <button key={opt.id} type="button" onClick={() => setData({ ...data, license: opt.id })} className="w-full rounded-xl p-4 text-left transition" style={data.license === opt.id ? { background: "var(--ink)", color: "var(--bone)", border: "1px solid var(--ink)" } : { background: "white", border: "1px solid var(--line)" }}>
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-medium">{opt.label}</span>
+                  {data.license === opt.id && <CheckCircle2 size={16} style={{ color: "var(--lime)" }} />}
+                </div>
+              </button>
+            ))}
+            <div className="font-mono text-[10px] uppercase tracking-wider mb-1 mt-4" style={{ color: "var(--muted)" }}>Foreign wrappers</div>
+            {OPERATOR_WRAPPERS_FOREIGN.map((opt) => (
+              <button key={opt.id} type="button" onClick={() => setData({ ...data, license: opt.id })} className="w-full rounded-xl p-4 text-left transition" style={data.license === opt.id ? { background: "var(--ink)", color: "var(--bone)", border: "1px solid var(--ink)" } : { background: "white", border: "1px solid var(--line)" }}>
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-medium">{opt.label}</span>
+                  {data.license === opt.id && <CheckCircle2 size={16} style={{ color: "var(--lime)" }} />}
+                </div>
+              </button>
+            ))}
+          </div>
+          {wrapperRequiresLicense && (
+            <Field label="Registration / license number" full><Input value={data.licenseNumber} onChange={(e) => setData({ ...data, licenseNumber: e.target.value })} placeholder="e.g. BDC/2024/T2/045" /></Field>
+          )}
+          <div className="flex justify-between pt-2">
+            <SecondaryBtn onClick={back}>Back</SecondaryBtn>
+            <PrimaryBtn onClick={next} disabled={!canAdvanceStep2}>Continue <ArrowRight size={14} /></PrimaryBtn>
+          </div>
+        </div>
+      )}
+
+      {step === 3 && (
+        <div className="space-y-5">
+          <div>
+            <h3 className="font-display text-lg font-semibold mb-2">How the partnership works</h3>
+            <p className="text-sm" style={{ color: "var(--muted)" }}>Read this carefully — it's the whole agreement in plain language.</p>
+          </div>
+          <div className="space-y-3">
+            <PartnerTerm icon={DollarSign} title="You set your customer's rate">You quote your customer whatever rate you want. We give you our wholesale rate plus a small XaePay infrastructure fee. You add your markup on top.</PartnerTerm>
+            <PartnerTerm icon={TrendingUp} title="You earn 55–70% of every transaction's margin">Every dollar of markup you charge above our minimum is split between you and XaePay based on the tier you pick per transaction. Recurring on every transaction, forever.</PartnerTerm>
+            <PartnerTerm icon={Layers} title="Four service tiers, you pick per transaction">Standard (₦1.50/$ minimum), Verified (₦2.50/$), Documented (₦3.50/$), Compliance Pro (₦4.50/$). Each unlocks more validation work XaePay does for that transaction.</PartnerTerm>
+            <PartnerTerm icon={MessageCircle} title="Everything happens on WhatsApp">Your customer messages you. You forward to XaePay. We handle quotes, KYC, compliance, execution, documents. Your customer never has to download anything.</PartnerTerm>
+            <PartnerTerm icon={Shield} title="No license risk, no fund handling">You don't sell FX, hold money, or quote rates. You introduce customers; XaePay onboards them with our licensed payment partner; the partner executes the regulated payment.</PartnerTerm>
+          </div>
+          <div className="flex justify-between pt-2">
+            <SecondaryBtn onClick={back}>Back</SecondaryBtn>
+            <PrimaryBtn onClick={next}>I understand <ArrowRight size={14} /></PrimaryBtn>
+          </div>
+        </div>
+      )}
+
+      {step === 4 && (
+        <div className="text-center py-6">
+          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full mb-5" style={{ background: "var(--lime)" }}>
+            <CheckCircle2 size={28} strokeWidth={2.5} style={{ color: "var(--ink)" }} />
+          </div>
+          <h3 className="font-display text-2xl font-semibold mb-3">You're in.</h3>
+          <p className="text-sm max-w-md mx-auto mb-6" style={{ color: "var(--muted)" }}>We'll send your partner agreement to <span className="font-semibold" style={{ color: "var(--ink)" }}>{data.email || "your email"}</span> and connect your WhatsApp number to ours within 24 hours.</p>
+          <div className="rounded-xl p-4 max-w-md mx-auto mb-6" style={{ background: "var(--bone)", border: "1px solid var(--line)" }}>
+            <div className="text-xs font-mono uppercase tracking-wider mb-2" style={{ color: "var(--muted)" }}>Next step</div>
+            <p className="text-sm">Refer your first customer. We'll handle their KYC with our compliance partner and have them transacting in 5–10 business days.</p>
+          </div>
+          <PrimaryBtn onClick={finish}>Open dashboard <ArrowRight size={14} /></PrimaryBtn>
+        </div>
+      )}
+    </Modal>
+  );
+}
+
+function PartnerTerm({ icon: Icon, title, children }) {
+  return (
+    <div className="flex items-start gap-3 rounded-xl p-4" style={{ background: "var(--bone)", border: "1px solid var(--line)" }}>
+      <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg" style={{ background: "white", color: "var(--emerald)" }}><Icon size={16} /></div>
+      <div className="flex-1">
+        <div className="text-sm font-semibold mb-0.5">{title}</div>
+        <div className="text-sm leading-relaxed" style={{ color: "var(--muted)" }}>{children}</div>
+      </div>
+    </div>
   );
 }
 
