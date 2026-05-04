@@ -2543,6 +2543,7 @@ function BDCDashboard({ session }) {
           { id: "quotes", label: "Rail Quotes" },
           { id: "transactions", label: "Transactions" },
           { id: "customers", label: "Customers" },
+          { id: "recipients", label: "Recipients" },
           // Liquidity tab is the USDT marketplace — only relevant alongside Triple-A.
           ...(SHOW_TRIPLE_A ? [{ id: "liquidity", label: "Liquidity", phase2: true }] : []),
           { id: "agent", label: "Payment Agent", phase2: true },
@@ -2561,6 +2562,7 @@ function BDCDashboard({ session }) {
         {tab === "quotes" && <BDCRailQuotes />}
         {tab === "transactions" && <BDCTransactions />}
         {tab === "customers" && <BDCCustomers addedCustomers={addedCustomers} onAddCustomer={addCustomer} />}
+        {tab === "recipients" && <BDCRecipients />}
         {tab === "liquidity" && <BDCLiquidity />}
         {tab === "agent" && <BDCPaymentAgent />}
         {tab === "compliance" && <BDCCompliance />}
@@ -3856,6 +3858,157 @@ function BDCCustomers({ addedCustomers = [], onAddCustomer }) {
     <CustomerDrawer customer={selected} onClose={() => setSelected(null)} />
     <AddCustomerModal open={addOpen} onClose={() => setAddOpen(false)} onAdded={() => { setAddOpen(false); fetchCustomers(); }} onAddLocal={(c) => { if (onAddCustomer) onAddCustomer(c); setAddOpen(false); }} />
     </>
+  );
+}
+
+// ─── Recipients ─────────────────────────────────────────────────────────────
+// Saved supplier / beneficiary banking details, scoped per-customer. Operator
+// reuses these when composing quotes so they don't re-key bank info each time.
+// Persistence backend deferred — for now this is component-local + demo seed.
+const DEMO_RECIPIENTS = [
+  { id: 1, customer: "Adekunle Imports Ltd", direction: "outbound", name: "Shenzhen Electronics Co., Ltd", country: "China", bank: "Bank of China", account: "•••• 4521", currency: "USD", lastUsed: "Today", txCount: 6 },
+  { id: 2, customer: "Adekunle Imports Ltd", direction: "outbound", name: "Hangzhou Logistics", country: "China", bank: "ICBC", account: "•••• 8829", currency: "USD", lastUsed: "Apr 15", txCount: 3 },
+  { id: 3, customer: "Sahara Foods", direction: "outbound", name: "Mumbai Pharma Ltd", country: "India", bank: "State Bank of India", account: "•••• 2341", currency: "USD", lastUsed: "Apr 12", txCount: 4 },
+  { id: 4, customer: "Delta Petrochem", direction: "outbound", name: "Hamburg Auto Parts GmbH", country: "Germany", bank: "Deutsche Bank", account: "•••• 1198", currency: "EUR", lastUsed: "Apr 18", txCount: 2 },
+  { id: 5, customer: "London Diaspora Ltd", direction: "inbound", name: "Lagos Trading Hub Ltd", country: "Nigeria", bank: "GTBank", account: "•••• 7733", currency: "NGN", lastUsed: "Today", txCount: 4 },
+  { id: 6, customer: "Boston Imports US", direction: "inbound", name: "Onitsha Distributors", country: "Nigeria", bank: "Access Bank", account: "•••• 4408", currency: "NGN", lastUsed: "Apr 14", txCount: 2 },
+];
+
+function DirectionBadge({ direction }) {
+  const isOut = direction === "outbound";
+  return (
+    <span className="rounded-full px-2 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-wider inline-flex items-center gap-1" style={{ background: isOut ? "rgba(15,95,63,0.12)" : "rgba(212,168,44,0.12)", color: isOut ? "var(--emerald)" : "var(--amber)" }}>
+      {isOut ? "→ Out" : "← In"}
+    </span>
+  );
+}
+
+function BDCRecipients() {
+  const { push } = useToast();
+  const auth = useAuth();
+  const isSignedIn = !!auth.user;
+  const [addOpen, setAddOpen] = useState(false);
+  const [filterCustomer, setFilterCustomer] = useState("all");
+  const [localAdds, setLocalAdds] = useState([]);
+
+  // Until the recipients table lands, signed-in users see only their own session adds
+  // (no cross-device persistence) and unsigned visitors see the demo seed.
+  const recipients = isSignedIn ? localAdds : [...localAdds, ...DEMO_RECIPIENTS];
+  const filtered = filterCustomer === "all" ? recipients : recipients.filter((r) => r.customer === filterCustomer);
+  const customers = [...new Set(recipients.map((r) => r.customer))];
+
+  const handleAdded = (rec) => {
+    setLocalAdds((prev) => [{ ...rec, id: Date.now(), lastUsed: "Just now", txCount: 0 }, ...prev]);
+    setAddOpen(false);
+    push(`${rec.name} saved as recipient for ${rec.customer}`, "success");
+  };
+
+  return (
+    <>
+    <Card padding="none">
+      <div className="flex flex-col items-stretch gap-3 p-4 sm:flex-row sm:items-center" style={{ borderBottom: "1px solid var(--line)" }}>
+        <div className="flex-1">
+          <div className="text-sm font-semibold">{filtered.length} saved recipient{filtered.length === 1 ? "" : "s"}</div>
+          <div className="font-mono text-[10px] mt-0.5" style={{ color: "var(--muted)" }}>Reuse these in quotes — no need to re-enter banking details each time. {isSignedIn && localAdds.length === 0 && "Persistence lands with the backend pass."}</div>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {customers.length > 0 && (
+            <Select value={filterCustomer} onChange={(e) => setFilterCustomer(e.target.value)}>
+              <option value="all">All customers</option>
+              {customers.map((c) => <option key={c} value={c}>{c}</option>)}
+            </Select>
+          )}
+          <PrimaryBtn onClick={() => setAddOpen(true)}><Plus size={14} /> Add recipient</PrimaryBtn>
+        </div>
+      </div>
+      {filtered.length === 0 ? (
+        <div className="p-12 text-center">
+          <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full" style={{ background: "var(--bone-2)" }}><Briefcase size={20} style={{ color: "var(--muted)" }} /></div>
+          <h3 className="font-display text-lg font-semibold">No recipients saved yet</h3>
+          <p className="mt-1.5 text-sm max-w-md mx-auto" style={{ color: "var(--muted)" }}>Save the suppliers and beneficiaries your customers transact with most often. They'll appear as quick-select chips in the quote builder.</p>
+          <div className="mt-4"><PrimaryBtn onClick={() => setAddOpen(true)}><Plus size={14} /> Add your first recipient</PrimaryBtn></div>
+        </div>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead><tr style={{ background: "var(--bone)", borderBottom: "1px solid var(--line)" }}>{["Recipient", "Customer", "Direction", "Banking", "Currency", "Last used", "Transactions"].map((h, i) => (<th key={i} className={`px-4 py-3 text-left font-mono text-[10px] font-semibold uppercase tracking-wider ${["Transactions"].includes(h) ? "text-right" : ""}`} style={{ color: "var(--muted)" }}>{h}</th>))}</tr></thead>
+            <tbody>
+              {filtered.map((r) => (
+                <tr key={r.id} onClick={() => push(`Opening ${r.name}`, "info")} className="cursor-pointer transition hover:bg-[color:var(--bone)]" style={{ borderBottom: "1px solid var(--line)" }}>
+                  <td className="px-4 py-3.5">
+                    <div className="font-medium">{r.name}</div>
+                    <div className="font-mono text-[10px] mt-0.5" style={{ color: "var(--muted)" }}>{r.country}</div>
+                  </td>
+                  <td className="px-4 py-3.5 text-sm" style={{ color: "var(--muted)" }}>{r.customer}</td>
+                  <td className="px-4 py-3.5"><DirectionBadge direction={r.direction} /></td>
+                  <td className="px-4 py-3.5">
+                    <div className="text-sm">{r.bank}</div>
+                    <div className="font-mono text-[10px] mt-0.5" style={{ color: "var(--muted)" }}>{r.account}</div>
+                  </td>
+                  <td className="px-4 py-3.5 font-mono text-xs">{r.currency}</td>
+                  <td className="px-4 py-3.5 font-mono text-xs" style={{ color: "var(--muted)" }}>{r.lastUsed}</td>
+                  <td className="px-4 py-3.5 text-right font-mono">{r.txCount}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </Card>
+    <AddRecipientModal open={addOpen} onClose={() => setAddOpen(false)} onAdded={handleAdded} />
+    </>
+  );
+}
+
+function AddRecipientModal({ open, onClose, onAdded }) {
+  const empty = { customer: "", direction: "outbound", name: "", country: "China", bank: "", account: "", swift: "", currency: "USD" };
+  const [data, setData] = useState(empty);
+  const submit = (e) => {
+    e.preventDefault();
+    onAdded({ ...data, account: data.account ? `•••• ${data.account.slice(-4)}` : data.account });
+    setData(empty);
+  };
+  return (
+    <Modal open={open} onClose={onClose} title="Add recipient" size="lg">
+      <p className="text-sm mb-5" style={{ color: "var(--muted)" }}>Save a supplier or beneficiary's banking details for fast reuse in quotes. Linked to a specific customer.</p>
+      <form onSubmit={submit} className="space-y-4">
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field label="Linked customer" full>
+            <Input value={data.customer} onChange={(e) => setData({ ...data, customer: e.target.value })} placeholder="Customer business name" />
+          </Field>
+          <Field label="Direction">
+            <div className="grid grid-cols-2 gap-2">
+              <button type="button" onClick={() => setData({ ...data, direction: "outbound", country: "China", currency: "USD" })} className="rounded-xl px-3 py-2.5 text-sm font-medium transition" style={data.direction === "outbound" ? { background: "var(--ink)", color: "var(--bone)" } : { background: "white", color: "var(--ink)", border: "1px solid var(--line)" }}>Outbound</button>
+              <button type="button" onClick={() => setData({ ...data, direction: "inbound", country: "Nigeria", currency: "NGN" })} className="rounded-xl px-3 py-2.5 text-sm font-medium transition" style={data.direction === "inbound" ? { background: "var(--ink)", color: "var(--bone)" } : { background: "white", color: "var(--ink)", border: "1px solid var(--line)" }}>Inbound</button>
+            </div>
+          </Field>
+          <Field label="Recipient name"><Input value={data.name} onChange={(e) => setData({ ...data, name: e.target.value })} placeholder={data.direction === "inbound" ? "Lagos Trading Hub Ltd" : "Shenzhen Electronics Co., Ltd"} /></Field>
+          <Field label="Country">
+            <Select value={data.country} onChange={(e) => setData({ ...data, country: e.target.value })}>
+              {data.direction === "inbound" ? (
+                <option>Nigeria</option>
+              ) : (
+                <>
+                  <option>China</option><option>USA</option><option>UK</option><option>Germany</option><option>UAE</option><option>India</option><option>Türkiye</option>
+                </>
+              )}
+            </Select>
+          </Field>
+          <Field label="Bank name" full><Input value={data.bank} onChange={(e) => setData({ ...data, bank: e.target.value })} placeholder="Bank of China" /></Field>
+          <Field label="Account number"><Input value={data.account} onChange={(e) => setData({ ...data, account: e.target.value })} /></Field>
+          <Field label={data.direction === "inbound" ? "Sort code (if applicable)" : "SWIFT / IBAN"}><Input value={data.swift} onChange={(e) => setData({ ...data, swift: e.target.value })} /></Field>
+          <Field label="Currency" full>
+            <Select value={data.currency} onChange={(e) => setData({ ...data, currency: e.target.value })}>
+              {data.direction === "inbound" ? <option>NGN</option> : <><option>USD</option><option>GBP</option><option>EUR</option><option>CNY</option></>}
+            </Select>
+          </Field>
+        </div>
+        <div className="flex justify-end gap-2 pt-2">
+          <SecondaryBtn type="button" onClick={onClose}>Cancel</SecondaryBtn>
+          <PrimaryBtn type="submit" disabled={!data.customer || !data.name || !data.bank || !data.account}>Save recipient</PrimaryBtn>
+        </div>
+      </form>
+    </Modal>
   );
 }
 
