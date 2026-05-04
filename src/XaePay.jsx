@@ -23,6 +23,17 @@ const WHATSAPP_URL_US = `https://wa.me/${WHATSAPP_NUMBER_US}`;
 const SHOW_TRIPLE_A = false;
 const PARTNER_DISPLAY_NAME = "Licensed payment partner";
 
+// Per-transaction service tiers. Each tier sets a minimum markup (₦/$) and a margin split
+// between the operator and XaePay. The operator picks a tier on each quote — lower tiers
+// leave more validation work to the operator (and pay them more), higher tiers shift work
+// (and a larger margin share) to XaePay.
+const TIERS = {
+  standard:   { id: "standard",   name: "Standard",       minMarkup: 1.50, operatorShare: 0.70, xaepayShare: 0.30, tagline: "You validate invoices · we execute" },
+  verified:   { id: "verified",   name: "Verified",       minMarkup: 2.50, operatorShare: 0.65, xaepayShare: 0.35, tagline: "We check invoices · reject + reason for fixes" },
+  documented: { id: "documented", name: "Documented",     minMarkup: 3.50, operatorShare: 0.60, xaepayShare: 0.40, tagline: "Full validation + audit pack per transaction" },
+  pro:        { id: "pro",        name: "Compliance Pro", minMarkup: 4.50, operatorShare: 0.55, xaepayShare: 0.45, tagline: "Deep validation + quarterly compliance pack" },
+};
+
 function GlobalStyles() {
   return (
     <style>{`
@@ -2727,11 +2738,18 @@ function BDCRailQuotes() {
   const [destinationCcy, setDestinationCcy] = useState("USD");
   const [destinationCorridor, setDestinationCorridor] = useState("China");
   const [urgency, setUrgency] = useState("standard");
-  const [markupPct, setMarkupPct] = useState("1.80");
+  const [markupPct, setMarkupPct] = useState("1.80"); // legacy, kept for back-compat with existing DB rows
   const [tick, setTick] = useState(0);
   // Funding method controls which rail(s) appear. Triple-A requires USDT inventory;
   // Cedar runs on NGN fiat. "compare" shows both side-by-side so the BDC can decide.
   const [fundingMethod, setFundingMethod] = useState("ngn-fiat"); // 'ngn-fiat' | 'usdt' | 'compare'
+
+  // Per-transaction tier + markup. Operator picks Standard/Verified/Documented/Pro and a markup
+  // in ₦/$ at or above the tier's minimum. Earnings split per tier.operatorShare / tier.xaepayShare.
+  const [selectedTier, setSelectedTier] = useState("documented");
+  const [markupAmount, setMarkupAmount] = useState(TIERS.documented.minMarkup);
+  const tier = TIERS[selectedTier];
+  const markupValid = markupAmount >= tier.minMarkup;
 
   // Customer form (resets after every Send, so BDC can compose more quotes back-to-back)
   const [customerName, setCustomerName] = useState("");
@@ -2865,10 +2883,17 @@ function BDCRailQuotes() {
       : [tripleA, cedar];
   const eligibleRails = railsByFunding.filter((r) => parseFloat(amount) >= r.minTicket);
   const cheapest = eligibleRails.length > 0 ? eligibleRails.reduce((a, b) => (a.nativeCostNGN < b.nativeCostNGN ? a : b)) : null;
-  const customerRate = cheapest ? cheapest.nativeCostNGN * (1 + parseFloat(markupPct || 0) / 100) : 0;
-  const grossMarginPerUSD = cheapest ? customerRate - cheapest.nativeCostNGN : 0;
+  // Customer rate = wholesale (rail cost basis) + operator markup in ₦/$.
+  // Total margin (NGN) = markupAmount * amount; converted to USD via customerRate for split.
+  const customerRate = cheapest ? cheapest.nativeCostNGN + markupAmount : 0;
+  const grossMarginPerUSD = markupAmount;
   const grossMarginTotal = grossMarginPerUSD * parseFloat(amount || 0);
   const ngnTotal = customerRate * parseFloat(amount || 0);
+  const totalMarginUSD = customerRate > 0 ? (markupAmount * parseFloat(amount || 0)) / customerRate : 0;
+  const operatorEarnUSD = totalMarginUSD * tier.operatorShare;
+  const xaepayEarnUSD = totalMarginUSD * tier.xaepayShare;
+  // Equivalent percentage form (for legacy markup_pct DB column and back-compat surfaces)
+  const markupPctEffective = cheapest && cheapest.nativeCostNGN > 0 ? (markupAmount / cheapest.nativeCostNGN) * 100 : 0;
 
   // Default chosenRail to cheapest when it changes
   useEffect(() => {
@@ -2878,6 +2903,11 @@ function BDCRailQuotes() {
   // Drop the chosen rail when the funding-method filter or direction switches —
   // the previously chosen rail may no longer be on the visible set.
   useEffect(() => { setChosenRail(null); }, [fundingMethod, direction]);
+
+  // When the operator picks a different tier, snap markup up to the tier's minimum if it's below.
+  useEffect(() => {
+    setMarkupAmount((m) => Math.max(m, TIERS[selectedTier].minMarkup));
+  }, [selectedTier]);
 
   // Build the WhatsApp message body for a given quote — used both for new sends and re-sends from the pending list
   const buildQuoteMessage = (q, displayRef, urlToken) => {
@@ -2938,7 +2968,10 @@ function BDCRailQuotes() {
           rail: railName,
           settlement_text: settlement,
           cost_basis_ngn: cheapest.nativeCostNGN,
-          markup_pct: parseFloat(markupPct || 0),
+          // markup_pct kept for back-compat — derived from the operator's new ₦/$ markup
+          // and the rail's NGN cost basis. tier and markup_amount aren't persisted yet
+          // (pending DB migration); they live only in UI state until then.
+          markup_pct: parseFloat(markupPctEffective.toFixed(4)),
           status: "pending_approval",
           expires_at: expiresAt,
         })
@@ -3238,32 +3271,66 @@ function BDCRailQuotes() {
         })}
       </div>
 
+      {/* Service tier picker — operator picks per-transaction */}
+      <div className="card-soft rounded-2xl p-6" style={{ background: "white", border: "1px solid var(--line)" }}>
+        <div className="flex items-start justify-between gap-4 flex-wrap mb-4">
+          <div>
+            <h3 className="font-display text-lg font-semibold">Service tier</h3>
+            <p className="mt-1 text-sm" style={{ color: "var(--muted)" }}>Pick the tier for this transaction. Each tier has a minimum markup (₦/$) and earnings split.</p>
+          </div>
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          {Object.values(TIERS).map((t) => {
+            const isSelected = selectedTier === t.id;
+            const isPro = t.id === "pro";
+            return (
+              <button key={t.id} onClick={() => setSelectedTier(t.id)} className="card-lift rounded-xl p-4 text-left transition" style={isSelected ? (isPro ? { background: "var(--ink)", color: "var(--bone)", border: "2px solid var(--lime)" } : { background: "var(--ink)", color: "var(--bone)", border: "2px solid var(--ink)" }) : { background: "white", border: "1px solid var(--line)" }}>
+                <div className="flex items-start justify-between mb-2">
+                  <div className="font-display text-base font-semibold">{t.name}</div>
+                  {isSelected && <CheckCircle2 size={14} style={{ color: "var(--lime)" }} />}
+                </div>
+                <div className="font-mono text-[9px] uppercase tracking-wider" style={isSelected ? { color: "rgba(247,245,240,0.6)" } : { color: "var(--muted)" }}>{t.tagline}</div>
+                <div className="mt-3 font-display text-xl font-[500]" style={{ color: isSelected ? (isPro ? "var(--lime)" : "var(--lime)") : "var(--ink)" }}>₦{t.minMarkup.toFixed(2)}<span className="text-xs ml-1" style={isSelected ? { color: "rgba(247,245,240,0.6)" } : { color: "var(--muted)" }}>/$ min</span></div>
+                <div className="mt-1 font-mono text-[10px]" style={isSelected ? { color: "rgba(247,245,240,0.5)" } : { color: "var(--muted)" }}>You: {(t.operatorShare * 100).toFixed(0)}% · XaePay: {(t.xaepayShare * 100).toFixed(0)}%</div>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
       {/* Customer rate calculator */}
       <div className="card-soft rounded-2xl p-6" style={{ background: "white", border: "1px solid var(--line)" }}>
         <div className="flex items-start justify-between gap-4 flex-wrap">
           <div>
             <h3 className="font-display text-lg font-semibold">Customer rate calculator</h3>
-            <p className="mt-1 text-sm" style={{ color: "var(--muted)" }}>Set your spread on top of the cheapest rail's NGN cost. This is the rate you quote your customer.</p>
+            <p className="mt-1 text-sm" style={{ color: "var(--muted)" }}>Set your markup in ₦ per $ on top of the wholesale rate. Must be at or above the {tier.name} tier minimum (₦{tier.minMarkup.toFixed(2)}/$).</p>
           </div>
           {cheapest && <div className="rounded-full px-2.5 py-1 font-mono text-[10px] font-semibold uppercase tracking-wider whitespace-nowrap" style={{ background: "var(--bone-2)", color: "var(--emerald)" }}>Basis · {cheapest.displayName || cheapest.name}</div>}
         </div>
         {cheapest ? (
           <div className="mt-5 grid gap-5 lg:grid-cols-2">
             <div className="space-y-4">
-              <Field label="Your markup (%)">
-                <div className="focus-ring flex items-center rounded-xl transition" style={{ background: "white", border: "1px solid var(--line)" }}>
-                  <input type="number" step="0.05" value={markupPct} onChange={(e) => setMarkupPct(e.target.value)} className="w-full bg-transparent px-3.5 py-3 text-sm outline-none font-mono" />
-                  <span className="pr-3.5 text-sm font-mono" style={{ color: "var(--muted)" }}>%</span>
+              <Field label="Your markup (₦ per $)">
+                <div className="focus-ring flex items-center rounded-xl transition" style={{ background: "white", border: markupValid ? "1px solid var(--line)" : "1px solid var(--amber)" }}>
+                  <span className="pl-3.5 text-sm font-mono" style={{ color: "var(--muted)" }}>₦</span>
+                  <input type="number" step="0.10" value={markupAmount} onChange={(e) => setMarkupAmount(parseFloat(e.target.value) || 0)} className="w-full bg-transparent px-2 py-3 text-sm outline-none font-mono" />
+                  <span className="pr-3.5 text-sm font-mono" style={{ color: "var(--muted)" }}>/ $</span>
                 </div>
+                {!markupValid && <div className="mt-2 text-xs" style={{ color: "var(--amber)" }}>Below {tier.name} minimum of ₦{tier.minMarkup.toFixed(2)}/$</div>}
                 <div className="mt-2 flex flex-wrap gap-1.5">
-                  {["1.20", "1.50", "1.80", "2.20", "2.50"].map((p) => (
-                    <button key={p} onClick={() => setMarkupPct(p)} className="rounded-full px-2.5 py-1 font-mono text-[10px] font-semibold uppercase tracking-wider transition" style={markupPct === p ? { background: "var(--ink)", color: "var(--bone)" } : { background: "var(--bone-2)", color: "var(--muted)" }}>{p}%</button>
+                  {[tier.minMarkup, tier.minMarkup + 1, tier.minMarkup + 2, tier.minMarkup + 3].map((v) => (
+                    <button key={v} onClick={() => setMarkupAmount(v)} className="rounded-full px-2.5 py-1 font-mono text-[10px] font-semibold uppercase tracking-wider transition" style={Math.abs(markupAmount - v) < 0.001 ? { background: "var(--ink)", color: "var(--bone)" } : { background: "var(--bone-2)", color: "var(--muted)" }}>₦{v.toFixed(2)}</button>
                   ))}
                 </div>
               </Field>
               <div className="space-y-1.5 rounded-xl p-4 text-sm" style={{ background: "var(--bone)", border: "1px solid var(--line)" }}>
                 <div className="flex items-baseline justify-between"><span style={{ color: "var(--muted)" }}>Cost basis ({cheapest.displayName || cheapest.name})</span><span className="font-mono font-semibold">₦{cheapest.nativeCostNGN.toFixed(2)}</span></div>
-                <div className="flex items-baseline justify-between"><span style={{ color: "var(--muted)" }}>+ Your markup ({markupPct}%)</span><span className="font-mono font-semibold">₦{(customerRate - cheapest.nativeCostNGN).toFixed(2)}</span></div>
+                <div className="flex items-baseline justify-between"><span style={{ color: "var(--muted)" }}>+ Your markup</span><span className="font-mono font-semibold">₦{markupAmount.toFixed(2)}</span></div>
+              </div>
+              <div className="space-y-1.5 rounded-xl p-4 text-sm" style={{ background: "var(--bone)", border: "1px solid var(--line)" }}>
+                <div className="font-mono text-[10px] uppercase tracking-wider mb-1" style={{ color: "var(--muted)" }}>Margin split · {tier.name} tier</div>
+                <div className="flex items-baseline justify-between"><span style={{ color: "var(--muted)" }}>You ({(tier.operatorShare * 100).toFixed(0)}%)</span><span className="font-mono font-semibold" style={{ color: "var(--emerald)" }}>${operatorEarnUSD.toFixed(2)}</span></div>
+                <div className="flex items-baseline justify-between"><span style={{ color: "var(--muted)" }}>XaePay ({(tier.xaepayShare * 100).toFixed(0)}%)</span><span className="font-mono">${xaepayEarnUSD.toFixed(2)}</span></div>
               </div>
             </div>
             <div className="rounded-xl p-5 relative overflow-hidden" style={{ background: "var(--ink)", color: "var(--bone)" }}>
@@ -3303,12 +3370,12 @@ function BDCRailQuotes() {
             <Field label="Beneficiary / supplier"><Input value={beneficiary} onChange={(e) => setBeneficiary(e.target.value)} placeholder="Shenzhen Electronics Co." /></Field>
           </div>
           <div className="mt-5">
-            <button onClick={sendQuoteOnWhatsApp} disabled={!customerPhone || sendingQuote} className="w-full inline-flex items-center justify-center gap-2 rounded-xl px-5 py-3 text-sm font-semibold transition disabled:opacity-40 disabled:cursor-not-allowed" style={{ background: "var(--ink)", color: "var(--bone)" }}>
+            <button onClick={sendQuoteOnWhatsApp} disabled={!customerPhone || sendingQuote || !markupValid} className="w-full inline-flex items-center justify-center gap-2 rounded-xl px-5 py-3 text-sm font-semibold transition disabled:opacity-40 disabled:cursor-not-allowed" style={{ background: "var(--ink)", color: "var(--bone)" }}>
               {sendingQuote ? <><Loader2 size={14} className="spin" /> Saving…</> : <><MessageCircle size={14} /> Send quote on WhatsApp · ₦{Math.round(ngnTotal).toLocaleString()}</>}
             </button>
             <p className="mt-2 text-xs" style={{ color: "var(--muted)" }}>WhatsApp opens with a pre-filled message — click send in the WhatsApp window. Customer's reply auto-flips the row below within ~5 sec.</p>
             {isSignedIn && (
-              <button onClick={sendQuoteAuto} disabled={!customerPhone || sendingQuote} className="mt-2 w-full inline-flex items-center justify-center gap-2 rounded-xl px-5 py-2.5 text-xs font-semibold transition disabled:opacity-40 disabled:cursor-not-allowed" style={{ border: "1px solid var(--line)", color: "var(--ink)", background: "var(--bone-2)" }}>
+              <button onClick={sendQuoteAuto} disabled={!customerPhone || sendingQuote || !markupValid} className="mt-2 w-full inline-flex items-center justify-center gap-2 rounded-xl px-5 py-2.5 text-xs font-semibold transition disabled:opacity-40 disabled:cursor-not-allowed" style={{ border: "1px solid var(--line)", color: "var(--ink)", background: "var(--bone-2)" }}>
                 {sendingQuote ? <><Loader2 size={12} className="spin" /> Saving…</> : <><Send size={12} /> Send auto via XaePay <span className="font-mono text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded" style={{ background: "var(--lime)", color: "var(--ink)" }}>beta</span></>}
               </button>
             )}
