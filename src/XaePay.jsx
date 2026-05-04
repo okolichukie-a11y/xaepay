@@ -6,7 +6,7 @@ import {
   ExternalLink, Sparkles, User, Building2, Briefcase, Coins, Lock, Unlock,
   ArrowLeft, ArrowLeftRight, Loader2, Layers, TrendingUp, Wallet, DollarSign, Mail,
 } from "lucide-react";
-import { supabase, sendWhatsAppText } from "./lib/supabase.js";
+import { supabase, sendWhatsAppText, fetchCedarRate } from "./lib/supabase.js";
 import { useAuth } from "./lib/auth.js";
 
 // ─── Editable in one place ────────────────────────────────────────────────
@@ -3209,26 +3209,46 @@ function OperatorQuoteModal({ open, onClose, onCreated }) {
   const [step, setStep] = useState(1);
   const [data, setData] = useState(empty);
   const [sending, setSending] = useState(false);
-  const [tick, setTick] = useState(0);
   const [createdRef, setCreatedRef] = useState(""); // populated after successful send
+  // Live wholesale rate from Cedar (via cedar-rate Edge Function → relay → Cedar's /v1/sendf2f/price).
+  // Falls back to a sane default while loading or if Cedar is unreachable.
+  const [cedarRate, setCedarRate] = useState(null);
+  const [rateLoading, setRateLoading] = useState(false);
 
   // Reset on close
   useEffect(() => {
     if (!open) {
-      // small delay so the closing animation doesn't jank reset
-      const t = setTimeout(() => { setStep(1); setData(empty); setCreatedRef(""); }, 250);
+      const t = setTimeout(() => { setStep(1); setData(empty); setCreatedRef(""); setCedarRate(null); }, 250);
       return () => clearTimeout(t);
     }
   }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Live wholesale rate (Cedar baseline, light wobble)
+  // Fetch live Cedar rate whenever the modal opens, the amount changes, or the currency changes.
+  // Debounced lightly so typing doesn't fire dozens of calls.
   useEffect(() => {
     if (!open) return;
-    const i = setInterval(() => setTick((t) => t + 1), 4000);
-    return () => clearInterval(i);
-  }, [open]);
-  const wobble = (base, ampBps) => base + (Math.sin(tick * 0.7) + Math.cos(tick * 0.3)) * 0.5 * (base * ampBps / 10000);
-  const wholesaleRate = wobble(1394.40, 4);
+    const amt = parseFloat(data.amount) || 0;
+    if (amt <= 0) return;
+    const isInbound = data.direction === "inbound";
+    const fromCcy = isInbound ? data.currency : "NGN";
+    const toCcy = isInbound ? "NGN" : data.currency;
+    const toAmount = amt;
+    setRateLoading(true);
+    const t = setTimeout(async () => {
+      const { ok, data: payload } = await fetchCedarRate({ fromCurrencySymbol: fromCcy, toCurrencySymbol: toCcy, toAmount });
+      if (ok && payload?.rate) {
+        // Cedar returns rate in the perspective from→to. We always want a NGN/$ figure
+        // for the operator UI: when we asked for NGN→USD, payload.rate IS NGN/$.
+        // When we asked for USD→NGN (inbound), payload.rate is USD/NGN, so we invert.
+        const ngnPerForeign = isInbound ? 1 / payload.rate : payload.rate;
+        setCedarRate({ rate: ngnPerForeign, raw: payload, fetchedAt: Date.now() });
+      }
+      setRateLoading(false);
+    }, 350);
+    return () => clearTimeout(t);
+  }, [open, data.amount, data.currency, data.direction]);
+
+  const wholesaleRate = cedarRate?.rate ?? 1394.40;
 
   const tier = TIERS[data.selectedTier];
   const isInbound = data.direction === "inbound";
@@ -3415,7 +3435,14 @@ function OperatorQuoteModal({ open, onClose, onCreated }) {
               </div>
             </Card>
             <Card>
-              <div className="font-mono text-[10px] uppercase tracking-wider mb-4" style={{ color: "var(--muted)" }}>Live calculation · {isInbound ? "Inbound" : "Outbound"}</div>
+              <div className="font-mono text-[10px] uppercase tracking-wider mb-4 flex items-center gap-2" style={{ color: "var(--muted)" }}>
+                <span>Live calculation · {isInbound ? "Inbound" : "Outbound"}</span>
+                {rateLoading
+                  ? <span className="font-normal" style={{ color: "var(--amber)" }}>· fetching Cedar rate…</span>
+                  : cedarRate
+                    ? <span className="font-normal flex items-center gap-1" style={{ color: "var(--emerald)" }}><div className="h-1 w-1 rounded-full pulse-dot" style={{ background: "var(--emerald)" }} />live from Cedar</span>
+                    : <span className="font-normal" style={{ color: "var(--muted)" }}>· using fallback rate</span>}
+              </div>
               <div className="space-y-2.5">
                 <EconRow label="Wholesale rate" value={`₦${wholesaleRate.toFixed(2)}/$`} muted />
                 <EconRow label={isInbound ? "Your spread (subtracted)" : "Your markup (added)"} value={`${isInbound ? "−" : "+"}₦${data.markupAmount.toFixed(2)}/$`} highlight />
@@ -3580,6 +3607,19 @@ function BDCRailQuotes() {
   const [invoicePreviewOpen, setInvoicePreviewOpen] = useState(false);
   // The new MVP-style 5-step quote modal. Replaces the inline form for quote creation.
   const [quoteModalOpen, setQuoteModalOpen] = useState(false);
+
+  // Live wholesale rate from Cedar (sidebar "Today's wholesale rate" card). Refresh every 60s.
+  const [liveCedarRate, setLiveCedarRate] = useState(null);
+  useEffect(() => {
+    let cancelled = false;
+    const refresh = async () => {
+      const { ok, data } = await fetchCedarRate({ fromCurrencySymbol: "NGN", toCurrencySymbol: "USD", toAmount: 25000 });
+      if (!cancelled && ok && data?.rate) setLiveCedarRate({ rate: data.rate, fetchedAt: Date.now() });
+    };
+    refresh();
+    const i = setInterval(refresh, 60000);
+    return () => { cancelled = true; clearInterval(i); };
+  }, []);
 
   // Customer form (resets after every Send, so BDC can compose more quotes back-to-back)
   const [customerName, setCustomerName] = useState("");
@@ -4036,9 +4076,12 @@ function BDCRailQuotes() {
             </div>
           </Card>
           <Card>
-            <div className="font-mono text-[10px] uppercase tracking-wider mb-3" style={{ color: "var(--muted)" }}>Today's wholesale rate</div>
-            <div className="font-display text-3xl font-[500] tracking-tight">₦{(cedar?.nativeCostNGN || 1395).toFixed(2)}<span className="text-base ml-1" style={{ color: "var(--muted)" }}>/$</span></div>
-            <div className="mt-2 text-xs" style={{ color: "var(--muted)" }}>Updated every 4 minutes from licensed partner</div>
+            <div className="font-mono text-[10px] uppercase tracking-wider mb-3 flex items-center justify-between" style={{ color: "var(--muted)" }}>
+              <span>Today's wholesale rate</span>
+              {liveCedarRate && <span className="flex items-center gap-1" style={{ color: "var(--emerald)" }}><div className="h-1 w-1 rounded-full pulse-dot" style={{ background: "var(--emerald)" }} />live</span>}
+            </div>
+            <div className="font-display text-3xl font-[500] tracking-tight">₦{(liveCedarRate?.rate ?? cedar?.nativeCostNGN ?? 1395).toFixed(2)}<span className="text-base ml-1" style={{ color: "var(--muted)" }}>/$</span></div>
+            <div className="mt-2 text-xs" style={{ color: "var(--muted)" }}>{liveCedarRate ? "Live from licensed payment partner · refreshes every 60s" : "Connecting to licensed payment partner…"}</div>
           </Card>
         </div>
       </div>
