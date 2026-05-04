@@ -730,7 +730,7 @@ function TopBar({ view, setView, mobileOpen, setMobileOpen, onSignIn, onRequestA
     <div className="sticky top-0 z-50 backdrop-blur-xl" style={{ background: onLanding ? "rgba(10,11,13,0.72)" : "rgba(252,251,247,0.85)", borderBottom: `1px solid ${onLanding ? "rgba(255,255,255,0.06)" : "var(--line)"}`, color: onLanding ? "var(--bone)" : "var(--ink)" }}>
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         <div className="flex h-16 items-center justify-between">
-          <button onClick={() => setView("landing")} className="flex items-center gap-2.5">
+          <button onClick={() => setView(authUser ? "bdc" : "landing")} className="flex items-center gap-2.5">
             <div className="flex h-8 w-8 items-center justify-center rounded-lg" style={{ background: "linear-gradient(135deg, var(--emerald), var(--emerald-deep))" }}>
               <span className="font-display text-lg font-semibold" style={{ color: "var(--lime)" }}>X</span>
             </div>
@@ -739,6 +739,7 @@ function TopBar({ view, setView, mobileOpen, setMobileOpen, onSignIn, onRequestA
           <div className="hidden items-center gap-2 md:flex">
             {authUser ? (
               <>
+                {onLanding && <button onClick={() => setView("bdc")} className="rounded-lg px-3 py-1.5 text-sm font-medium transition" style={{ color: "var(--bone)" }}>Dashboard</button>}
                 <span className="hidden lg:inline font-mono text-[10px] uppercase tracking-wider truncate max-w-[200px]" style={{ color: onLanding ? "rgba(247,245,240,0.6)" : "var(--muted)" }} title={authUser.email}>{authUser.email}</span>
                 <button onClick={onSignOut} className="rounded-lg px-3 py-1.5 text-sm font-medium transition" style={{ color: onLanding ? "var(--bone)" : "var(--ink)" }}>Sign out</button>
               </>
@@ -754,7 +755,10 @@ function TopBar({ view, setView, mobileOpen, setMobileOpen, onSignIn, onRequestA
         {mobileOpen && (
           <div className="py-4 md:hidden" style={{ borderTop: `1px solid ${onLanding ? "rgba(255,255,255,0.06)" : "var(--line)"}` }}>
             {authUser ? (
-              <button onClick={() => { onSignOut(); setMobileOpen(false); }} className="w-full rounded-lg px-4 py-3 text-left text-sm font-medium" style={{ color: onLanding ? "var(--bone)" : "var(--ink)" }}>Sign out · {authUser.email}</button>
+              <div className="flex flex-col gap-2">
+                {onLanding && <button onClick={() => { setView("bdc"); setMobileOpen(false); }} className="w-full rounded-lg px-4 py-2.5 text-sm font-medium" style={{ background: "var(--lime)", color: "var(--ink)" }}>Open dashboard</button>}
+                <button onClick={() => { onSignOut(); setMobileOpen(false); }} className="w-full rounded-lg px-4 py-3 text-left text-sm font-medium" style={{ color: onLanding ? "var(--bone)" : "var(--ink)" }}>Sign out · {authUser.email}</button>
+              </div>
             ) : (
               <div className="flex flex-col gap-2">
                 <button onClick={() => { onSignIn(); setMobileOpen(false); }} className="w-full rounded-lg px-4 py-2.5 text-sm font-medium" style={{ border: `1px solid ${onLanding ? "rgba(255,255,255,0.1)" : "var(--line)"}`, color: onLanding ? "var(--bone)" : "var(--ink)" }}>Sign in</button>
