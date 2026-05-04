@@ -4770,30 +4770,33 @@ function AddRecipientModal({ open, onClose, onAdded }) {
 }
 
 function AddCustomerModal({ open, onClose, onAdded, onAddLocal }) {
+  // MVP 3-step "Stage 1: customer KYC" modal.
+  // Step 1: business info form. Step 2: required docs + WhatsApp upload recommendation.
+  // Step 3: submitted/success screen.
+  // The actual customer-row insert + WhatsApp onboarding link fires when the user clicks
+  // "Submit for review" at the end of step 2.
   const { push } = useToast();
   const auth = useAuth();
   const isSignedIn = !!auth.user;
-  const [mode, setMode] = useState("whatsapp");
-  const [name, setName] = useState("");
-  const [phone, setPhone] = useState("");
-  const [tier, setTier] = useState("SME");
-  const [kycTier, setKycTier] = useState(2);
-  const [bvn, setBvn] = useState("");
-  const [idType, setIdType] = useState("NIN");
-  const [idNumber, setIdNumber] = useState("");
-  const [docsUploaded, setDocsUploaded] = useState(false);
+  const empty = { name: "", contact: "", phone: "", email: "", cac: "", direction: "", purpose: "", tier: "SME" };
+  const [step, setStep] = useState(1);
+  const [data, setData] = useState(empty);
   const [submitting, setSubmitting] = useState(false);
+  const closeAndReset = () => { setStep(1); setData(empty); setSubmitting(false); onClose(); };
+  useEffect(() => {
+    if (!open) {
+      const t = setTimeout(() => { setStep(1); setData(empty); setSubmitting(false); }, 250);
+      return () => clearTimeout(t);
+    }
+  }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const reset = () => { setName(""); setPhone(""); setTier("SME"); setKycTier(2); setBvn(""); setIdType("NIN"); setIdNumber(""); setDocsUploaded(false); setMode("whatsapp"); setSubmitting(false); };
-  const closeAndReset = () => { reset(); onClose(); };
-
-  // Persist a customer row. Returns the inserted row's id (or null on local-only path).
+  // Persist customer row. Returns inserted row id (or null on local-only path).
   const persistCustomer = async (row) => {
     if (!isSignedIn) {
-      onAddLocal({ ...row, volume: 0, count: 0, addedAt: "just now" });
+      onAddLocal?.({ ...row, volume: 0, count: 0, addedAt: "just now" });
       return null;
     }
-    const { data, error } = await supabase
+    const { data: inserted, error } = await supabase
       .from("customers")
       .insert({
         bdc_user_id: auth.user.id,
@@ -4802,9 +4805,6 @@ function AddCustomerModal({ open, onClose, onAdded, onAddLocal }) {
         type: row.tier,
         kyc_status: row.kycStatus,
         kyc_tier: row.kycTier,
-        bvn: row.bvn || null,
-        id_type: row.idType || null,
-        id_number: row.idNumber || null,
         onboarded_via: row.onboardedVia,
         onboard_token: row.onboardToken || null,
         onboard_expires_at: row.onboardExpiresAt || null,
@@ -4816,62 +4816,47 @@ function AddCustomerModal({ open, onClose, onAdded, onAddLocal }) {
       console.error("Insert customer failed:", error);
       throw error;
     }
-    return data?.id;
+    return inserted?.id;
   };
 
-  const sendWhatsAppOnboardLink = async (e) => {
-    e.preventDefault();
-    if (!name || !phone) { push("Customer name and WhatsApp number required.", "warn"); return; }
+  // Submit for compliance review: persist + send WhatsApp onboarding link, then advance to step 3.
+  const submit = async () => {
+    if (!data.name || !data.contact || !data.email || !data.phone) {
+      push("Name, contact, phone and email are required.", "warn");
+      return;
+    }
     setSubmitting(true);
     try {
-      const phoneDigits = phone.replace(/[^\d]/g, "");
+      const phoneDigits = data.phone.replace(/[^\d]/g, "");
       const onboardTokenStr = encodeQuoteToken({
         type: "onboard",
-        customer: name,
-        bdcName: "Corporate Exchange BDC", // TODO: pull from auth.user.user_metadata once profiles wired
-        tier,
+        customer: data.name,
+        bdcName: auth.user?.user_metadata?.company || "Your operator",
+        tier: data.tier,
         requestedAt: new Date().toISOString(),
       });
-      const onboardExpiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(); // 7 days
+      const onboardExpiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
       const onboardUrl = `${window.location.origin}/?onboard=${onboardTokenStr}`;
 
       await persistCustomer({
-        name, phone, tier,
-        kycTier: 0, kycStatus: "pending",
+        name: data.name, phone: data.phone, tier: data.tier,
+        kycTier: 0, kycStatus: "submitted",
         onboardedVia: "whatsapp-link",
         onboardToken: onboardTokenStr,
         onboardExpiresAt,
       });
 
       const message =
-        `Hello ${name},%0A%0A` +
-        `Corporate Exchange BDC has invited you to onboard via XaePay.%0A%0A` +
-        `Tap to securely complete your KYC (BVN, ID, address) — takes about 4 minutes:%0A` +
+        `Hello ${data.name},%0A%0A` +
+        `${auth.user?.user_metadata?.company || "Your operator"} has invited you to onboard via XaePay.%0A%0A` +
+        `Tap to securely complete your KYC — takes about 4 minutes:%0A` +
         `${encodeURIComponent(onboardUrl)}%0A%0A` +
-        `Once approved, you can request trade payment quotes directly through us. Reply if you have questions.`;
+        `Once approved, you can request trade payment quotes directly. Reply if you have questions.`;
       window.open(`https://wa.me/${phoneDigits}?text=${message}`, "_blank");
 
-      push(`Onboarding link sent to ${name} on WhatsApp · added as KYC-pending`, "success");
-      if (isSignedIn) onAdded?.(); else closeAndReset();
-    } catch {
-      push("Couldn't save customer — try again.", "warn");
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  const submitCounter = async (e) => {
-    e.preventDefault();
-    if (!name || !phone || !bvn || !idNumber || !docsUploaded) { push("Complete all fields and upload docs to onboard at counter.", "warn"); return; }
-    setSubmitting(true);
-    try {
-      await persistCustomer({
-        name, phone, bvn, idType, idNumber, tier, kycTier,
-        kycStatus: "verified",
-        onboardedVia: "counter",
-      });
-      push(`${name} onboarded at counter · KYC Tier ${kycTier} assigned`, "success");
-      if (isSignedIn) onAdded?.(); else closeAndReset();
+      push(`${data.name} submitted for review · 5–15 day approval · WhatsApp link sent`, "success");
+      if (isSignedIn) onAdded?.();
+      setStep(3);
     } catch {
       push("Couldn't save customer — try again.", "warn");
     } finally {
@@ -4880,65 +4865,100 @@ function AddCustomerModal({ open, onClose, onAdded, onAddLocal }) {
   };
 
   return (
-    <Modal open={open} onClose={closeAndReset} title="Add a customer" size="lg">
-      <p className="text-sm mb-5" style={{ color: "var(--muted)" }}>Two ways to onboard. Pick whichever fits how you got the customer.</p>
-
-      <div className="grid gap-2 sm:grid-cols-2 mb-5">
-        <button onClick={() => setMode("whatsapp")} className="rounded-xl p-4 text-left transition" style={mode === "whatsapp" ? { background: "var(--ink)", color: "var(--bone)", border: "1px solid var(--ink)" } : { background: "white", border: "1px solid var(--line)" }}>
-          <div className="flex items-start gap-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-lg" style={mode === "whatsapp" ? { background: "rgba(197,242,74,0.1)", color: "var(--lime)" } : { background: "var(--bone-2)", color: "var(--emerald)" }}><MessageCircle size={16} /></div>
-            <div className="flex-1">
-              <div className="font-display text-base font-semibold">Push KYC link to WhatsApp</div>
-              <div className="text-xs mt-1" style={mode === "whatsapp" ? { color: "rgba(247,245,240,0.6)" } : { color: "var(--muted)" }}>Customer self-completes on their phone. Best for diaspora, businesses, tech-savvy customers.</div>
-            </div>
+    <Modal open={open} onClose={closeAndReset} title={`Onboard customer · Step ${step} of 3`} size="lg">
+      {step === 1 && (
+        <div className="space-y-5">
+          <div>
+            <h3 className="font-display text-lg font-semibold mb-2">Stage 1 of the platform: Customer KYC</h3>
+            <p className="text-sm" style={{ color: "var(--muted)" }}>Before your customer can transact, our licensed payment partner's compliance team must approve them. This typically takes 5–15 business days. Submit them here, we'll handle the review process and notify you when they're approved.</p>
           </div>
-        </button>
-        <button onClick={() => setMode("counter")} className="rounded-xl p-4 text-left transition" style={mode === "counter" ? { background: "var(--ink)", color: "var(--bone)", border: "1px solid var(--ink)" } : { background: "white", border: "1px solid var(--line)" }}>
-          <div className="flex items-start gap-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-lg" style={mode === "counter" ? { background: "rgba(197,242,74,0.1)", color: "var(--lime)" } : { background: "var(--bone-2)", color: "var(--emerald)" }}><Building2 size={16} /></div>
-            <div className="flex-1">
-              <div className="font-display text-base font-semibold">Onboard at the counter</div>
-              <div className="text-xs mt-1" style={mode === "counter" ? { color: "rgba(247,245,240,0.6)" } : { color: "var(--muted)" }}>You have their docs in hand. Capture BVN + ID, upload, KYC tier assigned immediately.</div>
-            </div>
-          </div>
-        </button>
-      </div>
-
-      {mode === "whatsapp" ? (
-        <form onSubmit={sendWhatsAppOnboardLink} className="space-y-4">
           <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="Customer name"><Input required value={name} onChange={(e) => setName(e.target.value)} placeholder="Adeyemi Okafor" /></Field>
-            <Field label="Customer WhatsApp"><Input required value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+234 803 ..." /></Field>
-            <Field label="Customer type"><Select value={tier} onChange={(e) => setTier(e.target.value)}><option>Individual</option><option>SME</option><option>Corporate</option></Select></Field>
+            <Field label="Business name" full><Input value={data.name} onChange={(e) => setData({ ...data, name: e.target.value })} placeholder="Adekunle Imports Ltd" /></Field>
+            <Field label="Primary contact"><Input value={data.contact} onChange={(e) => setData({ ...data, contact: e.target.value })} placeholder="Folake Adekunle" /></Field>
+            <Field label="Phone (WhatsApp)"><Input value={data.phone} onChange={(e) => setData({ ...data, phone: e.target.value })} placeholder="+234 803 123 4567" /></Field>
+            <Field label="Email"><Input type="email" value={data.email} onChange={(e) => setData({ ...data, email: e.target.value })} placeholder="contact@adekunle.ng" /></Field>
+            <Field label="CAC / business registration"><Input value={data.cac} onChange={(e) => setData({ ...data, cac: e.target.value })} placeholder="RC1234567 or equivalent" /></Field>
+            <Field label="Direction of payments">
+              <Select value={data.direction} onChange={(e) => setData({ ...data, direction: e.target.value })}>
+                <option value="">Select</option>
+                <option value="outbound">Outbound · Nigeria → World</option>
+                <option value="inbound">Inbound · World → Nigeria</option>
+                <option value="both">Both directions</option>
+              </Select>
+            </Field>
+            <Field label="Primary use case" full>
+              <Select value={data.purpose} onChange={(e) => setData({ ...data, purpose: e.target.value })}>
+                <option value="">Select</option>
+                <option>Trade payments to suppliers</option>
+                <option>Service payments abroad</option>
+                <option>Receiving from foreign buyers</option>
+                <option>Aggregator (consolidating others)</option>
+                <option>Mixed</option>
+              </Select>
+            </Field>
+            <Field label="Customer type" full>
+              <Select value={data.tier} onChange={(e) => setData({ ...data, tier: e.target.value })}>
+                <option>Individual</option><option>SME</option><option>Corporate</option>
+              </Select>
+            </Field>
           </div>
-          <div className="rounded-xl p-4 text-xs" style={{ background: "var(--bone)", border: "1px solid var(--line)" }}>
+          <div className="flex justify-end pt-2"><PrimaryBtn onClick={() => setStep(2)} disabled={!data.name || !data.contact || !data.email}>Continue <ArrowRight size={14} /></PrimaryBtn></div>
+        </div>
+      )}
+
+      {step === 2 && (
+        <div className="space-y-5">
+          <div>
+            <h3 className="font-display text-lg font-semibold mb-2">Documents required for compliance review</h3>
+            <p className="text-sm" style={{ color: "var(--muted)" }}>You can either upload these now, or we'll send your customer a WhatsApp link where they upload directly. Most operators prefer the WhatsApp option — less work for you.</p>
+          </div>
+          <div className="space-y-2.5">
+            {[
+              "CAC certificate (incorporation document)",
+              "Form CAC 1.1 (current directors and shareholders)",
+              "Director's NIN slip + selfie",
+              "Bank statements (last 3 months)",
+              "Source of funds declaration",
+              "Beneficial ownership disclosure (if 25%+ owner)",
+            ].map((d, i) => (
+              <div key={i} className="flex items-center gap-2.5 text-sm rounded-lg p-3" style={{ background: "var(--bone)", border: "1px solid var(--line)" }}>
+                <FileText size={14} style={{ color: "var(--emerald)" }} />
+                <span style={{ color: "var(--ink)" }}>{d}</span>
+              </div>
+            ))}
+          </div>
+          <div className="rounded-xl p-4" style={{ background: "rgba(15,95,63,0.06)", border: "1px solid rgba(15,95,63,0.2)" }}>
             <div className="flex items-start gap-2">
-              <Sparkles size={14} className="mt-0.5 flex-shrink-0" style={{ color: "var(--emerald)" }} />
-              <p style={{ color: "var(--muted)" }}>Customer receives a secure link on WhatsApp to complete KYC themselves (BVN, ID, address — guided step-by-step). They appear in your customer list immediately as <span className="font-semibold" style={{ color: "var(--ink)" }}>KYC-pending</span> and tier promotes once docs are reviewed.</p>
+              <MessageCircle size={14} className="mt-0.5 flex-shrink-0" style={{ color: "var(--emerald)" }} />
+              <p className="text-sm" style={{ color: "var(--ink)" }}><span className="font-semibold">WhatsApp upload recommended.</span> We'll send {data.contact || "your customer"} a link they tap to upload everything from their phone. They get notifications as compliance reviews each document.</p>
             </div>
           </div>
-          <PrimaryBtn type="submit" full disabled={submitting}>{submitting ? <><Loader2 size={14} className="spin" /> Saving…</> : <><MessageCircle size={14} /> Send onboarding link on WhatsApp</>}</PrimaryBtn>
-        </form>
-      ) : (
-        <form onSubmit={submitCounter} className="space-y-4">
-          <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="Customer name"><Input required value={name} onChange={(e) => setName(e.target.value)} placeholder="Adeyemi Okafor" /></Field>
-            <Field label="WhatsApp / phone"><Input required value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+234 803 ..." /></Field>
-            <Field label="BVN"><Input required value={bvn} onChange={(e) => setBvn(e.target.value)} placeholder="22XXXXXXXXX" /></Field>
-            <Field label="ID type"><Select value={idType} onChange={(e) => setIdType(e.target.value)}><option>NIN</option><option>Passport</option><option>Driver's License</option><option>Voter's Card</option></Select></Field>
-            <Field label="ID number" full><Input required value={idNumber} onChange={(e) => setIdNumber(e.target.value)} placeholder="Number on the document" /></Field>
-            <Field label="Customer type"><Select value={tier} onChange={(e) => setTier(e.target.value)}><option>Individual</option><option>SME</option><option>Corporate</option></Select></Field>
-            <Field label="Assigned KYC tier"><Select value={kycTier} onChange={(e) => setKycTier(parseInt(e.target.value))}><option value={1}>Tier 1 — basic ID only ($0–5K)</option><option value={2}>Tier 2 — ID + BVN + address ($5K–50K)</option><option value={3}>Tier 3 — full corporate / EDD ($50K+)</option></Select></Field>
+          <div className="flex justify-between pt-2">
+            <SecondaryBtn onClick={() => setStep(1)}>Back</SecondaryBtn>
+            <PrimaryBtn onClick={submit} disabled={submitting}>{submitting ? <><Loader2 size={14} className="spin" /> Submitting…</> : <>Submit for review <ArrowRight size={14} /></>}</PrimaryBtn>
           </div>
-          <UploadRow label="ID + selfie + proof of address" sublabel="JPG / PDF — usually a phone photo at the counter is fine" done={docsUploaded} onClick={() => { setDocsUploaded(true); push("Docs received · ready to onboard", "success"); }} />
-          <div className="rounded-xl p-4 text-xs" style={{ background: "rgba(15,95,63,0.06)", border: "1px solid rgba(15,95,63,0.2)" }}>
-            <div className="flex items-start gap-2">
-              <Shield size={14} className="mt-0.5 flex-shrink-0" style={{ color: "var(--emerald)" }} />
-              <p style={{ color: "var(--ink)" }}>Customer is added to your roster immediately at the chosen tier. NIBSS BVN check + sanctions screen run automatically — flagged if anything trips.</p>
-            </div>
+        </div>
+      )}
+
+      {step === 3 && (
+        <div className="text-center py-6">
+          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full mb-5" style={{ background: "var(--bone-2)" }}>
+            <Loader2 size={28} className="spin" style={{ color: "var(--emerald)" }} />
           </div>
-          <PrimaryBtn type="submit" full disabled={!docsUploaded || submitting}>{submitting ? <><Loader2 size={14} className="spin" /> Saving…</> : <><Plus size={14} /> Onboard customer at counter</>}</PrimaryBtn>
-        </form>
+          <h3 className="font-display text-2xl font-semibold mb-3">Submitted for review</h3>
+          <p className="text-sm max-w-md mx-auto mb-6" style={{ color: "var(--muted)" }}>{data.name || "Your customer"} is now in compliance review. Expected approval: <span className="font-semibold" style={{ color: "var(--ink)" }}>5–15 business days</span>. WhatsApp upload link sent to {data.phone || "their phone"}.</p>
+          <div className="rounded-xl p-4 max-w-md mx-auto mb-6 text-left" style={{ background: "var(--bone)", border: "1px solid var(--line)" }}>
+            <div className="text-xs font-mono uppercase tracking-wider mb-2" style={{ color: "var(--muted)" }}>What happens next</div>
+            <ol className="space-y-1.5 text-sm list-none">
+              <li>1. Customer uploads documents via WhatsApp link</li>
+              <li>2. Compliance team reviews (1–3 days for internal review)</li>
+              <li>3. If anything's missing, you and customer get notified</li>
+              <li>4. Approval lands in your dashboard, customer can transact</li>
+              <li>5. You get notified to start quoting</li>
+            </ol>
+          </div>
+          <PrimaryBtn onClick={closeAndReset}>Done</PrimaryBtn>
+        </div>
       )}
     </Modal>
   );
