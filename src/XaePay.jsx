@@ -1771,7 +1771,7 @@ function Hero({ setView, onRequestAccess, onWaitlist }) {
         <div className="grid gap-14 lg:grid-cols-12 lg:gap-10">
           <div className="lg:col-span-7">
             <h1 className="rise font-display text-[44px] font-[450] leading-[1.02] tracking-tight sm:text-6xl lg:text-[82px]">The intelligence<br /><span className="italic" style={{ color: "var(--lime)" }}>layer</span> for cross-<br />border payments.</h1>
-            <p className="rise mt-8 max-w-xl text-base leading-relaxed sm:text-lg" style={{ color: "rgba(247,245,240,0.65)", animationDelay: "0.16s" }}>The AI compliance and routing infrastructure for Nigerian cross-border payments. Businesses, individuals, BDCs, and liquidity providers — all with full audit trail, fiat or stablecoin.</p>
+            <p className="rise mt-8 max-w-xl text-base leading-relaxed sm:text-lg" style={{ color: "rgba(247,245,240,0.65)", animationDelay: "0.16s" }}>The AI compliance and routing infrastructure for Nigerian cross-border payments — built for agent operators worldwide. Full audit trail, fiat or stablecoin, every transaction.</p>
             <div className="rise mt-10 flex flex-col gap-3 sm:flex-row" style={{ animationDelay: "0.24s" }}>
               <button onClick={onWaitlist} className="glow-lime group inline-flex items-center justify-center gap-2 rounded-xl px-6 py-3.5 text-sm font-semibold transition" style={{ background: "var(--lime)", color: "var(--ink)" }}>Join waitlist <ArrowRight size={16} /></button>
               <a href={WHATSAPP_URL} target="_blank" rel="noreferrer" className="group inline-flex items-center justify-center gap-2 rounded-xl px-6 py-3.5 text-sm font-semibold transition hover:bg-white/5" style={{ border: "1px solid rgba(255,255,255,0.15)", color: "var(--bone)" }}><MessageCircle size={16} /> Talk to us on WhatsApp</a>
@@ -1824,9 +1824,9 @@ function HeroWidget() {
 
 function Ticker() {
   const data = [
-    { label: "USD / NGN", value: "1,395.00", delta: "BDC quote" },
-    { label: "GBP / NGN", value: "1,852.00", delta: "BDC quote" },
-    { label: "EUR / NGN", value: "1,602.00", delta: "BDC quote" },
+    { label: "USD / NGN", value: "1,395.00", delta: "Operator quote" },
+    { label: "GBP / NGN", value: "1,852.00", delta: "Operator quote" },
+    { label: "EUR / NGN", value: "1,602.00", delta: "Operator quote" },
     { label: "USDT / NGN", value: "1,388.40", delta: "LP match" },
     { label: "Corridors", value: "NGN ↔ USD, GBP, EUR, CNY, AED + diaspora inbound", delta: "" },
     { label: "Rails", value: "Licensed payment partner network", delta: "" },
@@ -1958,7 +1958,7 @@ function SidesSection({ setView }) {
         <SideMiniCard icon={Building2} label="Businesses" desc="Pay foreign suppliers. Direct rail access." onClick={() => setView("customer")} live />
         <SideMiniCard icon={Send} label="Overseas Operators" desc="Individuals or businesses abroad sending foreign currency to settle as NGN locally in Nigeria." onClick={() => setView("diaspora")} live />
         <SideMiniCard icon={User} label="Individuals" desc="Trade payments via BDC payment-agent." onClick={() => setView("customer")} phase2 />
-        <SideMiniCard icon={Briefcase} label="BDCs" desc="CBN-licensed bureaus. Operate platform, source liquidity." onClick={() => setView("bdc")} live />
+        <SideMiniCard icon={Briefcase} label="Exchange Operators" desc="CBN-licensed BDCs and equivalent foreign wrappers. Operate platform, source liquidity." onClick={() => setView("bdc")} live />
         <SideMiniCard icon={Layers} label="Payment Agents" desc="IMTO / SCUML / CAC+BDC-partner. Same platform, different wrapper." onClick={() => setView("bdc")} live />
         <SideMiniCard icon={Coins} label="Liquidity Providers" desc="Sell USDT to BDCs. Receive naira." onClick={() => setView("lp")} phase2 />
       </div>
