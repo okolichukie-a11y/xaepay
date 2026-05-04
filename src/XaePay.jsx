@@ -215,17 +215,20 @@ function AppShell() {
   const auth = useAuth();
   // Reconcile real auth user → session: when a magic-link visitor lands signed-in,
   // hydrate the local session from their user_metadata so dashboards work without onboarding.
+  // Simpler-MVP rule: every signed-in user is an operator. Route them straight to the
+  // operator dashboard if they're still on the landing page when auth resolves.
   useEffect(() => {
     if (!auth.user) return;
     const meta = auth.user.user_metadata || {};
     setSession((prev) => prev.type ? prev : ({
-      type: meta.role || "business",
+      type: "bdc",
       tier: meta.tier ?? 1,
-      name: meta.name || auth.user.email,
+      name: meta.name || meta.company || auth.user.email,
       company: meta.company || null,
       email: auth.user.email,
       authUserId: auth.user.id,
     }));
+    setView((prev) => (prev === "landing" ? "bdc" : prev));
   }, [auth.user]);
   useEffect(() => {
     const onPop = () => {
