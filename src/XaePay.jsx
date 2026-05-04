@@ -473,7 +473,7 @@ function QuoteApprovalPage({ quote: initialQuote }) {
         <div className="mt-10 rounded-xl p-4 text-xs" style={{ background: "var(--bone)", border: "1px solid var(--line)", color: "var(--muted)" }}>
           <div className="flex items-start gap-2">
             <Shield size={14} className="mt-0.5 flex-shrink-0" style={{ color: "var(--emerald)" }} />
-            <p>XaePay is a software and compliance layer. The actual payment is executed by {quote.bdcName || "your CBN-licensed operator"} via licensed rail partners (Triple-A or Cedar Money). XaePay does not custody your funds.</p>
+            <p>XaePay is a software and compliance layer. The actual payment is executed by {quote.bdcName || "your licensed operator"} via our licensed payment partner. XaePay does not custody your funds.</p>
           </div>
         </div>
       </main>
@@ -1451,7 +1451,7 @@ function BDCOnboarding({ onComplete }) {
     <div className="rise">
       <SectionEyebrow>BDC operator onboarding</SectionEyebrow>
       <h1 className="font-display mt-3 text-3xl font-[450] tracking-tight sm:text-4xl">Set up your BDC operator account.</h1>
-      <p className="mt-2 text-sm" style={{ color: "var(--muted)" }}>Five steps. Includes Triple-A and Cedar Money partner intake at the end.</p>
+      <p className="mt-2 text-sm" style={{ color: "var(--muted)" }}>Five steps. Includes licensed payment partner intake at the end.</p>
       <div className="mt-8"><OnboardingStepper step={step} steps={["License", "Principal", "Compliance", "Banking", "Partners"]} /></div>
       <div className="mt-6">
         {step === 1 && (
@@ -1532,24 +1532,18 @@ function BDCOnboarding({ onComplete }) {
         )}
         {step === 5 && (
           <Card>
-            <h2 className="font-display text-xl font-semibold">Partner intake</h2>
-            <p className="mt-1 text-sm" style={{ color: "var(--muted)" }}>Triple-A and Cedar Money each have a partnership questionnaire.</p>
-            <div className="mt-6 grid gap-3 sm:grid-cols-2">
-              <button onClick={() => { setData({ ...data, partnerQ: { ...data.partnerQ, tripleA: !data.partnerQ.tripleA } }); push(data.partnerQ.tripleA ? "Triple-A skipped" : "Triple-A questionnaire complete", "success"); }} className="rounded-xl p-5 text-left transition" style={data.partnerQ.tripleA ? { background: "var(--ink)", color: "var(--bone)", border: "1px solid var(--ink)" } : { background: "white", border: "1px solid var(--line)" }}>
-                <div className="flex items-start justify-between">
-                  <div><div className="font-display text-base font-semibold">Triple-A</div><div className="font-mono text-[10px] uppercase tracking-wider mt-0.5" style={data.partnerQ.tripleA ? { color: "rgba(247,245,240,0.6)" } : { color: "var(--muted)" }}>Singapore · MAS-licensed</div></div>
-                  {data.partnerQ.tripleA && <CheckCircle2 size={16} style={{ color: "var(--lime)" }} />}
+            <h2 className="font-display text-xl font-semibold">Payment partner intake</h2>
+            <p className="mt-1 text-sm" style={{ color: "var(--muted)" }}>Quick partnership questionnaire so our licensed payment partner can onboard your operation.</p>
+            <button onClick={() => { setData({ ...data, partnerQ: { ...data.partnerQ, cedar: !data.partnerQ.cedar } }); push(data.partnerQ.cedar ? "Partner intake skipped" : "Partner intake complete", "success"); }} className="mt-6 w-full rounded-xl p-5 text-left transition" style={data.partnerQ.cedar ? { background: "var(--ink)", color: "var(--bone)", border: "1px solid var(--ink)" } : { background: "white", border: "1px solid var(--line)" }}>
+              <div className="flex items-start justify-between">
+                <div>
+                  <div className="font-display text-base font-semibold">Licensed payment partner</div>
+                  <div className="font-mono text-[10px] uppercase tracking-wider mt-0.5" style={data.partnerQ.cedar ? { color: "rgba(247,245,240,0.6)" } : { color: "var(--muted)" }}>Regulated cross-border payment infrastructure</div>
                 </div>
-                <p className="mt-3 text-xs" style={data.partnerQ.tripleA ? { color: "rgba(247,245,240,0.7)" } : { color: "var(--muted)" }}>Direct USD wires, T+0 to most corridors.</p>
-              </button>
-              <button onClick={() => { setData({ ...data, partnerQ: { ...data.partnerQ, cedar: !data.partnerQ.cedar } }); push(data.partnerQ.cedar ? "Cedar skipped" : "Cedar questionnaire complete", "success"); }} className="rounded-xl p-5 text-left transition" style={data.partnerQ.cedar ? { background: "var(--ink)", color: "var(--bone)", border: "1px solid var(--ink)" } : { background: "white", border: "1px solid var(--line)" }}>
-                <div className="flex items-start justify-between">
-                  <div><div className="font-display text-base font-semibold">Cedar Money</div><div className="font-mono text-[10px] uppercase tracking-wider mt-0.5" style={data.partnerQ.cedar ? { color: "rgba(247,245,240,0.6)" } : { color: "var(--muted)" }}>US/NG · stablecoin rails</div></div>
-                  {data.partnerQ.cedar && <CheckCircle2 size={16} style={{ color: "var(--lime)" }} />}
-                </div>
-                <p className="mt-3 text-xs" style={data.partnerQ.cedar ? { color: "rgba(247,245,240,0.7)" } : { color: "var(--muted)" }}>USDT-backed corridors, cheaper for sub-$50K.</p>
-              </button>
-            </div>
+                {data.partnerQ.cedar && <CheckCircle2 size={16} style={{ color: "var(--lime)" }} />}
+              </div>
+              <p className="mt-3 text-xs" style={data.partnerQ.cedar ? { color: "rgba(247,245,240,0.7)" } : { color: "var(--muted)" }}>End-to-end execution across major corridors. Same-day settlement standard. We handle the partner-side intake on your behalf.</p>
+            </button>
             <div className="mt-6 flex justify-between"><SecondaryBtn onClick={() => setStep(4)}>Back</SecondaryBtn><PrimaryBtn onClick={() => onComplete({ type: "bdc", tier: null, name: data.verified?.name, company: data.verified?.name })}>Finish onboarding <Sparkles size={14} /></PrimaryBtn></div>
           </Card>
         )}
@@ -1660,9 +1654,9 @@ function Landing({ setView, onRequestAccess, onWaitlist }) {
 
 function StructureSection() {
   const points = [
-    { n: "01", title: "We never custody funds", body: "Customer money goes directly to a CBN-licensed BDC's account. Foreign-currency wires are executed by Triple-A or Cedar Money — both regulated where they operate. XaePay never touches funds, never pools client money, never holds digital assets." },
-    { n: "02", title: "We never act as counterparty", body: "Every transaction is between named parties — customer, BDC, rail partner, beneficiary — disclosed at every step. XaePay is the software layer, not a party to the trade." },
-    { n: "03", title: "We never quote FX", body: "Cedar Money quotes in NGN. Triple-A quotes in USDT. The BDC sets the customer rate. XaePay surfaces the math and disclosures — but the spread belongs to the licensed operator." },
+    { n: "01", title: "We never custody funds", body: "Customer money goes directly to your licensed agent operator's account. Foreign-currency wires are executed by our licensed payment partners, regulated where they operate. XaePay never touches funds, never pools client money, never holds digital assets." },
+    { n: "02", title: "We never act as counterparty", body: "Every transaction is between named parties — customer, agent operator, payment partner, beneficiary — disclosed at every step. XaePay is the software layer, not a party to the trade." },
+    { n: "03", title: "We never quote FX", body: "Our payment partner provides the wholesale rate. The agent operator sets the customer rate. XaePay surfaces the math and disclosures — but the spread belongs to the licensed operator." },
   ];
   return (
     <section className="border-b" style={{ borderColor: "var(--line)", background: "var(--bone)" }}>
@@ -1725,7 +1719,7 @@ function HeroWidget() {
     { label: "Invoice received", status: "Parsing metadata…", icon: FileText },
     { label: "Payer-name validated", status: "Match confirmed", icon: CheckCircle2 },
     { label: "Sanctions screening", status: "Clear — 0 hits", icon: Shield },
-    { label: "Rate locked · routing", status: "Cedar USDT · ₦18 cheaper", icon: Zap },
+    { label: "Rate locked · routing", status: "Optimal route · ₦18 cheaper", icon: Zap },
     { label: "Payment executed", status: "MT103 delivered", icon: Send },
   ];
   return (
@@ -1762,7 +1756,7 @@ function Ticker() {
     { label: "EUR / NGN", value: "1,602.00", delta: "BDC quote" },
     { label: "USDT / NGN", value: "1,388.40", delta: "LP match" },
     { label: "Corridors", value: "NGN ↔ USD, GBP, EUR, CNY, AED + diaspora inbound", delta: "" },
-    { label: "Rails", value: "Triple-A · Cedar · USDT", delta: "" },
+    { label: "Rails", value: "Licensed payment partner network", delta: "" },
     { label: "Rejection rate", value: "0.3%", delta: "vs 7% industry" },
   ];
   return (
@@ -1787,7 +1781,7 @@ function ProblemSection() {
     { icon: FileText, title: "Stale invoices", body: "90-day-old invoices that receiving banks reject on review." },
     { icon: AlertTriangle, title: "Payer-name mismatch", body: "CBN rules require the payer on invoice to match sending account." },
     { icon: Receipt, title: "Amount reconciliation", body: "Partial payments without documentation get flagged and held." },
-    { icon: Shield, title: "Quarterly rail reviews", body: "Triple-A and Cedar audit evidence packs. Missing docs lose access." },
+    { icon: Shield, title: "Quarterly partner reviews", body: "Audit evidence packs prepared and delivered to our licensed payment partner each quarter. Missing docs risks rail access." },
   ];
   return (
     <section className="mx-auto max-w-7xl px-4 py-20 sm:px-6 lg:px-8 lg:py-28">
@@ -1814,32 +1808,29 @@ function ProblemSection() {
 }
 
 function RailsSection() {
-  const rails = [
-    { name: "Triple-A Direct USD", desc: "Singapore-licensed, T+0 wire to most corridors", best: "Best for $100K+ corporate" },
-    { name: "Cedar Money Stablecoin", desc: "USDT corridors with USD off-ramp at destination", best: "Best for mid-volume" },
-    { name: "BDC USDT Settlement", desc: "BDC sources USDT directly from listed liquidity providers", best: "Cheapest for sub-$50K" },
-    { name: "Internal USD Inventory", desc: "BDC's existing USD reserves at correspondent banks", best: "Instant settlement" },
+  const guarantees = [
+    { title: "Same-day execution", desc: "Standard wires settle T+0 to most corridors; T+1 in tighter windows. Live status surfaced to your agent operator and customer." },
+    { title: "Multiple settlement corridors", desc: "USD, GBP, EUR, CNY, AED outbound. NGN inbound. Best-route logic picks the corridor with the lowest all-in cost for each transaction." },
+    { title: "Disclosed at every hop", desc: "Customer, agent operator, payment partner, beneficiary — every party is named on the audit trail. No silent intermediaries." },
+    { title: "Compliance-ready by default", desc: "Sanctions screening, payer-name match, Form M / Form A pre-flight. Documentation generated and archived per transaction." },
   ];
   return (
     <section className="border-y" style={{ borderColor: "var(--line)", background: "var(--bone)" }}>
       <div className="mx-auto max-w-7xl px-4 py-20 sm:px-6 lg:px-8 lg:py-28">
         <div className="grid gap-12 lg:grid-cols-12">
           <div className="lg:col-span-5">
-            <SectionEyebrow>§02  Rail intelligence</SectionEyebrow>
-            <h2 className="font-display mt-4 text-4xl font-[450] leading-[1.05] tracking-tight sm:text-5xl">Four rails.<br />One <span className="italic" style={{ color: "var(--emerald)" }}>routed</span> transaction.</h2>
-            <p className="mt-6 max-w-md text-base leading-relaxed" style={{ color: "var(--muted)" }}>You don't pick the rail. We do — based on amount, destination, urgency, and live pricing. Every choice is disclosed.</p>
+            <SectionEyebrow>§02  Payment infrastructure</SectionEyebrow>
+            <h2 className="font-display mt-4 text-4xl font-[450] leading-[1.05] tracking-tight sm:text-5xl">Backed by <span className="italic" style={{ color: "var(--emerald)" }}>licensed</span> payment partners.</h2>
+            <p className="mt-6 max-w-md text-base leading-relaxed" style={{ color: "var(--muted)" }}>XaePay routes every transaction through regulated payment infrastructure. Your agent operator handles the customer; our partners handle the wire. You get the workflow, the docs, and the audit trail.</p>
           </div>
           <div className="lg:col-span-7">
             <div className="space-y-3">
-              {rails.map((r, i) => (
+              {guarantees.map((g, i) => (
                 <div key={i} className="card-soft rounded-2xl bg-white p-5 flex items-start gap-4" style={{ border: "1px solid var(--line)" }}>
-                  <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg" style={{ background: "var(--bone-2)", color: "var(--emerald)" }}><Layers size={16} /></div>
+                  <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg" style={{ background: "var(--bone-2)", color: "var(--emerald)" }}><Shield size={16} /></div>
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-baseline justify-between gap-3">
-                      <h3 className="font-display text-base font-semibold">{r.name}</h3>
-                      <span className="font-mono text-[10px] uppercase tracking-wider whitespace-nowrap" style={{ color: "var(--emerald)" }}>{r.best}</span>
-                    </div>
-                    <p className="mt-1 text-sm" style={{ color: "var(--muted)" }}>{r.desc}</p>
+                    <h3 className="font-display text-base font-semibold">{g.title}</h3>
+                    <p className="mt-1 text-sm" style={{ color: "var(--muted)" }}>{g.desc}</p>
                   </div>
                 </div>
               ))}
@@ -2007,7 +1998,7 @@ function DiasporaPricing({ onRequestAccess }) {
           features={["Everything in Small sends", "Purpose-specific docs (vendor, school, property)", "Multi-currency: USD / GBP / EUR / CAD", "Priority routing on Cedar rail", "Receipt + recipient confirmation"]}
           min="No subscription · pay per send" highlighted onSelect={onRequestAccess} />
         <PriceCard tier="Large sends" subtitle="Above $5,000" price="0.40%" priceSuffix="capped at $49"
-          features={["Everything in Regular sends", "Enhanced vendor documentation", "Triple-A fiat rail for $25K+", "Dedicated compliance support", "Volume bonuses above $50K/month"]}
+          features={["Everything in Regular sends", "Enhanced vendor documentation", "Premium routing for $25K+", "Dedicated compliance support", "Volume bonuses above $50K/month"]}
           min="Tier 2 or 3 account required" onSelect={onRequestAccess} />
       </div>
       <div className="mt-5 rounded-xl p-4 text-xs" style={{ background: "rgba(15,95,63,0.06)", border: "1px solid rgba(15,95,63,0.2)" }}>
@@ -2025,7 +2016,7 @@ function BDCPricing({ onRequestAccess }) {
     <div>
       <div className="grid gap-5 lg:grid-cols-3">
         <PriceCard tier="Operator" subtitle="Under $2M/mo volume" price="$500" priceSuffix="/ month"
-          features={["Full compliance dashboard", "Agent-powered transaction processing", "CBN reporting automation", "Customer KYB management", "Rail access (Triple-A + Cedar)", "25% rev-share on end-user fees"]}
+          features={["Full compliance dashboard", "Agent-powered transaction processing", "CBN reporting automation", "Customer KYB management", "Licensed payment partner access", "25% rev-share on end-user fees"]}
           min="3-month minimum commitment" onSelect={onRequestAccess} />
         <PriceCard tier="Scale" subtitle="$2M – $10M/mo volume" price="$2,000" priceSuffix="/ month"
           features={["Everything in Operator", "USDT Liquidity Marketplace access", "Payment Agent tooling for individuals", "Quarterly partner evidence packs", "Priority compliance support", "25% rev-share on end-user fees"]}
@@ -2049,7 +2040,7 @@ function PaymentAgentPricing({ onRequestAccess }) {
     <div>
       <div className="grid gap-5 lg:grid-cols-3">
         <PriceCard tier="Operator" subtitle="Under $5M/mo volume" price="$750" priceSuffix="/ month"
-          features={["Full compliance dashboard", "Agent-powered transaction processing", "Regulatory reporting (CBN, SCUML, HMRC, FinCEN as applicable)", "Customer KYB management", "Rail access (Triple-A + Cedar)", "25% rev-share on end-user fees"]}
+          features={["Full compliance dashboard", "Agent-powered transaction processing", "Regulatory reporting (CBN, SCUML, HMRC, FinCEN as applicable)", "Customer KYB management", "Licensed payment partner access", "25% rev-share on end-user fees"]}
           min="3-month minimum commitment" onSelect={onRequestAccess} />
         <PriceCard tier="Scale" subtitle="$5M – $25M/mo volume" price="$2,500" priceSuffix="/ month"
           features={["Everything in Operator", "USDT Liquidity Marketplace access", "Multi-wrapper reporting automation", "Quarterly partner evidence packs", "Priority compliance support", "25% rev-share on end-user fees"]}
@@ -2266,9 +2257,9 @@ function StepIntake({ data, setData, onNext, userTier, isIndividual }) {
         <Label>Rail preference</Label>
         <div className="grid gap-2 sm:grid-cols-2">
           <RoleBtn active={data.rail === "auto"} onClick={() => setData({ ...data, rail: "auto" })}>Auto-route (recommended)</RoleBtn>
-          <RoleBtn active={data.rail === "fiat"} onClick={() => setData({ ...data, rail: "fiat" })}>Force Triple-A direct USD</RoleBtn>
+          {SHOW_TRIPLE_A && <RoleBtn active={data.rail === "fiat"} onClick={() => setData({ ...data, rail: "fiat" })}>Force Triple-A direct USD</RoleBtn>}
         </div>
-        <p className="mt-2 font-mono text-[10px] uppercase tracking-wider" style={{ color: "var(--muted)" }}>{data.rail === "auto" ? "We'll choose the cheapest available rail" : "Override: fiat-only routing"}</p>
+        <p className="mt-2 font-mono text-[10px] uppercase tracking-wider" style={{ color: "var(--muted)" }}>{data.rail === "auto" ? "We'll choose the optimal route" : "Override: fiat-only routing"}</p>
       </div>
       <div className="mt-6">
         <Label>Upload invoice</Label>
@@ -2288,7 +2279,7 @@ function StepCompliance({ onNext, onBack, isIndividual }) {
     { label: "Payer-name match", status: "pass", detail: "Invoice payer matches sending account" },
     { label: "Supplier sanctions", status: "pass", detail: "No hits on OFAC, UN, EU, Nigerian watchlists" },
     { label: "Form M pre-flight", status: "pass", detail: "HS code 8517.62.00 · Form M attached" },
-    { label: "Rail availability", status: "pass", detail: "Cedar USDT selected · ₦18 below Triple-A direct" },
+    { label: "Rail availability", status: "pass", detail: "Optimal route selected · ₦18 below alternate" },
   ];
   const individualChecks = isIndividual ? [{ label: "Third-party authorization", status: "pass", detail: "BDC payment-agent letter generated · disclosed to receiving bank" }] : [];
   const checks = [...baseChecks, ...individualChecks];
@@ -2316,7 +2307,7 @@ function StepReview({ data, onNext, onBack, isIndividual }) {
   const xaeFee = Math.max(25, amount * 0.005);
   const bdcSpread = amount * 0.018;
   const total = amount + xaeFee + bdcSpread;
-  const railName = data.rail === "fiat" ? "Triple-A direct USD" : "Cedar USDT corridor";
+  const railName = !SHOW_TRIPLE_A ? "Licensed payment partner" : (data.rail === "fiat" ? "Triple-A direct USD" : "Cedar USDT corridor");
   return (
     <Card>
       <h2 className="font-display text-xl font-semibold">Review & confirm</h2>
@@ -2324,7 +2315,7 @@ function StepReview({ data, onNext, onBack, isIndividual }) {
       <div className="mt-6 rounded-xl p-4" style={{ background: "var(--ink)", color: "var(--bone)" }}>
         <div className="flex items-start gap-3"><Layers size={16} className="mt-0.5 flex-shrink-0" style={{ color: "var(--lime)" }} />
           <div className="flex-1 text-xs"><div className="font-mono uppercase tracking-wider" style={{ color: "rgba(247,245,240,0.6)" }}>Selected rail</div><div className="font-display text-base font-semibold mt-0.5">{railName}</div>
-            <p className="mt-1 leading-relaxed" style={{ color: "rgba(247,245,240,0.65)" }}>{isIndividual ? `${data.bdc} sources USDT from listed LP → off-ramps via Cedar Money → wires to ${data.supplier}.` : `Routed via ${data.bdc} → off-ramps via Cedar Money → MT103 wire to ${data.supplier}.`}</p>
+            <p className="mt-1 leading-relaxed" style={{ color: "rgba(247,245,240,0.65)" }}>{isIndividual ? `${data.bdc} routes via our licensed payment partner → wires to ${data.supplier}.` : `Routed via ${data.bdc} → our licensed payment partner → MT103 wire to ${data.supplier}.`}</p>
           </div>
         </div>
       </div>
@@ -2369,9 +2360,8 @@ function StepConfirmed({ data, onNew, onHistory, isIndividual }) {
         <div className="font-mono text-[10px] uppercase tracking-wider" style={{ color: "rgba(247,245,240,0.6)" }}>Audit trail</div>
         <div className="mt-2 space-y-1.5 text-xs font-mono" style={{ color: "rgba(247,245,240,0.85)" }}>
           <div>1. {isIndividual ? "You → " : ""}{data.bdc} ← ₦{(parseFloat(data.amount) * 1395).toLocaleString()}</div>
-          <div>2. {data.bdc} → LP-2841 ← {parseFloat(data.amount).toLocaleString()} USDT</div>
-          <div>3. USDT → Cedar Money → ${parseFloat(data.amount).toLocaleString()} USD</div>
-          <div>4. ${parseFloat(data.amount).toLocaleString()} → MT103 → {data.supplier}</div>
+          <div>2. {data.bdc} → Licensed payment partner ← ${parseFloat(data.amount).toLocaleString()}</div>
+          <div>3. Partner → MT103 → {data.supplier}</div>
         </div>
       </div>
       <div className="relative mt-7 grid gap-3 sm:grid-cols-2">
@@ -4051,11 +4041,14 @@ function BDCCompliance() {
 
 function BDCEvidence() {
   const { push } = useToast();
-  const packs = [
+  const packs = SHOW_TRIPLE_A ? [
     { id: "EP-2026Q1-TA", partner: "Triple-A", quarter: "Q1 2026", transactions: 214, status: "ready", due: "Apr 30, 2026" },
     { id: "EP-2026Q1-CD", partner: "Cedar Money", quarter: "Q1 2026", transactions: 98, status: "ready", due: "Apr 30, 2026" },
     { id: "EP-2025Q4-TA", partner: "Triple-A", quarter: "Q4 2025", transactions: 187, status: "submitted", due: "Jan 31, 2026" },
     { id: "EP-2025Q4-CD", partner: "Cedar Money", quarter: "Q4 2025", transactions: 64, status: "submitted", due: "Jan 31, 2026" },
+  ] : [
+    { id: "EP-2026Q1", partner: PARTNER_DISPLAY_NAME, quarter: "Q1 2026", transactions: 312, status: "ready", due: "Apr 30, 2026" },
+    { id: "EP-2025Q4", partner: PARTNER_DISPLAY_NAME, quarter: "Q4 2025", transactions: 251, status: "submitted", due: "Jan 31, 2026" },
   ];
   return (
     <Card padding="none">
