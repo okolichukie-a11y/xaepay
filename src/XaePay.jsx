@@ -3719,6 +3719,30 @@ const DEMO_CUSTOMERS = [
   { name: "Funmi Adeleke", volume: 6800, count: 4, tier: "Individual", kycTier: 1 },
 ];
 
+// Cedar-style KYC status taxonomy. Maps any persisted status (legacy or new) to a
+// label + colors for the badge. Customers must be "Approved" before they can transact.
+function kycStatusLabel(status) {
+  switch ((status || "").toLowerCase()) {
+    case "approved":
+    case "verified":
+      return { label: "Approved", bg: "var(--emerald)", color: "var(--lime)" };
+    case "under_review":
+    case "in_review":
+    case "submitted":
+      return { label: "Under Review", bg: "rgba(15,95,63,0.10)", color: "var(--emerald)" };
+    case "action_needed":
+      return { label: "Action Needed", bg: "#fef3c7", color: "#92400e" };
+    case "rejected":
+      return { label: "Rejected", bg: "#fee2e2", color: "#991b1b" };
+    case "pending":
+    case "":
+    case null:
+    case undefined:
+    default:
+      return { label: "Pending KYC", bg: "#fef3c7", color: "#92400e" };
+  }
+}
+
 // Map a Supabase customers row to the shape the table expects
 function dbCustomerToUi(row) {
   return {
@@ -3768,17 +3792,35 @@ function BDCCustomers({ addedCustomers = [], onAddCustomer }) {
   const customers = isSignedIn ? realCustomers : [...addedCustomers, ...DEMO_CUSTOMERS];
   const showEmptyState = isSignedIn && !loading && realCustomers.length === 0;
 
+  const approvedCount = customers.filter((c) => kycStatusLabel(c.kycStatus).label === "Approved").length;
+  const pendingCount = customers.length - approvedCount;
   return (
     <>
+    {/* Stage 1 explainer — only relevant for signed-in operators with real customers */}
+    {isSignedIn && (
+      <div className="mb-4 rounded-2xl p-4" style={{ background: "rgba(15,95,63,0.06)", border: "1px solid rgba(15,95,63,0.2)" }}>
+        <div className="flex items-start gap-3">
+          <Shield size={16} className="mt-0.5 flex-shrink-0" style={{ color: "var(--emerald)" }} />
+          <div className="text-sm" style={{ color: "var(--ink)" }}>
+            <span className="font-semibold">Stage 1 of the platform: customer KYC.</span> Customers must be <span className="font-semibold" style={{ color: "var(--emerald)" }}>Approved</span> by our licensed payment partner before they can transact. Typical turnaround is 5–15 business days. Onboard new customers here — once approved, they show up as eligible in the quote flow.
+          </div>
+        </div>
+      </div>
+    )}
     <Card padding="none">
       <div className="flex items-center justify-between p-4 gap-2 flex-wrap" style={{ borderBottom: "1px solid var(--line)" }}>
-        <div className="text-sm font-semibold">
-          {loading ? "Loading…" : `${customers.length} customer${customers.length === 1 ? "" : "s"}`}
-          {!isSignedIn && <span className="ml-2 rounded-full px-2 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-wider" style={{ background: "var(--bone-2)", color: "var(--muted)" }}>Demo data — sign in to manage real customers</span>}
+        <div>
+          <div className="text-sm font-semibold">
+            {loading ? "Loading…" : `${customers.length} customer${customers.length === 1 ? "" : "s"}`}
+            {!isSignedIn && <span className="ml-2 rounded-full px-2 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-wider" style={{ background: "var(--bone-2)", color: "var(--muted)" }}>Demo data — sign in to manage real customers</span>}
+          </div>
+          {isSignedIn && customers.length > 0 && (
+            <div className="font-mono text-[10px] mt-0.5" style={{ color: "var(--muted)" }}>{approvedCount} approved · {pendingCount} awaiting KYC</div>
+          )}
         </div>
         <div className="flex gap-2">
           <SecondaryBtn onClick={() => push(`Exporting ${customers.length} customers…`, "success")}><Download size={14} /> Export</SecondaryBtn>
-          <PrimaryBtn onClick={() => setAddOpen(true)}><Plus size={14} /> Add customer</PrimaryBtn>
+          <PrimaryBtn onClick={() => setAddOpen(true)}><Plus size={14} /> Onboard customer</PrimaryBtn>
         </div>
       </div>
       {showEmptyState ? (
@@ -3791,18 +3833,21 @@ function BDCCustomers({ addedCustomers = [], onAddCustomer }) {
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
-            <thead><tr style={{ background: "var(--bone)", borderBottom: "1px solid var(--line)" }}>{["Customer", "Type", "KYC", "Lifetime volume", "Transactions", ""].map((h, i) => (<th key={i} className={`px-4 py-3 text-left font-mono text-[10px] font-semibold uppercase tracking-wider ${["Lifetime volume", "Transactions"].includes(h) ? "text-right" : ""}`} style={{ color: "var(--muted)" }}>{h}</th>))}</tr></thead>
+            <thead><tr style={{ background: "var(--bone)", borderBottom: "1px solid var(--line)" }}>{["Customer", "Type", "KYC status", "Lifetime volume", "Transactions", ""].map((h, i) => (<th key={i} className={`px-4 py-3 text-left font-mono text-[10px] font-semibold uppercase tracking-wider ${["Lifetime volume", "Transactions"].includes(h) ? "text-right" : ""}`} style={{ color: "var(--muted)" }}>{h}</th>))}</tr></thead>
             <tbody>
-              {customers.map((c) => (
-                <tr key={c.id || c.name} onClick={() => setSelected(c)} className="cursor-pointer transition hover:bg-[color:var(--bone)]" style={{ borderBottom: "1px solid var(--line)" }}>
-                  <td className="px-4 py-3.5 font-medium">{c.name}{c.kycStatus === "pending" && <span className="ml-2 rounded-full px-1.5 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-wider" style={{ background: "#fef3c7", color: "#92400e" }}>KYC pending</span>}</td>
-                  <td className="px-4 py-3.5"><span className="rounded-full px-2 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-wider" style={c.tier === "Corporate" ? { background: "var(--emerald)", color: "var(--lime)" } : c.tier === "SME" ? { background: "#fef3c7", color: "#92400e" } : { background: "var(--bone-2)", color: "var(--muted)" }}>{c.tier}</span></td>
-                  <td className="px-4 py-3.5"><span className="font-mono text-[10px] font-semibold" style={{ color: "var(--emerald)" }}>T{c.kycTier}</span></td>
-                  <td className="px-4 py-3.5 text-right font-mono font-semibold">${c.volume.toLocaleString()}</td>
-                  <td className="px-4 py-3.5 text-right font-mono">{c.count}</td>
-                  <td className="px-4 py-3.5"><ChevronRight size={14} style={{ color: "var(--muted)" }} /></td>
-                </tr>
-              ))}
+              {customers.map((c) => {
+                const kyc = kycStatusLabel(c.kycStatus);
+                return (
+                  <tr key={c.id || c.name} onClick={() => setSelected(c)} className="cursor-pointer transition hover:bg-[color:var(--bone)]" style={{ borderBottom: "1px solid var(--line)" }}>
+                    <td className="px-4 py-3.5 font-medium">{c.name}</td>
+                    <td className="px-4 py-3.5"><span className="rounded-full px-2 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-wider" style={c.tier === "Corporate" ? { background: "var(--emerald)", color: "var(--lime)" } : c.tier === "SME" ? { background: "#fef3c7", color: "#92400e" } : { background: "var(--bone-2)", color: "var(--muted)" }}>{c.tier}</span></td>
+                    <td className="px-4 py-3.5"><span className="rounded-full px-2 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-wider whitespace-nowrap" style={{ background: kyc.bg, color: kyc.color }}>{kyc.label}</span></td>
+                    <td className="px-4 py-3.5 text-right font-mono font-semibold">${c.volume.toLocaleString()}</td>
+                    <td className="px-4 py-3.5 text-right font-mono">{c.count}</td>
+                    <td className="px-4 py-3.5"><ChevronRight size={14} style={{ color: "var(--muted)" }} /></td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -4090,7 +4135,7 @@ function CustomerDrawer({ customer, onClose }) {
           <div className="absolute -right-12 -top-12 h-32 w-32 rounded-full opacity-30 blur-3xl" style={{ background: "var(--lime)" }} />
           <div className="relative font-mono text-[10px] uppercase tracking-wider" style={{ color: "rgba(247,245,240,0.5)" }}>Lifetime volume</div>
           <div className="relative font-display mt-1 text-4xl font-[500] tracking-tight" style={{ color: "var(--lime)" }}>${customer.volume.toLocaleString()}</div>
-          <div className="relative mt-1 font-mono text-[11px]" style={{ color: "rgba(247,245,240,0.6)" }}>{customer.count} transactions · KYC Tier {customer.kycTier}{customer.kycStatus === "pending" ? " · pending verification" : ""}</div>
+          <div className="relative mt-1 font-mono text-[11px]" style={{ color: "rgba(247,245,240,0.6)" }}>{customer.count} transactions · KYC: {kycStatusLabel(customer.kycStatus).label}</div>
         </div>
 
         {isRealCustomer && (
