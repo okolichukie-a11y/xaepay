@@ -4,7 +4,7 @@ import {
   ArrowUpRight, Upload, Search, Bell, ChevronRight, Menu, X, Package, Receipt,
   BarChart3, Zap, Eye, Download, Send, Filter, Plus, History, LogIn,
   ExternalLink, Sparkles, User, Building2, Briefcase, Coins, Lock, Unlock,
-  ArrowLeft, Loader2, Layers, TrendingUp, Wallet, DollarSign, Mail,
+  ArrowLeft, ArrowLeftRight, Loader2, Layers, TrendingUp, Wallet, DollarSign, Mail,
 } from "lucide-react";
 import { supabase, sendWhatsAppText } from "./lib/supabase.js";
 import { useAuth } from "./lib/auth.js";
