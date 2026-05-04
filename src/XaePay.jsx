@@ -3185,6 +3185,17 @@ function BDCLiquidity() {
 // In production this would come from the Liquidity tab's live LP feed.
 const LP_USDT_NGN = 1388;
 
+// Inline label/value row used by the OperatorQuoteModal's "Live calculation" panel
+// + the InvoicePreviewModal payment-instructions block. Variants: muted / highlight / emerald.
+function EconRow({ label, value, muted, highlight, emerald }) {
+  return (
+    <div className="flex items-baseline justify-between text-sm">
+      <span style={{ color: muted ? "var(--muted)" : "var(--ink)", fontWeight: highlight ? 600 : 400 }}>{label}</span>
+      <span className="font-mono font-semibold" style={{ color: emerald ? "var(--emerald)" : muted ? "var(--muted)" : "var(--ink)" }}>{value}</span>
+    </div>
+  );
+}
+
 // ─── OperatorQuoteModal ─────────────────────────────────────────────────────
 // MVP 5-step modal: Customer & transaction → Tier → Markup → Sent → Invoice preview.
 // Self-contained: manages its own form state, computes live wholesale rate, hits Supabase
@@ -3608,17 +3619,30 @@ function BDCRailQuotes() {
   // The new MVP-style 5-step quote modal. Replaces the inline form for quote creation.
   const [quoteModalOpen, setQuoteModalOpen] = useState(false);
 
-  // Live wholesale rate from Cedar (sidebar "Today's wholesale rate" card). Refresh every 60s.
+  // Sidebar FX calculator — operator types an amount + currency, sees the live Cedar
+  // wholesale rate and total NGN it would cost. Mirrors Cedar's own FX calculator UX.
+  const [fxAmount, setFxAmount] = useState("25000");
+  const [fxCurrency, setFxCurrency] = useState("USD");
   const [liveCedarRate, setLiveCedarRate] = useState(null);
+  const [fxLoading, setFxLoading] = useState(false);
   useEffect(() => {
+    const amt = parseFloat(fxAmount) || 0;
+    if (amt <= 0) { setLiveCedarRate(null); return; }
     let cancelled = false;
-    const refresh = async () => {
-      const { ok, data } = await fetchCedarRate({ fromCurrencySymbol: "NGN", toCurrencySymbol: "USD", toAmount: 25000 });
-      if (!cancelled && ok && data?.rate) setLiveCedarRate({ rate: data.rate, fetchedAt: Date.now() });
-    };
-    refresh();
-    const i = setInterval(refresh, 60000);
-    return () => { cancelled = true; clearInterval(i); };
+    setFxLoading(true);
+    const t = setTimeout(async () => {
+      const { ok, data } = await fetchCedarRate({ fromCurrencySymbol: "NGN", toCurrencySymbol: fxCurrency, toAmount: amt });
+      if (!cancelled) {
+        if (ok && data?.rate) setLiveCedarRate({ rate: data.rate, depositNgn: data.amount, fetchedAt: Date.now() });
+        setFxLoading(false);
+      }
+    }, 350);
+    return () => { cancelled = true; clearTimeout(t); };
+  }, [fxAmount, fxCurrency]);
+  // Background refresh every 60s
+  useEffect(() => {
+    const i = setInterval(() => setFxAmount((a) => a), 60000); // touch to retrigger fetch
+    return () => clearInterval(i);
   }, []);
 
   // Customer form (resets after every Send, so BDC can compose more quotes back-to-back)
@@ -4077,11 +4101,34 @@ function BDCRailQuotes() {
           </Card>
           <Card>
             <div className="font-mono text-[10px] uppercase tracking-wider mb-3 flex items-center justify-between" style={{ color: "var(--muted)" }}>
-              <span>Today's wholesale rate</span>
-              {liveCedarRate && <span className="flex items-center gap-1" style={{ color: "var(--emerald)" }}><div className="h-1 w-1 rounded-full pulse-dot" style={{ background: "var(--emerald)" }} />live</span>}
+              <span>FX rate calculator</span>
+              {fxLoading
+                ? <span style={{ color: "var(--amber)" }}>fetching…</span>
+                : liveCedarRate
+                  ? <span className="flex items-center gap-1" style={{ color: "var(--emerald)" }}><div className="h-1 w-1 rounded-full pulse-dot" style={{ background: "var(--emerald)" }} />live</span>
+                  : null}
             </div>
-            <div className="font-display text-3xl font-[500] tracking-tight">₦{(liveCedarRate?.rate ?? cedar?.nativeCostNGN ?? 1395).toFixed(2)}<span className="text-base ml-1" style={{ color: "var(--muted)" }}>/$</span></div>
-            <div className="mt-2 text-xs" style={{ color: "var(--muted)" }}>{liveCedarRate ? "Live from licensed payment partner · refreshes every 60s" : "Connecting to licensed payment partner…"}</div>
+            {/* Amount + currency inputs — same shape as Cedar's calculator */}
+            <div className="grid gap-2" style={{ gridTemplateColumns: "1fr auto" }}>
+              <div className="focus-ring flex items-center rounded-xl transition" style={{ background: "white", border: "1px solid var(--line)" }}>
+                <span className="pl-3 text-xs font-mono" style={{ color: "var(--muted)" }}>$</span>
+                <input type="number" inputMode="decimal" step="500" value={fxAmount} onChange={(e) => setFxAmount(e.target.value)} className="w-full bg-transparent px-2 py-2 text-sm outline-none font-mono" placeholder="25000" />
+              </div>
+              <Select value={fxCurrency} onChange={(e) => setFxCurrency(e.target.value)}>
+                <option>USD</option><option>GBP</option><option>EUR</option><option>CNY</option>
+              </Select>
+            </div>
+            <div className="mt-3 font-display text-3xl font-[500] tracking-tight">
+              ₦{(liveCedarRate?.rate ?? 1395).toFixed(2)}
+              <span className="text-base ml-1" style={{ color: "var(--muted)" }}>/{fxCurrency}</span>
+            </div>
+            {liveCedarRate?.depositNgn && (
+              <div className="mt-1 text-xs" style={{ color: "var(--ink)" }}>
+                ≈ <span className="font-mono font-semibold">₦{Math.round(parseFloat(liveCedarRate.depositNgn)).toLocaleString()}</span>{" "}
+                <span style={{ color: "var(--muted)" }}>to deposit for ${parseFloat(fxAmount || 0).toLocaleString()} {fxCurrency} payout</span>
+              </div>
+            )}
+            <div className="mt-2 text-[10px] font-mono uppercase tracking-wider" style={{ color: "var(--muted)" }}>{liveCedarRate ? "Live from licensed partner · auto-refreshes" : "Connecting…"}</div>
           </Card>
         </div>
       </div>
