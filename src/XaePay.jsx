@@ -1432,11 +1432,32 @@ function PaymentAgentOnboarding({ onComplete }) {
   );
 }
 
+// Operator wrapper types — Nigerian + foreign — used in agent-operator onboarding step 1.
+// Wrappers without a `requiresLicense: true` field don't require a registration number to proceed.
+const OPERATOR_WRAPPERS_NG = [
+  { id: "bdc", label: "CBN-licensed BDC", sub: "Validated against CBN published list", requiresLicense: true, validatesAgainstCbnList: true },
+  { id: "imto", label: "IMTO-licensed operator", sub: "International Money Transfer Operator", requiresLicense: true },
+  { id: "scuml", label: "SCUML-registered DNFBP", sub: "Special Control Unit on AML", requiresLicense: true },
+  { id: "cac-partner", label: "CAC-registered with bank/BDC partnership", sub: "Operating under a licensed partner", requiresLicense: true },
+  { id: "agent-ng", label: "Trade agent / freight forwarder / customs broker (Nigeria)", sub: "We'll review your setup" },
+];
+const OPERATOR_WRAPPERS_FOREIGN = [
+  { id: "us-msb", label: "US MSB (FinCEN-registered)", sub: "Money Services Business · FinCEN", requiresLicense: true },
+  { id: "uk-msb", label: "UK MSB (HMRC-registered)", sub: "Money Service Business · HMRC", requiresLicense: true },
+  { id: "uae-exchange", label: "UAE exchange house (Central Bank licensed)", sub: "CBUAE-regulated exchange", requiresLicense: true },
+  { id: "eu-msb", label: "EU MSB / payment institution", sub: "MSB or PSD2 payment institution", requiresLicense: true },
+  { id: "agent-foreign", label: "Other foreign trade agent / facilitator", sub: "We'll review your setup" },
+  { id: "other", label: "Other (we'll review)", sub: "Tell us about your setup" },
+];
+
 function BDCOnboarding({ onComplete }) {
   const [step, setStep] = useState(1);
-  const [data, setData] = useState({ licenseNumber: "", verified: null, principalName: "", principalEmail: "", complianceOfficer: "", complianceEmail: "", bankName: "", accountNumber: "", servesIndividuals: false, partnerQ: { tripleA: false, cedar: false } });
+  const [data, setData] = useState({ wrapper: "", licenseNumber: "", verified: null, principalName: "", principalEmail: "", complianceOfficer: "", complianceEmail: "", bankName: "", accountNumber: "", servesIndividuals: false, partnerQ: { tripleA: false, cedar: false } });
   const { push } = useToast();
   const [verifying, setVerifying] = useState(false);
+  const wrapperDef = [...OPERATOR_WRAPPERS_NG, ...OPERATOR_WRAPPERS_FOREIGN].find((w) => w.id === data.wrapper);
+  const wrapperRequiresLicense = wrapperDef?.requiresLicense;
+  const wrapperValidatesAgainstCbn = wrapperDef?.validatesAgainstCbnList;
   const verifyLicense = () => {
     if (!data.licenseNumber) return;
     setVerifying(true);
@@ -1447,68 +1468,117 @@ function BDCOnboarding({ onComplete }) {
       push(`License verified · ${match.tier} · ${match.location}`, "success");
     }, 1600);
   };
+  // Step 1 advance condition: wrapper picked, and (no license needed OR CBN-validated OR generic license entered)
+  const canAdvanceStep1 = !!data.wrapper && (
+    !wrapperRequiresLicense ||
+    (wrapperValidatesAgainstCbn ? !!data.verified : !!data.licenseNumber.trim())
+  );
   return (
     <div className="rise">
-      <SectionEyebrow>BDC operator onboarding</SectionEyebrow>
-      <h1 className="font-display mt-3 text-3xl font-[450] tracking-tight sm:text-4xl">Set up your BDC operator account.</h1>
+      <SectionEyebrow>Agent operator onboarding</SectionEyebrow>
+      <h1 className="font-display mt-3 text-3xl font-[450] tracking-tight sm:text-4xl">Set up your agent operator account.</h1>
       <p className="mt-2 text-sm" style={{ color: "var(--muted)" }}>Five steps. Includes licensed payment partner intake at the end.</p>
-      <div className="mt-8"><OnboardingStepper step={step} steps={["License", "Principal", "Compliance", "Banking", "Partners"]} /></div>
+      <div className="mt-8"><OnboardingStepper step={step} steps={["Wrapper", "Principal", "Compliance", "Banking", "Partners"]} /></div>
       <div className="mt-6">
         {step === 1 && (
           <Card>
-            <h2 className="font-display text-xl font-semibold">CBN BDC license</h2>
-            <p className="mt-1 text-sm" style={{ color: "var(--muted)" }}>Auto-validated against the CBN published BDC list (82 licensed as of Nov 2025).</p>
-            <div className="mt-6">
-              <Label>License number</Label>
-              <div className="flex gap-2">
-                <Input value={data.licenseNumber} onChange={(e) => setData({ ...data, licenseNumber: e.target.value, verified: null })} placeholder="BDC/2024/T2/045" />
-                <button onClick={verifyLicense} disabled={verifying || !data.licenseNumber} className="inline-flex items-center justify-center gap-2 rounded-xl px-5 py-3 text-sm font-semibold transition disabled:opacity-50" style={{ background: "var(--ink)", color: "var(--bone)" }}>{verifying ? <><Loader2 size={14} className="spin" /> Verifying</> : "Verify"}</button>
-              </div>
-              <p className="mt-2 font-mono text-[10px] uppercase tracking-wider" style={{ color: "var(--muted)" }}>Try BDC/2024/T2/045 (Corporate Exchange) for demo</p>
+            <h2 className="font-display text-xl font-semibold">Regulatory wrapper</h2>
+            <p className="mt-1 text-sm" style={{ color: "var(--muted)" }}>You're not selling FX. You're an introducing operator. Pick what you're set up as — Nigerian or foreign.</p>
+
+            <div className="mt-6 space-y-2">
+              <div className="font-mono text-[10px] uppercase tracking-wider mb-1" style={{ color: "var(--muted)" }}>Nigerian wrappers</div>
+              {OPERATOR_WRAPPERS_NG.map((opt) => (
+                <button key={opt.id} type="button" onClick={() => setData({ ...data, wrapper: opt.id, licenseNumber: "", verified: null })} className="w-full rounded-xl p-4 text-left transition" style={data.wrapper === opt.id ? { background: "var(--ink)", color: "var(--bone)", border: "1px solid var(--ink)" } : { background: "white", border: "1px solid var(--line)" }}>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <div className="text-sm font-medium">{opt.label}</div>
+                      <div className="font-mono text-[10px] uppercase tracking-wider mt-0.5" style={data.wrapper === opt.id ? { color: "rgba(247,245,240,0.6)" } : { color: "var(--muted)" }}>{opt.sub}</div>
+                    </div>
+                    {data.wrapper === opt.id && <CheckCircle2 size={16} style={{ color: "var(--lime)" }} />}
+                  </div>
+                </button>
+              ))}
+
+              <div className="font-mono text-[10px] uppercase tracking-wider mb-1 mt-4" style={{ color: "var(--muted)" }}>Foreign wrappers</div>
+              {OPERATOR_WRAPPERS_FOREIGN.map((opt) => (
+                <button key={opt.id} type="button" onClick={() => setData({ ...data, wrapper: opt.id, licenseNumber: "", verified: null })} className="w-full rounded-xl p-4 text-left transition" style={data.wrapper === opt.id ? { background: "var(--ink)", color: "var(--bone)", border: "1px solid var(--ink)" } : { background: "white", border: "1px solid var(--line)" }}>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <div className="text-sm font-medium">{opt.label}</div>
+                      <div className="font-mono text-[10px] uppercase tracking-wider mt-0.5" style={data.wrapper === opt.id ? { color: "rgba(247,245,240,0.6)" } : { color: "var(--muted)" }}>{opt.sub}</div>
+                    </div>
+                    {data.wrapper === opt.id && <CheckCircle2 size={16} style={{ color: "var(--lime)" }} />}
+                  </div>
+                </button>
+              ))}
             </div>
-            {data.verified && (
-              <div className="mt-5 rise rounded-xl p-5" style={{ background: "var(--ink)", color: "var(--bone)" }}>
-                <div className="flex items-start gap-3">
-                  <div className="mt-0.5 flex h-6 w-6 items-center justify-center rounded-full" style={{ background: "var(--lime)" }}><CheckCircle2 size={14} strokeWidth={2.5} style={{ color: "var(--ink)" }} /></div>
-                  <div className="flex-1">
-                    <div className="font-mono text-[10px] uppercase tracking-wider" style={{ color: "rgba(247,245,240,0.6)" }}>Verified BDC</div>
-                    <div className="font-display mt-1 text-xl font-semibold">{data.verified.name}</div>
-                    <div className="mt-2 grid gap-2 text-xs sm:grid-cols-3">
-                      <div><span style={{ color: "rgba(247,245,240,0.5)" }}>Tier:</span> {data.verified.tier}</div>
-                      <div><span style={{ color: "rgba(247,245,240,0.5)" }}>Location:</span> {data.verified.location}</div>
-                      <div><span style={{ color: "rgba(247,245,240,0.5)" }}>Licensed:</span> {data.verified.licenseDate}</div>
+
+            {/* CBN-BDC license validation flow (existing behavior) */}
+            {wrapperValidatesAgainstCbn && (
+              <div className="mt-6">
+                <Label>CBN BDC license number</Label>
+                <p className="mt-1 mb-2 text-xs" style={{ color: "var(--muted)" }}>Auto-validated against the CBN published BDC list (82 licensed as of Nov 2025).</p>
+                <div className="flex gap-2">
+                  <Input value={data.licenseNumber} onChange={(e) => setData({ ...data, licenseNumber: e.target.value, verified: null })} placeholder="BDC/2024/T2/045" />
+                  <button onClick={verifyLicense} disabled={verifying || !data.licenseNumber} className="inline-flex items-center justify-center gap-2 rounded-xl px-5 py-3 text-sm font-semibold transition disabled:opacity-50" style={{ background: "var(--ink)", color: "var(--bone)" }}>{verifying ? <><Loader2 size={14} className="spin" /> Verifying</> : "Verify"}</button>
+                </div>
+                <p className="mt-2 font-mono text-[10px] uppercase tracking-wider" style={{ color: "var(--muted)" }}>Try BDC/2024/T2/045 (Corporate Exchange) for demo</p>
+                {data.verified && (
+                  <div className="mt-5 rise rounded-xl p-5" style={{ background: "var(--ink)", color: "var(--bone)" }}>
+                    <div className="flex items-start gap-3">
+                      <div className="mt-0.5 flex h-6 w-6 items-center justify-center rounded-full" style={{ background: "var(--lime)" }}><CheckCircle2 size={14} strokeWidth={2.5} style={{ color: "var(--ink)" }} /></div>
+                      <div className="flex-1">
+                        <div className="font-mono text-[10px] uppercase tracking-wider" style={{ color: "rgba(247,245,240,0.6)" }}>Verified BDC</div>
+                        <div className="font-display mt-1 text-xl font-semibold">{data.verified.name}</div>
+                        <div className="mt-2 grid gap-2 text-xs sm:grid-cols-3">
+                          <div><span style={{ color: "rgba(247,245,240,0.5)" }}>Tier:</span> {data.verified.tier}</div>
+                          <div><span style={{ color: "rgba(247,245,240,0.5)" }}>Location:</span> {data.verified.location}</div>
+                          <div><span style={{ color: "rgba(247,245,240,0.5)" }}>Licensed:</span> {data.verified.licenseDate}</div>
+                        </div>
+                      </div>
                     </div>
                   </div>
-                </div>
+                )}
               </div>
             )}
-            <div className="mt-6 flex justify-end"><PrimaryBtn onClick={() => setStep(2)} disabled={!data.verified}>Continue <ArrowRight size={14} /></PrimaryBtn></div>
+
+            {/* Generic license/registration input for non-CBN wrappers that still need a number */}
+            {wrapperRequiresLicense && !wrapperValidatesAgainstCbn && (
+              <div className="mt-6">
+                <Label>Registration / license number</Label>
+                <p className="mt-1 mb-2 text-xs" style={{ color: "var(--muted)" }}>We'll review the number on file but can't auto-validate it. Tell us your regulator and ID — e.g., FinCEN MSB-31000123456789, HMRC 123456, CBUAE EX/2023/0042.</p>
+                <Input value={data.licenseNumber} onChange={(e) => setData({ ...data, licenseNumber: e.target.value })} placeholder="e.g. BDC/2024/T2/045" />
+              </div>
+            )}
+
+            <div className="mt-6 flex justify-end"><PrimaryBtn onClick={() => setStep(2)} disabled={!canAdvanceStep1}>Continue <ArrowRight size={14} /></PrimaryBtn></div>
           </Card>
         )}
         {step === 2 && (
           <Card>
-            <h2 className="font-display text-xl font-semibold">Principal director</h2>
-            <p className="mt-1 text-sm" style={{ color: "var(--muted)" }}>The named person responsible for the BDC's CBN license.</p>
+            <h2 className="font-display text-xl font-semibold">Principal</h2>
+            <p className="mt-1 text-sm" style={{ color: "var(--muted)" }}>The named person responsible for your operator license.</p>
             <div className="mt-6 grid gap-4 sm:grid-cols-2">
+              {!wrapperValidatesAgainstCbn && <Field label="Business name" full><Input value={data.businessName || ""} onChange={(e) => setData({ ...data, businessName: e.target.value })} placeholder="Your registered business name" /></Field>}
               <Field label="Full name"><Input value={data.principalName} onChange={(e) => setData({ ...data, principalName: e.target.value })} placeholder="Olusegun Adeyemi" /></Field>
-              <Field label="Email"><Input type="email" value={data.principalEmail} onChange={(e) => setData({ ...data, principalEmail: e.target.value })} placeholder="olusegun@yourcorpbdc.com" /></Field>
-              <Field label="NIN" full><Input placeholder="1234567890" /></Field>
+              <Field label="Email"><Input type="email" value={data.principalEmail} onChange={(e) => setData({ ...data, principalEmail: e.target.value })} placeholder="you@operator.com" /></Field>
+              <Field label={data.wrapper === "bdc" ? "NIN" : "Government ID number"} full><Input placeholder="1234567890" /></Field>
             </div>
-            <UploadRow label="Director ID + selfie" sublabel="WhatsApp upload available · or browse files" done={false} onClick={() => push("Send to +234 700 XAE PAY", "info")} />
+            <UploadRow label="Principal ID + selfie" sublabel="WhatsApp upload available · or browse files" done={false} onClick={() => push("Send to +234 700 XAE PAY", "info")} />
             <div className="mt-6 flex justify-between"><SecondaryBtn onClick={() => setStep(1)}>Back</SecondaryBtn><PrimaryBtn onClick={() => setStep(3)}>Continue <ArrowRight size={14} /></PrimaryBtn></div>
           </Card>
         )}
         {step === 3 && (
           <Card>
             <h2 className="font-display text-xl font-semibold">Compliance officer</h2>
-            <p className="mt-1 text-sm" style={{ color: "var(--muted)" }}>Receives sanctions alerts, partner reviews, CBN reporting prompts.</p>
+            <p className="mt-1 text-sm" style={{ color: "var(--muted)" }}>Receives sanctions alerts, partner reviews, regulatory reporting prompts.</p>
             <div className="mt-6 grid gap-4 sm:grid-cols-2">
               <Field label="Compliance officer name"><Input value={data.complianceOfficer} onChange={(e) => setData({ ...data, complianceOfficer: e.target.value })} placeholder="Folake Bamidele" /></Field>
-              <Field label="Compliance email"><Input type="email" value={data.complianceEmail} onChange={(e) => setData({ ...data, complianceEmail: e.target.value })} placeholder="compliance@yourcorpbdc.com" /></Field>
+              <Field label="Compliance email"><Input type="email" value={data.complianceEmail} onChange={(e) => setData({ ...data, complianceEmail: e.target.value })} placeholder="compliance@youroperator.com" /></Field>
             </div>
             <div className="mt-6 rounded-xl p-5" style={{ background: "var(--bone)", border: "1px solid var(--line)" }}>
               <Label>Will you serve as payment agent for individual customers via XaePay?</Label>
-              <p className="text-xs mb-3" style={{ color: "var(--muted)" }}>Allows individuals to send trade payments through your BDC under disclosed payment-agent structure. You charge service fees, XaePay generates all disclosure docs.</p>
+              <p className="text-xs mb-3" style={{ color: "var(--muted)" }}>Allows individuals to send trade payments through you under disclosed payment-agent structure. You charge service fees, XaePay generates all disclosure docs.</p>
               <div className="grid gap-2 sm:grid-cols-2">
                 <RoleBtn active={!data.servesIndividuals} onClick={() => setData({ ...data, servesIndividuals: false })}>Business customers only</RoleBtn>
                 <RoleBtn active={data.servesIndividuals} onClick={() => setData({ ...data, servesIndividuals: true })}>Yes, serve individuals too</RoleBtn>
@@ -1544,7 +1614,10 @@ function BDCOnboarding({ onComplete }) {
               </div>
               <p className="mt-3 text-xs" style={data.partnerQ.cedar ? { color: "rgba(247,245,240,0.7)" } : { color: "var(--muted)" }}>End-to-end execution across major corridors. Same-day settlement standard. We handle the partner-side intake on your behalf.</p>
             </button>
-            <div className="mt-6 flex justify-between"><SecondaryBtn onClick={() => setStep(4)}>Back</SecondaryBtn><PrimaryBtn onClick={() => onComplete({ type: "bdc", tier: null, name: data.verified?.name, company: data.verified?.name })}>Finish onboarding <Sparkles size={14} /></PrimaryBtn></div>
+            <div className="mt-6 flex justify-between"><SecondaryBtn onClick={() => setStep(4)}>Back</SecondaryBtn><PrimaryBtn onClick={() => {
+              const businessName = data.verified?.name || data.businessName || data.principalName || "Operator";
+              onComplete({ type: "bdc", tier: null, name: businessName, company: businessName, wrapper: data.wrapper });
+            }}>Finish onboarding <Sparkles size={14} /></PrimaryBtn></div>
           </Card>
         )}
       </div>
