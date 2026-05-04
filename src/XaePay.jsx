@@ -3045,6 +3045,375 @@ function BDCLiquidity() {
 // In production this would come from the Liquidity tab's live LP feed.
 const LP_USDT_NGN = 1388;
 
+// ─── OperatorQuoteModal ─────────────────────────────────────────────────────
+// MVP 5-step modal: Customer & transaction → Tier → Markup → Sent → Invoice preview.
+// Self-contained: manages its own form state, computes live wholesale rate, hits Supabase
+// to persist the quote, calls sendWhatsAppText to push the message via Cloud API. The wa.me
+// fallback fires automatically if the Cloud-API send fails.
+function OperatorQuoteModal({ open, onClose, onCreated }) {
+  const auth = useAuth();
+  const isSignedIn = !!auth.user;
+  const { push } = useToast();
+  const empty = {
+    customerName: "",
+    customerPhone: "",
+    direction: "outbound", // 'outbound' (NG → world) or 'inbound' (world → NG)
+    amount: "25000",
+    currency: "USD",
+    country: "China",
+    supplier: "",
+    invoice: false,
+    selectedTier: "documented",
+    markupAmount: TIERS.documented.minMarkup,
+  };
+  const [step, setStep] = useState(1);
+  const [data, setData] = useState(empty);
+  const [sending, setSending] = useState(false);
+  const [tick, setTick] = useState(0);
+  const [createdRef, setCreatedRef] = useState(""); // populated after successful send
+
+  // Reset on close
+  useEffect(() => {
+    if (!open) {
+      // small delay so the closing animation doesn't jank reset
+      const t = setTimeout(() => { setStep(1); setData(empty); setCreatedRef(""); }, 250);
+      return () => clearTimeout(t);
+    }
+  }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Live wholesale rate (Cedar baseline, light wobble)
+  useEffect(() => {
+    if (!open) return;
+    const i = setInterval(() => setTick((t) => t + 1), 4000);
+    return () => clearInterval(i);
+  }, [open]);
+  const wobble = (base, ampBps) => base + (Math.sin(tick * 0.7) + Math.cos(tick * 0.3)) * 0.5 * (base * ampBps / 10000);
+  const wholesaleRate = wobble(1394.40, 4);
+
+  const tier = TIERS[data.selectedTier];
+  const isInbound = data.direction === "inbound";
+  const customerRate = isInbound ? wholesaleRate - data.markupAmount : wholesaleRate + data.markupAmount;
+  const amount = parseFloat(data.amount) || 0;
+  const ngnTotal = Math.round(amount * customerRate);
+  const totalMarginUSD = customerRate > 0 ? (data.markupAmount * amount) / customerRate : 0;
+  const operatorEarn = totalMarginUSD * tier.operatorShare;
+  const xaepayEarn = totalMarginUSD * tier.xaepayShare;
+  const markupValid = data.markupAmount >= tier.minMarkup;
+  const markupPctEffective = wholesaleRate > 0 ? (data.markupAmount / wholesaleRate) * 100 : 0;
+
+  const next = () => setStep((s) => Math.min(s + 1, 5));
+  const back = () => setStep((s) => Math.max(s - 1, 1));
+
+  // Build the WhatsApp message body. Encoded for wa.me; plain for Cloud API send.
+  const buildMessage = (displayRef, urlToken, plain) => {
+    const approvalUrl = `${window.location.origin}/?quote=${urlToken}`;
+    const NL = plain ? "\n" : "%0A";
+    const url = plain ? approvalUrl : encodeURIComponent(approvalUrl);
+    return (
+      `Hello ${data.customerName || "there"},${NL}${NL}` +
+      `Trade payment quote via XaePay (ref ${displayRef}):${NL}` +
+      `• Send: $${amount.toLocaleString()} ${data.currency} to ${data.supplier || data.country}${NL}` +
+      `• Rate: ₦${customerRate.toFixed(2)} / $${NL}` +
+      `• Total naira: ₦${ngnTotal.toLocaleString()}${NL}` +
+      `• Settlement: same day${NL}${NL}` +
+      `Tap to review and approve:${NL}${url}${NL}${NL}` +
+      `Or reply YES ${displayRef} to confirm here.`
+    );
+  };
+
+  const sendQuote = async () => {
+    if (!isSignedIn) { push("Sign in first to send.", "warn"); return; }
+    if (!data.customerPhone || !markupValid) return;
+    setSending(true);
+    const phoneDigits = data.customerPhone.replace(/[^\d]/g, "");
+    const expiresAt = new Date(Date.now() + 4 * 60 * 1000).toISOString();
+    const { data: quoteRow, error } = await supabase
+      .from("quotes")
+      .insert({
+        bdc_user_id: auth.user.id,
+        bdc_name: auth.user.user_metadata?.company || "Operator",
+        customer_name: data.customerName,
+        customer_phone: data.customerPhone,
+        amount,
+        currency: data.currency,
+        beneficiary: data.supplier || data.country,
+        destination: data.country,
+        rate: parseFloat(customerRate.toFixed(2)),
+        ngn_total: ngnTotal,
+        rail: "Cedar Money", // internal partner id; UI shows generic label elsewhere
+        settlement_text: "T+0 · same day",
+        cost_basis_ngn: wholesaleRate,
+        markup_pct: parseFloat(markupPctEffective.toFixed(4)),
+        status: "pending_approval",
+        expires_at: expiresAt,
+      })
+      .select("*")
+      .single();
+    if (error) {
+      // eslint-disable-next-line no-console
+      console.error("Insert quote failed:", error);
+      push("Couldn't save quote — try again.", "warn");
+      setSending(false);
+      return;
+    }
+    const displayRef = `QU-${quoteRow.id.slice(0, 4).toUpperCase()}`;
+    setCreatedRef(displayRef);
+    // Try Cloud API send; fall back to opening wa.me if that fails
+    const text = buildMessage(displayRef, quoteRow.id, true);
+    const result = await sendWhatsAppText(phoneDigits, text);
+    if (result.ok) {
+      push(`Quote ${displayRef} auto-sent`, "success");
+    } else {
+      const message = buildMessage(displayRef, quoteRow.id, false);
+      window.open(`https://wa.me/${phoneDigits}?text=${message}`, "_blank");
+      push(`Quote ${displayRef} sent · WhatsApp opened`, "success");
+    }
+    if (onCreated) onCreated(quoteRow);
+    setSending(false);
+    setStep(4);
+  };
+
+  return (
+    <Modal open={open} onClose={onClose} title={`New quote · Step ${Math.min(step, 4)} of 4${step === 5 ? " · preview" : ""}`} size="xl">
+      {step === 1 && (
+        <div className="space-y-5">
+          <div>
+            <h3 className="font-display text-lg font-semibold mb-2">Customer & transaction</h3>
+            <p className="text-sm" style={{ color: "var(--muted)" }}>Enter your customer's payment details. They don't need a XaePay account — quotes go through you.</p>
+          </div>
+          <div>
+            <Label>Direction of this transaction</Label>
+            <div className="grid grid-cols-2 gap-2">
+              <button type="button" onClick={() => setData({ ...data, direction: "outbound" })} className="rounded-xl px-4 py-3 text-sm font-medium transition" style={data.direction === "outbound" ? { background: "var(--ink)", color: "var(--bone)", border: "1px solid var(--ink)" } : { background: "white", border: "1px solid var(--line)" }}>
+                <div className="font-semibold">Outbound</div>
+                <div className="font-mono text-[10px] uppercase tracking-wider mt-0.5 opacity-70">Nigeria → World</div>
+              </button>
+              <button type="button" onClick={() => setData({ ...data, direction: "inbound" })} className="rounded-xl px-4 py-3 text-sm font-medium transition" style={data.direction === "inbound" ? { background: "var(--ink)", color: "var(--bone)", border: "1px solid var(--ink)" } : { background: "white", border: "1px solid var(--line)" }}>
+                <div className="font-semibold">Inbound</div>
+                <div className="font-mono text-[10px] uppercase tracking-wider mt-0.5 opacity-70">World → Nigeria</div>
+              </button>
+            </div>
+          </div>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field label="Customer name"><Input value={data.customerName} onChange={(e) => setData({ ...data, customerName: e.target.value })} placeholder="Adekunle Imports Ltd" /></Field>
+            <Field label="Customer WhatsApp"><Input value={data.customerPhone} onChange={(e) => setData({ ...data, customerPhone: e.target.value })} placeholder="+234 803 123 4567" /></Field>
+            <Field label={`Amount (${data.currency})`}>
+              <div className="focus-ring flex items-center rounded-xl transition" style={{ background: "white", border: "1px solid var(--line)" }}>
+                <span className="pl-3.5 text-sm font-mono" style={{ color: "var(--muted)" }}>$</span>
+                <input type="text" value={data.amount} onChange={(e) => setData({ ...data, amount: e.target.value })} className="w-full bg-transparent px-2 py-3 text-sm outline-none font-mono" />
+              </div>
+            </Field>
+            <Field label={isInbound ? "Recipient country" : "Supplier country"}>
+              <Select value={isInbound ? "Nigeria" : data.country} onChange={(e) => setData({ ...data, country: e.target.value })} disabled={isInbound}>
+                {isInbound ? <option>Nigeria</option> : (<><option>China</option><option>USA</option><option>UK</option><option>Germany</option><option>UAE</option><option>India</option><option>Türkiye</option></>)}
+              </Select>
+            </Field>
+            <Field label={isInbound ? "Recipient (Nigerian supplier/vendor)" : "Supplier name"} full>
+              <Input value={data.supplier} onChange={(e) => setData({ ...data, supplier: e.target.value })} placeholder={isInbound ? "Lagos Trading Ltd" : "Shenzhen Electronics Co., Ltd"} />
+            </Field>
+          </div>
+          <div className="flex justify-end pt-2">
+            <PrimaryBtn onClick={next} disabled={!data.customerName || !data.customerPhone || !data.supplier}>Pick service tier <ArrowRight size={14} /></PrimaryBtn>
+          </div>
+        </div>
+      )}
+
+      {step === 2 && (
+        <div className="space-y-5">
+          <div>
+            <h3 className="font-display text-lg font-semibold mb-2">Pick the service tier</h3>
+            <p className="text-sm" style={{ color: "var(--muted)" }}>Each tier has a minimum markup and an earnings split. Pick based on what your customer needs and what they'll pay for.</p>
+          </div>
+          <div className="grid gap-3 lg:grid-cols-2 xl:grid-cols-4">
+            {Object.values(TIERS).map((t) => {
+              const selected = data.selectedTier === t.id;
+              const isPro = t.id === "pro";
+              return (
+                <button key={t.id} type="button" onClick={() => setData({ ...data, selectedTier: t.id, markupAmount: Math.max(data.markupAmount, t.minMarkup) })} className="card-lift rounded-xl p-5 text-left transition" style={selected ? { background: "var(--ink)", color: "var(--bone)", border: `2px solid ${isPro ? "var(--lime)" : "var(--ink)"}` } : { background: "white", border: "1px solid var(--line)" }}>
+                  <div className="flex items-start justify-between mb-3">
+                    <div>
+                      <div className="font-display text-base font-semibold">{t.name}</div>
+                      <div className="font-mono text-[9px] uppercase tracking-wider mt-0.5" style={{ color: selected ? "rgba(247,245,240,0.6)" : "var(--muted)" }}>{t.tagline}</div>
+                    </div>
+                    {selected && <CheckCircle2 size={16} style={{ color: "var(--lime)" }} />}
+                  </div>
+                  <div className="font-display text-xl font-semibold" style={{ color: selected ? "var(--lime)" : "var(--ink)" }}>₦{t.minMarkup.toFixed(2)}<span className="text-xs ml-1" style={{ color: selected ? "rgba(247,245,240,0.6)" : "var(--muted)" }}>/$ minimum</span></div>
+                  <div className="mt-3 font-mono text-[10px]" style={{ color: selected ? "rgba(247,245,240,0.5)" : "var(--muted)" }}>You: {(t.operatorShare * 100).toFixed(0)}% · XaePay: {(t.xaepayShare * 100).toFixed(0)}%</div>
+                </button>
+              );
+            })}
+          </div>
+          <div className="flex justify-between pt-2">
+            <SecondaryBtn onClick={back}>Back</SecondaryBtn>
+            <PrimaryBtn onClick={next}>Set your markup <ArrowRight size={14} /></PrimaryBtn>
+          </div>
+        </div>
+      )}
+
+      {step === 3 && (
+        <div className="space-y-5">
+          <div>
+            <h3 className="font-display text-lg font-semibold mb-2">Set your markup</h3>
+            <p className="text-sm" style={{ color: "var(--muted)" }}>You picked <span className="font-semibold" style={{ color: "var(--ink)" }}>{tier.name}</span> · minimum ₦{tier.minMarkup.toFixed(2)}/$. {isInbound ? "Inbound: your spread is subtracted from the wholesale rate (recipient gets fewer naira per dollar)." : "Set your markup at or above the minimum."}</p>
+          </div>
+          <div className="grid gap-5 lg:grid-cols-2">
+            <Card>
+              <div className="space-y-4">
+                <Field label="Your markup (₦ per $)">
+                  <div className="focus-ring flex items-center rounded-xl transition" style={{ background: "white", border: markupValid ? "1px solid var(--line)" : "1px solid var(--amber)" }}>
+                    <span className="pl-3.5 text-sm font-mono" style={{ color: "var(--muted)" }}>₦</span>
+                    <input type="number" step="0.10" value={data.markupAmount} onChange={(e) => setData({ ...data, markupAmount: parseFloat(e.target.value) || 0 })} className="w-full bg-transparent px-2 py-3 text-sm outline-none font-mono" />
+                    <span className="pr-3.5 text-sm font-mono" style={{ color: "var(--muted)" }}>/ $</span>
+                  </div>
+                  {!markupValid && <div className="mt-2 text-xs" style={{ color: "var(--amber)" }}>Below {tier.name} minimum of ₦{tier.minMarkup.toFixed(2)}/$</div>}
+                </Field>
+                <div className="flex flex-wrap gap-2">
+                  {[tier.minMarkup, tier.minMarkup + 1, tier.minMarkup + 2, tier.minMarkup + 3].map((v) => (
+                    <button key={v} onClick={() => setData({ ...data, markupAmount: v })} className="rounded-lg px-3 py-1.5 text-xs font-mono font-semibold transition" style={Math.abs(data.markupAmount - v) < 0.01 ? { background: "var(--ink)", color: "var(--bone)" } : { background: "var(--bone)", color: "var(--ink)", border: "1px solid var(--line)" }}>₦{v.toFixed(2)}</button>
+                  ))}
+                </div>
+              </div>
+            </Card>
+            <Card>
+              <div className="font-mono text-[10px] uppercase tracking-wider mb-4" style={{ color: "var(--muted)" }}>Live calculation · {isInbound ? "Inbound" : "Outbound"}</div>
+              <div className="space-y-2.5">
+                <EconRow label="Wholesale rate" value={`₦${wholesaleRate.toFixed(2)}/$`} muted />
+                <EconRow label={isInbound ? "Your spread (subtracted)" : "Your markup (added)"} value={`${isInbound ? "−" : "+"}₦${data.markupAmount.toFixed(2)}/$`} highlight />
+                <EconRow label={isInbound ? "Recipient receives at" : "Customer all-in rate"} value={`₦${customerRate.toFixed(2)}/$`} />
+                <div className="h-px my-2" style={{ background: "var(--line)" }} />
+                <EconRow label={`Amount: $${amount.toLocaleString()}`} value={`${isInbound ? "Recipient gets " : ""}₦${ngnTotal.toLocaleString()}`} />
+                <EconRow label="Total margin captured" value={`$${totalMarginUSD.toFixed(2)}`} />
+                <div className="h-px my-2" style={{ background: "var(--line)" }} />
+                <EconRow label={`You earn (${(tier.operatorShare * 100).toFixed(0)}%)`} value={`$${operatorEarn.toFixed(2)}`} emerald />
+                <EconRow label={`XaePay (${(tier.xaepayShare * 100).toFixed(0)}%)`} value={`$${xaepayEarn.toFixed(2)}`} muted />
+              </div>
+            </Card>
+          </div>
+          <div className="flex justify-between pt-2">
+            <SecondaryBtn onClick={back}>Back</SecondaryBtn>
+            <PrimaryBtn onClick={sendQuote} disabled={!markupValid || sending || !data.customerPhone}>
+              {sending ? <><Loader2 size={14} className="spin" /> Sending…</> : <>Send quote to customer <Send size={14} /></>}
+            </PrimaryBtn>
+          </div>
+        </div>
+      )}
+
+      {step === 4 && (
+        <div className="text-center py-6">
+          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full mb-5" style={{ background: "var(--lime)" }}>
+            <Send size={28} strokeWidth={2.5} style={{ color: "var(--ink)" }} />
+          </div>
+          <h3 className="font-display text-2xl font-semibold mb-3">Quote sent to customer</h3>
+          <p className="text-sm max-w-md mx-auto mb-6" style={{ color: "var(--muted)" }}>
+            Locked rate <span className="font-mono font-semibold" style={{ color: "var(--ink)" }}>₦{customerRate.toFixed(2)}/$</span> sent to {data.customerName || "your customer"} on WhatsApp. Reference <span className="font-mono font-semibold" style={{ color: "var(--ink)" }}>{createdRef}</span>. They have 4 minutes to confirm.
+          </p>
+          <div className="rounded-xl p-5 max-w-md mx-auto mb-6 text-left" style={{ background: "var(--bone)", border: "1px solid var(--line)" }}>
+            <div className="text-xs font-mono uppercase tracking-wider mb-2" style={{ color: "var(--muted)" }}>If customer confirms</div>
+            <ul className="space-y-1.5 text-sm">
+              <li>1. Invoice + payment instructions PDF auto-generated</li>
+              <li>2. Funding instructions (bank, account, reference) sent</li>
+              <li>3. Customer NGN deposit triggers settlement</li>
+              <li>4. Beneficiary receives funds same day</li>
+              <li>5. Documentation delivered via WhatsApp + email</li>
+              <li>6. You earn ${operatorEarn.toFixed(2)}</li>
+            </ul>
+          </div>
+          <div className="flex gap-2 justify-center">
+            <SecondaryBtn onClick={onClose}>Done</SecondaryBtn>
+            <PrimaryBtn onClick={() => setStep(5)}>Preview confirmation flow <ArrowRight size={14} /></PrimaryBtn>
+          </div>
+        </div>
+      )}
+
+      {step === 5 && (
+        <div className="space-y-5">
+          <div>
+            <div className="flex items-center gap-2 mb-2">
+              <CheckCircle2 size={18} style={{ color: "var(--emerald)" }} strokeWidth={2.5} />
+              <h3 className="font-display text-lg font-semibold">Customer confirmed · Invoice generated</h3>
+            </div>
+            <p className="text-sm" style={{ color: "var(--muted)" }}>This is what XaePay automatically generates and delivers when your customer confirms a quote. Delivered via WhatsApp + email.</p>
+          </div>
+          <div className="rounded-xl overflow-hidden" style={{ border: "1px solid var(--line)" }}>
+            <div className="px-5 py-3 flex items-center justify-between" style={{ background: "var(--bone)", borderBottom: "1px solid var(--line)" }}>
+              <div className="flex items-center gap-2">
+                <FileText size={14} style={{ color: "var(--emerald)" }} />
+                <span className="font-mono text-[11px] font-semibold uppercase tracking-wider">Invoice + payment instructions PDF</span>
+              </div>
+              <span className="font-mono text-[10px]" style={{ color: "var(--muted)" }}>Auto-generated · preview</span>
+            </div>
+            <div className="p-6 bg-white">
+              <div className="flex items-start justify-between mb-6 pb-4" style={{ borderBottom: "1px solid var(--line)" }}>
+                <div>
+                  <div className="flex items-center gap-2 mb-1">
+                    <div className="flex h-6 w-6 items-center justify-center rounded" style={{ background: "linear-gradient(135deg, var(--emerald), var(--emerald-deep))" }}>
+                      <span className="font-display text-xs font-semibold" style={{ color: "var(--lime)" }}>X</span>
+                    </div>
+                    <span className="font-display text-sm font-semibold">XaePay</span>
+                  </div>
+                  <div className="font-mono text-[9px]" style={{ color: "var(--muted)" }}>Issued by {auth.user?.user_metadata?.company || "Operator"}</div>
+                </div>
+                <div className="text-right">
+                  <div className="font-mono text-[9px] uppercase tracking-wider" style={{ color: "var(--muted)" }}>Reference</div>
+                  <div className="font-mono text-sm font-semibold">{createdRef || "QU-XXXX"}</div>
+                  <div className="font-mono text-[9px] mt-1" style={{ color: "var(--muted)" }}>{new Date().toLocaleString("en-NG", { timeZone: "Africa/Lagos", month: "short", day: "numeric", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: false })} WAT</div>
+                </div>
+              </div>
+              <div className="mb-5">
+                <div className="font-mono text-[9px] uppercase tracking-wider mb-1" style={{ color: "var(--muted)" }}>Bill to</div>
+                <div className="text-sm font-semibold">{data.customerName || "(customer name)"}</div>
+                <div className="font-mono text-[10px]" style={{ color: "var(--muted)" }}>{data.customerPhone || "(customer WhatsApp)"}</div>
+              </div>
+              <div className="mb-5 grid grid-cols-2 gap-4">
+                <div>
+                  <div className="font-mono text-[9px] uppercase tracking-wider mb-1" style={{ color: "var(--muted)" }}>{isInbound ? "Recipient" : "Beneficiary (supplier)"}</div>
+                  <div className="text-sm font-semibold">{data.supplier || "(beneficiary)"}</div>
+                  <div className="font-mono text-[10px]" style={{ color: "var(--muted)" }}>{isInbound ? "Nigeria" : data.country}</div>
+                </div>
+                <div>
+                  <div className="font-mono text-[9px] uppercase tracking-wider mb-1" style={{ color: "var(--muted)" }}>Service tier</div>
+                  <div className="text-sm font-semibold">{tier.name}</div>
+                  <div className="font-mono text-[10px]" style={{ color: "var(--muted)" }}>{tier.tagline}</div>
+                </div>
+              </div>
+              <div className="rounded-lg p-4 mb-5" style={{ background: "var(--bone)" }}>
+                <div className="space-y-1.5 text-sm">
+                  <div className="flex justify-between"><span style={{ color: "var(--muted)" }}>Amount ({isInbound ? "incoming" : "outgoing"})</span><span className="font-mono">${amount.toLocaleString()} {data.currency}</span></div>
+                  <div className="flex justify-between"><span style={{ color: "var(--muted)" }}>Locked rate</span><span className="font-mono">₦{customerRate.toFixed(2)}/$</span></div>
+                  <div className="flex justify-between pt-2 mt-2 font-semibold" style={{ borderTop: "1px solid var(--line)" }}>
+                    <span>{isInbound ? "Recipient receives" : "Total NGN to fund"}</span>
+                    <span className="font-mono">₦{ngnTotal.toLocaleString()}</span>
+                  </div>
+                </div>
+              </div>
+              {!isInbound && (
+                <div className="rounded-lg p-4 mb-5" style={{ background: "rgba(15,95,63,0.06)", border: "1px solid rgba(15,95,63,0.2)" }}>
+                  <div className="font-mono text-[9px] uppercase tracking-wider mb-2" style={{ color: "var(--emerald)" }}>Payment instructions — fund this transaction</div>
+                  <div className="space-y-1 text-sm">
+                    <div className="flex justify-between"><span style={{ color: "var(--muted)" }}>Bank</span><span>(operator collection bank)</span></div>
+                    <div className="flex justify-between"><span style={{ color: "var(--muted)" }}>Account name</span><span>{auth.user?.user_metadata?.company || "Operator"} Collections</span></div>
+                    <div className="flex justify-between"><span style={{ color: "var(--muted)" }}>Account number</span><span className="font-mono">(operator-provided)</span></div>
+                    <div className="flex justify-between"><span style={{ color: "var(--muted)" }}>Reference (must include)</span><span className="font-mono font-semibold" style={{ color: "var(--emerald)" }}>{createdRef || "QU-XXXX"}</span></div>
+                    <div className="flex justify-between"><span style={{ color: "var(--muted)" }}>Amount</span><span className="font-mono font-semibold">₦{ngnTotal.toLocaleString()}</span></div>
+                    <div className="flex justify-between pt-2 mt-2" style={{ borderTop: "1px dashed var(--line)" }}><span style={{ color: "var(--muted)" }}>Quote validity</span><span className="font-mono" style={{ color: "var(--amber)" }}>4 minutes</span></div>
+                  </div>
+                </div>
+              )}
+              <div className="text-[9px] leading-relaxed" style={{ color: "var(--muted)" }}>Payment execution by licensed payment partner. XaePay is a software and compliance documentation platform. This invoice is generated upon quote confirmation and represents the locked terms of the transaction. Reference number must be included in the wire transfer for proper allocation.</div>
+            </div>
+          </div>
+          <div className="grid gap-2 sm:grid-cols-3">
+            <SecondaryBtn full onClick={() => push("PDF generation lands with backend pass", "info")}><Download size={14} /> Download PDF</SecondaryBtn>
+            <SecondaryBtn full onClick={() => push("WhatsApp delivery lands with backend pass", "info")}><MessageCircle size={14} /> Send via WhatsApp</SecondaryBtn>
+            <SecondaryBtn full onClick={() => push("Email delivery lands with backend pass", "info")}><Send size={14} /> Email customer</SecondaryBtn>
+          </div>
+          <div className="flex justify-end pt-2"><PrimaryBtn onClick={onClose}>Done</PrimaryBtn></div>
+        </div>
+      )}
+    </Modal>
+  );
+}
+
 function BDCRailQuotes() {
   const { push } = useToast();
   const auth = useAuth();
@@ -3069,6 +3438,8 @@ function BDCRailQuotes() {
 
   // Invoice preview — shows the operator what the customer will receive when they confirm
   const [invoicePreviewOpen, setInvoicePreviewOpen] = useState(false);
+  // The new MVP-style 5-step quote modal. Replaces the inline form for quote creation.
+  const [quoteModalOpen, setQuoteModalOpen] = useState(false);
 
   // Customer form (resets after every Send, so BDC can compose more quotes back-to-back)
   const [customerName, setCustomerName] = useState("");
@@ -3480,235 +3851,57 @@ function BDCRailQuotes() {
 
   return (
     <div className="space-y-5">
-      {/* Quote inputs */}
-      <div className="rounded-2xl p-5" style={{ background: "var(--bone)", border: "1px solid var(--line)" }}>
-        <div className="grid gap-4 sm:grid-cols-4">
-          <Field label="Direction">
-            <Select value={direction} onChange={(e) => { setDirection(e.target.value); setChosenRail(null); }}>
-              <option value="off-ramp">Off-ramp · NGN customer → foreign supplier</option>
-              <option value="on-ramp">On-ramp · Foreign sender → NGN beneficiary</option>
-            </Select>
-          </Field>
-          <Field label={`Amount (${destinationCcy})`}>
-            <div className="focus-ring flex items-center rounded-xl transition" style={{ background: "white", border: "1px solid var(--line)" }}>
-              <span className="pl-3.5 text-sm font-mono" style={{ color: "var(--muted)" }}>$</span>
-              <input type="text" value={amount} onChange={(e) => setAmount(e.target.value)} className="w-full bg-transparent px-2 py-3 text-sm outline-none font-mono" />
+      {/* MVP intro panel — quote tool landing. Quote creation happens in the modal below. */}
+      <div className="grid gap-6 lg:grid-cols-12">
+        <div className="lg:col-span-8 space-y-6">
+          <div className="grid gap-4 sm:grid-cols-3">
+            <StatCard label="This month earnings" value="$4,280" change="+$1,840 vs last month" positive />
+            <StatCard label="Active transactions" value={String(pendingQuotes.length)} sub={pendingQuotes.length === 0 ? "None in flight" : `${pendingQuotes.length} in flight`} />
+            <StatCard label="Volume routed · 30d" value="$1.2M" change="+38% vs prior" positive />
+          </div>
+          <Card>
+            <div className="flex items-start justify-between mb-5">
+              <div>
+                <h2 className="font-display text-xl font-semibold">Start a new quote</h2>
+                <p className="mt-1 text-sm" style={{ color: "var(--muted)" }}>Customer messages you, you quote them in 2 minutes.</p>
+              </div>
+              <button onClick={() => setQuoteModalOpen(true)} className="inline-flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold transition" style={{ background: "var(--ink)", color: "var(--bone)" }}>
+                <Plus size={14} /> New quote
+              </button>
             </div>
-          </Field>
-          <Field label="Settle currency">
-            <Select value={destinationCcy} onChange={(e) => setDestinationCcy(e.target.value)}>
-              <option>USD</option><option>GBP</option><option>EUR</option><option>CNY</option><option>AED</option>
-            </Select>
-          </Field>
-          <Field label="Urgency">
-            <Select value={urgency} onChange={(e) => setUrgency(e.target.value)}>
-              <option value="standard">Standard</option>
-              <option value="priority">Priority (faster, +bps)</option>
-            </Select>
-          </Field>
-        </div>
-        <div className="mt-3 flex flex-wrap items-center gap-3 text-xs">
-          <div className="flex items-center gap-1.5"><div className="h-1.5 w-1.5 rounded-full pulse-dot" style={{ background: "var(--emerald)", boxShadow: "0 0 6px var(--emerald)" }} /><span className="font-mono uppercase tracking-wider" style={{ color: "var(--muted)" }}>Live · refreshes every 4s</span></div>
-          {SHOW_TRIPLE_A && <>
-            <span style={{ color: "var(--muted)" }}>·</span>
-            <span className="font-mono" style={{ color: "var(--muted)" }}>Best LP USDT rate: ₦{LP_USDT_NGN}/USDT</span>
-          </>}
-          <span style={{ color: "var(--muted)" }}>·</span>
-          <span className="font-mono" style={{ color: "var(--muted)" }}>Tick #{tick}</span>
-        </div>
-      </div>
-
-      {/* Funding method — only meaningful on off-ramp (BDC-funded), and only when more than one rail is on stage */}
-      {SHOW_TRIPLE_A && direction === "off-ramp" && (
-        <div className="rounded-2xl p-4" style={{ background: "var(--bone)", border: "1px solid var(--line)" }}>
-          <div className="flex items-start justify-between gap-3 flex-wrap">
-            <div>
-              <div className="font-display text-sm font-semibold">Funding method</div>
-              <p className="mt-0.5 text-xs" style={{ color: "var(--muted)" }}>What inventory are you funding the wire with? Triple-A needs USDT; Cedar runs on naira.</p>
+            <div className="rounded-xl p-5" style={{ background: "var(--bone)", border: "1px solid var(--line)" }}>
+              <div className="flex items-start gap-3">
+                <MessageCircle size={16} className="mt-0.5 flex-shrink-0" style={{ color: "var(--emerald)" }} />
+                <div>
+                  <div className="text-sm font-semibold mb-1">WhatsApp shortcut</div>
+                  <p className="text-sm leading-relaxed" style={{ color: "var(--muted)" }}>Forward customer requests directly to <span className="font-mono font-semibold" style={{ color: "var(--ink)" }}>{WHATSAPP_NUMBER_NG.replace(/(\d{3})(\d{3})(\d{4})$/, '$1 $2 $3').replace(/^234/, '+234 ')}</span> with the customer's invoice and amount. We'll reply with quotes for all four tiers — you pick which one to send back.</p>
+                </div>
+              </div>
             </div>
-            <div className="flex rounded-xl overflow-hidden" style={{ border: "1px solid var(--line)" }}>
-              {[
-                { id: "ngn-fiat", label: "NGN fiat", sub: "→ Cedar Money" },
-                { id: "usdt", label: "USDT", sub: "→ Triple-A" },
-                { id: "compare", label: "Compare both", sub: "Side-by-side" },
-              ].map((opt) => (
-                <button
-                  key={opt.id}
-                  onClick={() => setFundingMethod(opt.id)}
-                  className="px-4 py-2 text-xs font-semibold transition"
-                  style={fundingMethod === opt.id
-                    ? { background: "var(--ink)", color: "var(--bone)" }
-                    : { background: "white", color: "var(--ink)" }}
-                  title={opt.sub}
-                >
-                  {opt.label}
-                  <div className="font-mono text-[9px] uppercase tracking-wider mt-0.5" style={fundingMethod === opt.id ? { color: "rgba(247,245,240,0.6)" } : { color: "var(--muted)" }}>{opt.sub}</div>
-                </button>
+          </Card>
+        </div>
+        <div className="space-y-4 lg:col-span-4">
+          <Card>
+            <div className="font-mono text-[10px] uppercase tracking-wider mb-3" style={{ color: "var(--muted)" }}>Tier minimums today</div>
+            <div className="space-y-3">
+              {Object.values(TIERS).map((t) => (
+                <div key={t.id} className="flex items-baseline justify-between">
+                  <div>
+                    <div className="text-sm font-semibold">{t.name}</div>
+                    <div className="font-mono text-[9px] uppercase tracking-wider" style={{ color: "var(--muted)" }}>{t.tagline}</div>
+                  </div>
+                  <div className="font-mono text-lg font-semibold">₦{t.minMarkup.toFixed(2)}<span className="text-xs" style={{ color: "var(--muted)" }}>/$</span></div>
+                </div>
               ))}
             </div>
-          </div>
-        </div>
-      )}
-
-      {/* Rail comparison cards (view-only) */}
-      <div className={`grid gap-4 ${railsByFunding.length > 1 ? "lg:grid-cols-2" : ""}`}>
-        {railsByFunding.map((rail) => {
-          // Only highlight a "cheapest" winner when more than one rail is on screen.
-          // When only one rail shows (because the BDC picked a single funding method), there's nothing to compare.
-          const isCheapest = railsByFunding.length > 1 && cheapest && rail.name === cheapest.name;
-          const ineligible = parseFloat(amount) < rail.minTicket;
-          return (
-            <div key={rail.name} className="card-soft rounded-2xl p-6 relative overflow-hidden" style={isCheapest ? { background: "var(--ink)", color: "var(--bone)", border: "1px solid var(--ink)" } : { background: "white", border: "1px solid var(--line)", opacity: ineligible ? 0.55 : 1 }}>
-              {isCheapest && (<><div className="absolute -right-16 -top-16 h-40 w-40 rounded-full opacity-30 blur-2xl" style={{ background: "var(--lime)" }} /><div className="absolute right-4 top-4 rounded-full px-2 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-wider" style={{ background: "var(--lime)", color: "var(--ink)" }}>Cheapest</div></>)}
-              <div className="relative">
-                <div className="flex items-start gap-3">
-                  <div className="flex h-9 w-9 items-center justify-center rounded-lg" style={isCheapest ? { background: "rgba(197,242,74,0.1)", color: "var(--lime)" } : { background: "var(--bone-2)", color: "var(--emerald)" }}><Layers size={16} /></div>
-                  <div>
-                    <div className="font-display text-lg font-semibold">{rail.displayName || rail.name}</div>
-                    <div className="font-mono text-[10px] uppercase tracking-wider" style={isCheapest ? { color: "rgba(247,245,240,0.6)" } : { color: "var(--muted)" }}>{rail.sublabel}</div>
-                  </div>
-                </div>
-                <dl className="mt-5 space-y-2.5 text-sm">
-                  <div className="flex items-baseline justify-between"><dt style={isCheapest ? { color: "rgba(247,245,240,0.6)" } : { color: "var(--muted)" }}>Quote ({rail.quoteCurrency})</dt><dd className="font-mono font-semibold">{rail.rateLine}</dd></div>
-                  <div className="flex items-baseline justify-between"><dt style={isCheapest ? { color: "rgba(247,245,240,0.6)" } : { color: "var(--muted)" }}>Rail fee</dt><dd className="font-mono font-semibold">{rail.feeLine}</dd></div>
-                  <div className="pt-2.5" style={{ borderTop: `1px solid ${isCheapest ? "rgba(255,255,255,0.08)" : "var(--line)"}` }}>
-                    <div className="flex items-baseline justify-between">
-                      <dt className="font-semibold">{rail.headlineLabel}</dt>
-                      <dd className="font-display text-2xl font-[500]" style={isCheapest ? { color: "var(--lime)" } : {}}>{rail.headlinePrimary}</dd>
-                    </div>
-                    {rail.headlineSecondary && <div className="mt-0.5 text-right font-mono text-[10px]" style={isCheapest ? { color: "rgba(247,245,240,0.5)" } : { color: "var(--muted)" }}>{rail.headlineSecondary}</div>}
-                  </div>
-                  <div className="flex items-baseline justify-between"><dt style={isCheapest ? { color: "rgba(247,245,240,0.6)" } : { color: "var(--muted)" }}>Settlement</dt><dd className="font-mono text-xs">{rail.settlement}</dd></div>
-                  <div className="flex items-baseline justify-between"><dt style={isCheapest ? { color: "rgba(247,245,240,0.6)" } : { color: "var(--muted)" }}>Min ticket</dt><dd className="font-mono text-xs">${rail.minTicket.toLocaleString()}</dd></div>
-                </dl>
-                <div className="mt-4 rounded-lg p-3 text-[11px] leading-relaxed" style={isCheapest ? { background: "rgba(197,242,74,0.06)", color: "rgba(247,245,240,0.75)" } : { background: "var(--bone)", color: "var(--muted)" }}>
-                  <div className="font-mono text-[9px] uppercase tracking-wider mb-1" style={isCheapest ? { color: "var(--lime)" } : { color: "var(--emerald)" }}>How money moves</div>
-                  {rail.network}
-                  <div className="mt-1.5 italic">{rail.note}</div>
-                </div>
-                {ineligible && <div className="mt-3 font-mono text-[10px] uppercase tracking-wider" style={{ color: "#92400e" }}>Below minimum ticket — adjust amount</div>}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-
-      {/* Service tier picker — operator picks per-transaction */}
-      <div className="card-soft rounded-2xl p-6" style={{ background: "white", border: "1px solid var(--line)" }}>
-        <div className="flex items-start justify-between gap-4 flex-wrap mb-4">
-          <div>
-            <h3 className="font-display text-lg font-semibold">Service tier</h3>
-            <p className="mt-1 text-sm" style={{ color: "var(--muted)" }}>Pick the tier for this transaction. Each tier has a minimum markup (₦/$) and earnings split.</p>
-          </div>
-        </div>
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          {Object.values(TIERS).map((t) => {
-            const isSelected = selectedTier === t.id;
-            const isPro = t.id === "pro";
-            return (
-              <button key={t.id} onClick={() => setSelectedTier(t.id)} className="card-lift rounded-xl p-4 text-left transition" style={isSelected ? (isPro ? { background: "var(--ink)", color: "var(--bone)", border: "2px solid var(--lime)" } : { background: "var(--ink)", color: "var(--bone)", border: "2px solid var(--ink)" }) : { background: "white", border: "1px solid var(--line)" }}>
-                <div className="flex items-start justify-between mb-2">
-                  <div className="font-display text-base font-semibold">{t.name}</div>
-                  {isSelected && <CheckCircle2 size={14} style={{ color: "var(--lime)" }} />}
-                </div>
-                <div className="font-mono text-[9px] uppercase tracking-wider" style={isSelected ? { color: "rgba(247,245,240,0.6)" } : { color: "var(--muted)" }}>{t.tagline}</div>
-                <div className="mt-3 font-display text-xl font-[500]" style={{ color: isSelected ? (isPro ? "var(--lime)" : "var(--lime)") : "var(--ink)" }}>₦{t.minMarkup.toFixed(2)}<span className="text-xs ml-1" style={isSelected ? { color: "rgba(247,245,240,0.6)" } : { color: "var(--muted)" }}>/$ min</span></div>
-                <div className="mt-1 font-mono text-[10px]" style={isSelected ? { color: "rgba(247,245,240,0.5)" } : { color: "var(--muted)" }}>You: {(t.operatorShare * 100).toFixed(0)}% · XaePay: {(t.xaepayShare * 100).toFixed(0)}%</div>
-              </button>
-            );
-          })}
+          </Card>
+          <Card>
+            <div className="font-mono text-[10px] uppercase tracking-wider mb-3" style={{ color: "var(--muted)" }}>Today's wholesale rate</div>
+            <div className="font-display text-3xl font-[500] tracking-tight">₦{(cedar?.nativeCostNGN || 1395).toFixed(2)}<span className="text-base ml-1" style={{ color: "var(--muted)" }}>/$</span></div>
+            <div className="mt-2 text-xs" style={{ color: "var(--muted)" }}>Updated every 4 minutes from licensed partner</div>
+          </Card>
         </div>
       </div>
-
-      {/* Customer rate calculator */}
-      <div className="card-soft rounded-2xl p-6" style={{ background: "white", border: "1px solid var(--line)" }}>
-        <div className="flex items-start justify-between gap-4 flex-wrap">
-          <div>
-            <h3 className="font-display text-lg font-semibold">Customer rate calculator</h3>
-            <p className="mt-1 text-sm" style={{ color: "var(--muted)" }}>{isInbound
-              ? `Inbound: your markup is subtracted from wholesale (recipient gets fewer naira per dollar). Must be at or above the ${tier.name} tier minimum (₦${tier.minMarkup.toFixed(2)}/$).`
-              : `Set your markup in ₦ per $ on top of the wholesale rate. Must be at or above the ${tier.name} tier minimum (₦${tier.minMarkup.toFixed(2)}/$).`}</p>
-          </div>
-          {cheapest && <div className="rounded-full px-2.5 py-1 font-mono text-[10px] font-semibold uppercase tracking-wider whitespace-nowrap" style={{ background: "var(--bone-2)", color: "var(--emerald)" }}>Basis · {cheapest.displayName || cheapest.name}</div>}
-        </div>
-        {cheapest ? (
-          <div className="mt-5 grid gap-5 lg:grid-cols-2">
-            <div className="space-y-4">
-              <Field label="Your markup (₦ per $)">
-                <div className="focus-ring flex items-center rounded-xl transition" style={{ background: "white", border: markupValid ? "1px solid var(--line)" : "1px solid var(--amber)" }}>
-                  <span className="pl-3.5 text-sm font-mono" style={{ color: "var(--muted)" }}>₦</span>
-                  <input type="number" step="0.10" value={markupAmount} onChange={(e) => setMarkupAmount(parseFloat(e.target.value) || 0)} className="w-full bg-transparent px-2 py-3 text-sm outline-none font-mono" />
-                  <span className="pr-3.5 text-sm font-mono" style={{ color: "var(--muted)" }}>/ $</span>
-                </div>
-                {!markupValid && <div className="mt-2 text-xs" style={{ color: "var(--amber)" }}>Below {tier.name} minimum of ₦{tier.minMarkup.toFixed(2)}/$</div>}
-                <div className="mt-2 flex flex-wrap gap-1.5">
-                  {[tier.minMarkup, tier.minMarkup + 1, tier.minMarkup + 2, tier.minMarkup + 3].map((v) => (
-                    <button key={v} onClick={() => setMarkupAmount(v)} className="rounded-full px-2.5 py-1 font-mono text-[10px] font-semibold uppercase tracking-wider transition" style={Math.abs(markupAmount - v) < 0.001 ? { background: "var(--ink)", color: "var(--bone)" } : { background: "var(--bone-2)", color: "var(--muted)" }}>₦{v.toFixed(2)}</button>
-                  ))}
-                </div>
-              </Field>
-              <div className="space-y-1.5 rounded-xl p-4 text-sm" style={{ background: "var(--bone)", border: "1px solid var(--line)" }}>
-                <div className="flex items-baseline justify-between"><span style={{ color: "var(--muted)" }}>Cost basis ({cheapest.displayName || cheapest.name})</span><span className="font-mono font-semibold">₦{cheapest.nativeCostNGN.toFixed(2)}</span></div>
-                <div className="flex items-baseline justify-between"><span style={{ color: "var(--muted)" }}>{isInbound ? "− Your spread" : "+ Your markup"}</span><span className="font-mono font-semibold">{isInbound ? "−" : ""}₦{markupAmount.toFixed(2)}</span></div>
-              </div>
-              <div className="space-y-1.5 rounded-xl p-4 text-sm" style={{ background: "var(--bone)", border: "1px solid var(--line)" }}>
-                <div className="font-mono text-[10px] uppercase tracking-wider mb-1" style={{ color: "var(--muted)" }}>Margin split · {tier.name} tier</div>
-                <div className="flex items-baseline justify-between"><span style={{ color: "var(--muted)" }}>You ({(tier.operatorShare * 100).toFixed(0)}%)</span><span className="font-mono font-semibold" style={{ color: "var(--emerald)" }}>${operatorEarnUSD.toFixed(2)}</span></div>
-                <div className="flex items-baseline justify-between"><span style={{ color: "var(--muted)" }}>XaePay ({(tier.xaepayShare * 100).toFixed(0)}%)</span><span className="font-mono">${xaepayEarnUSD.toFixed(2)}</span></div>
-              </div>
-            </div>
-            <div className="rounded-xl p-5 relative overflow-hidden" style={{ background: "var(--ink)", color: "var(--bone)" }}>
-              <div className="absolute -right-12 -top-12 h-32 w-32 rounded-full opacity-30 blur-3xl" style={{ background: "var(--lime)" }} />
-              <div className="relative font-mono text-[10px] uppercase tracking-wider" style={{ color: "rgba(247,245,240,0.5)" }}>{isInbound ? "Recipient receives at" : "Quote to customer"}</div>
-              <div className="relative font-display mt-1 text-4xl font-[500] tracking-tight" style={{ color: "var(--lime)" }}>₦{customerRate.toFixed(2)}<span className="font-mono text-base ml-1.5" style={{ color: "rgba(247,245,240,0.6)" }}>/ $</span></div>
-              <div className="relative mt-1.5 font-mono text-[11px]" style={{ color: "rgba(247,245,240,0.6)" }}>{isInbound ? `Recipient gets ₦${Math.round(ngnTotal).toLocaleString()} on $${parseFloat(amount).toLocaleString()} sent` : `Total: ₦${Math.round(ngnTotal).toLocaleString()} for $${parseFloat(amount).toLocaleString()}`}</div>
-              <div className="relative mt-3 grid grid-cols-2 gap-3 text-xs pt-3" style={{ borderTop: "1px solid rgba(255,255,255,0.08)" }}>
-                <div>
-                  <div className="font-mono uppercase tracking-wider" style={{ color: "rgba(247,245,240,0.5)" }}>Margin / $1</div>
-                  <div className="font-mono mt-0.5 font-semibold">₦{grossMarginPerUSD.toFixed(2)}</div>
-                </div>
-                <div>
-                  <div className="font-mono uppercase tracking-wider" style={{ color: "rgba(247,245,240,0.5)" }}>Total margin</div>
-                  <div className="font-mono mt-0.5 font-semibold" style={{ color: "var(--lime)" }}>₦{Math.round(grossMarginTotal).toLocaleString()}</div>
-                </div>
-              </div>
-            </div>
-          </div>
-        ) : (
-          <div className="mt-5 rounded-xl p-5 text-sm" style={{ background: "var(--bone)", color: "var(--muted)" }}>Amount is below the minimum ticket on every rail. Increase amount or adjust urgency.</div>
-        )}
-      </div>
-
-      {/* Compose: customer details + send. Resets after each send so multiple quotes can be sent back-to-back. */}
-      {cheapest && (
-        <div className="card-soft rounded-2xl p-6" style={{ background: "white", border: "1px solid var(--line)" }}>
-          <div className="flex items-start justify-between gap-4 flex-wrap mb-5">
-            <div>
-              <h3 className="font-display text-lg font-semibold">Send quote to customer</h3>
-              <p className="mt-1 text-sm" style={{ color: "var(--muted)" }}>Fill in customer details and send. The form resets after each send — you can have many quotes in-flight at once.</p>
-            </div>
-          </div>
-          <div className="grid gap-4 sm:grid-cols-3">
-            <Field label="Customer name"><Input value={customerName} onChange={(e) => setCustomerName(e.target.value)} placeholder="Adeyemi Okafor" /></Field>
-            <Field label="Customer WhatsApp"><Input value={customerPhone} onChange={(e) => setCustomerPhone(e.target.value)} placeholder="+234 803 ..." /></Field>
-            <Field label="Beneficiary / supplier"><Input value={beneficiary} onChange={(e) => setBeneficiary(e.target.value)} placeholder="Shenzhen Electronics Co." /></Field>
-          </div>
-          <div className="mt-5">
-            <div className="mb-2 flex justify-end">
-              <button onClick={() => setInvoicePreviewOpen(true)} disabled={!cheapest || !markupValid} className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 font-mono text-[10px] font-semibold uppercase tracking-wider transition disabled:opacity-40" style={{ border: "1px solid var(--line)", color: "var(--ink)" }}><FileText size={11} /> Preview invoice</button>
-            </div>
-            <button onClick={sendQuoteOnWhatsApp} disabled={!customerPhone || sendingQuote || !markupValid} className="w-full inline-flex items-center justify-center gap-2 rounded-xl px-5 py-3 text-sm font-semibold transition disabled:opacity-40 disabled:cursor-not-allowed" style={{ background: "var(--ink)", color: "var(--bone)" }}>
-              {sendingQuote ? <><Loader2 size={14} className="spin" /> Saving…</> : <><MessageCircle size={14} /> Send quote on WhatsApp · ₦{Math.round(ngnTotal).toLocaleString()}</>}
-            </button>
-            <p className="mt-2 text-xs" style={{ color: "var(--muted)" }}>WhatsApp opens with a pre-filled message — click send in the WhatsApp window. Customer's reply auto-flips the row below within ~5 sec.</p>
-            {isSignedIn && (
-              <button onClick={sendQuoteAuto} disabled={!customerPhone || sendingQuote || !markupValid} className="mt-2 w-full inline-flex items-center justify-center gap-2 rounded-xl px-5 py-2.5 text-xs font-semibold transition disabled:opacity-40 disabled:cursor-not-allowed" style={{ border: "1px solid var(--line)", color: "var(--ink)", background: "var(--bone-2)" }}>
-                {sendingQuote ? <><Loader2 size={12} className="spin" /> Saving…</> : <><Send size={12} /> Send auto via XaePay <span className="font-mono text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded" style={{ background: "var(--lime)", color: "var(--ink)" }}>beta</span></>}
-              </button>
-            )}
-          </div>
-        </div>
-      )}
 
       {/* Pending quotes — supports many in-flight quotes at once */}
       {isSignedIn && (
@@ -3804,21 +3997,7 @@ function BDCRailQuotes() {
           </div>
         )}
       </Card>
-      <InvoicePreviewModal
-        open={invoicePreviewOpen}
-        onClose={() => setInvoicePreviewOpen(false)}
-        data={{
-          customerName, customerPhone,
-          beneficiary: beneficiary || destinationCorridor,
-          country: destinationCorridor,
-          direction, amount: parseFloat(amount || 0), currency: destinationCcy,
-          tier, markupAmount,
-          customerRate, ngnTotal,
-          railName: cheapest?.displayName || cheapest?.name,
-          settlement: cheapest?.settlement,
-          operatorCompany: auth.user?.user_metadata?.company || "Your operator",
-        }}
-      />
+      <OperatorQuoteModal open={quoteModalOpen} onClose={() => setQuoteModalOpen(false)} onCreated={() => fetchPendingQuotes()} />
     </div>
   );
 }
