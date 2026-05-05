@@ -747,7 +747,7 @@ function TopBar({ view, setView, mobileOpen, setMobileOpen, onSignIn, onRequestA
             ) : (
               <>
                 <button onClick={onSignIn} className={`rounded-lg px-3 py-1.5 text-sm font-medium transition ${onLanding ? "text-stone-300 hover:text-white" : "text-stone-600 hover:text-stone-900"}`}>Sign in</button>
-                <button onClick={onRequestAccess} className="rounded-lg px-4 py-1.5 text-sm font-medium transition" style={onLanding ? { background: "var(--lime)", color: "var(--ink)" } : { background: "var(--ink)", color: "var(--bone)" }}>Become a partner</button>
+                <button onClick={onRequestAccess} className="rounded-lg px-4 py-1.5 text-sm font-medium transition" style={onLanding ? { background: "var(--lime)", color: "var(--ink)" } : { background: "var(--ink)", color: "var(--bone)" }}>Become an operator</button>
               </>
             )}
           </div>
@@ -763,7 +763,7 @@ function TopBar({ view, setView, mobileOpen, setMobileOpen, onSignIn, onRequestA
             ) : (
               <div className="flex flex-col gap-2">
                 <button onClick={() => { onSignIn(); setMobileOpen(false); }} className="w-full rounded-lg px-4 py-2.5 text-sm font-medium" style={{ border: `1px solid ${onLanding ? "rgba(255,255,255,0.1)" : "var(--line)"}`, color: onLanding ? "var(--bone)" : "var(--ink)" }}>Sign in</button>
-                <button onClick={() => { onRequestAccess(); setMobileOpen(false); }} className="w-full rounded-lg px-4 py-2.5 text-sm font-medium" style={onLanding ? { background: "var(--lime)", color: "var(--ink)" } : { background: "var(--ink)", color: "var(--bone)" }}>Become a partner</button>
+                <button onClick={() => { onRequestAccess(); setMobileOpen(false); }} className="w-full rounded-lg px-4 py-2.5 text-sm font-medium" style={onLanding ? { background: "var(--lime)", color: "var(--ink)" } : { background: "var(--ink)", color: "var(--bone)" }}>Become an operator</button>
               </div>
             )}
           </div>
@@ -844,7 +844,7 @@ function SignInModal({ open, onClose }) {
   );
 }
 
-// MVP 4-step "Become a partner" modal. Replaces the legacy RequestAccessModal +
+// MVP 4-step "Become an operator" modal. Replaces the legacy RequestAccessModal +
 // per-role onboarding routes. Single agent-operator role; on completion we set
 // session.type=bdc and route into the operator dashboard.
 function BecomePartnerModal({ open, onClose, onComplete }) {
@@ -872,7 +872,7 @@ function BecomePartnerModal({ open, onClose, onComplete }) {
     });
   };
   return (
-    <Modal open={open} onClose={onClose} title={`Become a partner · Step ${step} of 4`} size="lg">
+    <Modal open={open} onClose={onClose} title={`Become an operator · Step ${step} of 4`} size="lg">
       {step === 1 && (
         <div className="space-y-5">
           <div>
@@ -951,7 +951,7 @@ function BecomePartnerModal({ open, onClose, onComplete }) {
             <CheckCircle2 size={28} strokeWidth={2.5} style={{ color: "var(--ink)" }} />
           </div>
           <h3 className="font-display text-2xl font-semibold mb-3">You're in.</h3>
-          <p className="text-sm max-w-md mx-auto mb-6" style={{ color: "var(--muted)" }}>We'll send your partner agreement to <span className="font-semibold" style={{ color: "var(--ink)" }}>{data.email || "your email"}</span> and connect your WhatsApp number to ours within 24 hours.</p>
+          <p className="text-sm max-w-md mx-auto mb-6" style={{ color: "var(--muted)" }}>We'll send your operator agreement to <span className="font-semibold" style={{ color: "var(--ink)" }}>{data.email || "your email"}</span> and connect your WhatsApp number to ours within 24 hours.</p>
           <div className="rounded-xl p-4 max-w-md mx-auto mb-6" style={{ background: "var(--bone)", border: "1px solid var(--line)" }}>
             <div className="text-xs font-mono uppercase tracking-wider mb-2" style={{ color: "var(--muted)" }}>Next step</div>
             <p className="text-sm">Refer your first customer. We'll handle their KYC with our compliance partner and have them transacting in 5–10 business days.</p>
@@ -1920,7 +1920,7 @@ function Hero({ onGetStarted }) {
             <h1 className="rise font-display text-[44px] font-[450] leading-[1.02] tracking-tight sm:text-6xl lg:text-[72px]">Cross-border FX<br /><span className="italic" style={{ color: "var(--lime)" }}>businesses run on.</span></h1>
             <p className="rise mt-8 max-w-xl text-base leading-relaxed sm:text-lg" style={{ color: "rgba(247,245,240,0.65)", animationDelay: "0.16s" }}>24hr settlement. Locked rates. Complete trade documentation. The infrastructure operators leverage to move business funds — <span className="font-semibold" style={{ color: "var(--bone)" }}>to and from Nigeria</span> — without the friction that comes with it.</p>
             <div className="rise mt-10 flex flex-col gap-3 sm:flex-row" style={{ animationDelay: "0.24s" }}>
-              <button onClick={onGetStarted} className="glow-lime inline-flex items-center justify-center gap-2 rounded-xl px-6 py-3.5 text-sm font-semibold transition" style={{ background: "var(--lime)", color: "var(--ink)" }}>Become a partner <ArrowRight size={16} /></button>
+              <button onClick={onGetStarted} className="glow-lime inline-flex items-center justify-center gap-2 rounded-xl px-6 py-3.5 text-sm font-semibold transition" style={{ background: "var(--lime)", color: "var(--ink)" }}>Become an operator <ArrowRight size={16} /></button>
               <a href={WHATSAPP_URL} target="_blank" rel="noreferrer" className="inline-flex items-center justify-center gap-2 rounded-xl px-6 py-3.5 text-sm font-semibold transition hover:bg-white/5" style={{ border: "1px solid rgba(255,255,255,0.15)", color: "var(--bone)" }}><MessageCircle size={16} /> Talk on WhatsApp</a>
             </div>
             <div className="rise mt-12 flex flex-wrap gap-x-8 gap-y-3" style={{ animationDelay: "0.32s" }}>
@@ -2135,7 +2135,7 @@ function PartnerEconomics({ onGetStarted }) {
           <SectionEyebrow>Your economics</SectionEyebrow>
           <h2 className="font-display mt-4 text-4xl font-[450] leading-[1.05] tracking-tight sm:text-5xl">You keep <span className="italic" style={{ color: "var(--emerald)" }}>55–75%</span><br />based on tier.</h2>
           <p className="mt-6 text-base leading-relaxed" style={{ color: "var(--muted)" }}>Your share of the markup depends on which tier you pick for each transaction. Lower tiers leave more work to you and your share is higher. Higher tiers have us doing more work, so our share grows. Both sides win at every tier.</p>
-          <button onClick={onGetStarted} className="mt-7 inline-flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold transition" style={{ background: "var(--ink)", color: "var(--bone)" }}>Become a partner <ArrowRight size={14} /></button>
+          <button onClick={onGetStarted} className="mt-7 inline-flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold transition" style={{ background: "var(--ink)", color: "var(--bone)" }}>Become an operator <ArrowRight size={14} /></button>
         </div>
         <div className="lg:col-span-7 space-y-3">
           {Object.values(TIERS).map((t) => {
@@ -2180,7 +2180,7 @@ function CTA({ onGetStarted }) {
           <h2 className="font-display text-4xl font-[450] leading-[1.05] tracking-tight sm:text-5xl">Ready to plug in?</h2>
           <p className="mt-5 text-base leading-relaxed" style={{ color: "var(--muted)" }}>Sign up in 4 minutes. Refer your first customer this week. Get them transacting in 5–10 business days. Earnings start with their first payment.</p>
           <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:justify-center">
-            <button onClick={onGetStarted} className="inline-flex items-center justify-center gap-2 rounded-xl px-6 py-3.5 text-sm font-semibold transition" style={{ background: "var(--ink)", color: "var(--bone)" }}>Become a partner <ArrowRight size={16} /></button>
+            <button onClick={onGetStarted} className="inline-flex items-center justify-center gap-2 rounded-xl px-6 py-3.5 text-sm font-semibold transition" style={{ background: "var(--ink)", color: "var(--bone)" }}>Become an operator <ArrowRight size={16} /></button>
             <a href={WHATSAPP_URL} target="_blank" rel="noreferrer" className="inline-flex items-center justify-center gap-2 rounded-xl px-6 py-3.5 text-sm font-semibold transition hover:bg-white" style={{ border: "1px solid var(--line)", color: "var(--ink)" }}><MessageCircle size={16} /> Ask questions</a>
           </div>
         </div>
