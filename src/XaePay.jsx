@@ -28,10 +28,11 @@ const PARTNER_DISPLAY_NAME = "Licensed payment partner";
 // leave more validation work to the operator (and pay them more), higher tiers shift work
 // (and a larger margin share) to XaePay.
 const TIERS = {
-  standard:   { id: "standard",   name: "Standard",       minMarkup: 1.50, operatorShare: 0.70, xaepayShare: 0.30, tagline: "You validate invoices · we execute" },
-  verified:   { id: "verified",   name: "Verified",       minMarkup: 2.50, operatorShare: 0.65, xaepayShare: 0.35, tagline: "We check invoices · reject + reason for fixes" },
-  documented: { id: "documented", name: "Documented",     minMarkup: 3.50, operatorShare: 0.60, xaepayShare: 0.40, tagline: "Full validation + audit pack per transaction" },
-  pro:        { id: "pro",        name: "Compliance Pro", minMarkup: 4.50, operatorShare: 0.55, xaepayShare: 0.45, tagline: "Deep validation + quarterly compliance pack" },
+  basic:      { id: "basic",      name: "Basic",          minMarkup: 0.50, operatorShare: 0.75, xaepayShare: 0.25, tagline: "Light send · for small / price-competitive transactions",       monthlyFloor: 10000,  monthlyCeiling: 25000 },
+  standard:   { id: "standard",   name: "Standard",       minMarkup: 1.50, operatorShare: 0.70, xaepayShare: 0.30, tagline: "You validate invoices · we execute",                          monthlyFloor: 25000,  monthlyCeiling: 50000 },
+  verified:   { id: "verified",   name: "Verified",       minMarkup: 2.50, operatorShare: 0.65, xaepayShare: 0.35, tagline: "We check invoices · reject + reason for fixes",               monthlyFloor: 50000,  monthlyCeiling: 200000 },
+  documented: { id: "documented", name: "Documented",     minMarkup: 3.50, operatorShare: 0.60, xaepayShare: 0.40, tagline: "Full validation + audit pack per transaction",                monthlyFloor: 200000, monthlyCeiling: 500000 },
+  pro:        { id: "pro",        name: "Compliance Pro", minMarkup: 4.50, operatorShare: 0.55, xaepayShare: 0.45, tagline: "Deep validation + quarterly compliance pack",                  monthlyFloor: 500000, monthlyCeiling: null },
 };
 
 function GlobalStyles() {
@@ -932,8 +933,8 @@ function BecomePartnerModal({ open, onClose, onComplete }) {
           </div>
           <div className="space-y-3">
             <PartnerTerm icon={DollarSign} title="You set your customer's rate">You quote your customer whatever rate you want. We give you our wholesale rate plus a small XaePay infrastructure fee. You add your markup on top.</PartnerTerm>
-            <PartnerTerm icon={TrendingUp} title="You earn 55–70% of every transaction's margin">Every dollar of markup you charge above our minimum is split between you and XaePay based on the tier you pick per transaction. Recurring on every transaction, forever.</PartnerTerm>
-            <PartnerTerm icon={Layers} title="Four service tiers, you pick per transaction">Standard (₦1.50/$ minimum), Verified (₦2.50/$), Documented (₦3.50/$), Compliance Pro (₦4.50/$). Each unlocks more validation work XaePay does for that transaction.</PartnerTerm>
+            <PartnerTerm icon={TrendingUp} title="You earn 55–75% of every transaction's margin">Every dollar of markup you charge above our minimum is split between you and XaePay based on the tier you pick per transaction. Recurring on every transaction, forever.</PartnerTerm>
+            <PartnerTerm icon={Layers} title="Five service tiers, you pick per transaction">Basic (₦0.50/$ minimum), Standard (₦1.50/$), Verified (₦2.50/$), Documented (₦3.50/$), Compliance Pro (₦4.50/$). Each unlocks more validation work XaePay does for that transaction.</PartnerTerm>
             <PartnerTerm icon={MessageCircle} title="Everything happens on WhatsApp">Your customer messages you. You forward to XaePay. We handle quotes, KYC, compliance, execution, documents. Your customer never has to download anything.</PartnerTerm>
             <PartnerTerm icon={Shield} title="No license risk, no fund handling">You don't sell FX, hold money, or quote rates. You introduce customers; XaePay onboards them with our licensed payment partner; the partner executes the regulated payment.</PartnerTerm>
           </div>
@@ -1925,7 +1926,7 @@ function Hero({ onGetStarted }) {
             <div className="rise mt-12 flex flex-wrap gap-x-8 gap-y-3" style={{ animationDelay: "0.32s" }}>
               <div>
                 <div className="font-mono text-[10px] uppercase tracking-wider" style={{ color: "rgba(247,245,240,0.45)" }}>Your share</div>
-                <div className="font-display text-lg font-semibold mt-0.5">55–70% of margin</div>
+                <div className="font-display text-lg font-semibold mt-0.5">55–75% of margin</div>
               </div>
               <div>
                 <div className="font-mono text-[10px] uppercase tracking-wider" style={{ color: "rgba(247,245,240,0.45)" }}>Direction</div>
@@ -2037,7 +2038,7 @@ function FourTiers({ onGetStarted }) {
           <h2 className="font-display mt-4 text-4xl font-[450] leading-[1.05] tracking-tight sm:text-5xl">Four tiers. <span className="italic" style={{ color: "var(--emerald)" }}>You pick</span> per transaction.</h2>
           <p className="mt-5 max-w-xl text-base leading-relaxed" style={{ color: "var(--muted)" }}>Each tier has a minimum markup that reflects how much validation work XaePay does. Above the minimum, you set whatever rate your customer can bear. Pick based on whether you're handling invoice review yourself or paying us to do it.</p>
         </div>
-        <div className="grid gap-4 lg:grid-cols-4">
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
           {Object.values(TIERS).map((t, i) => {
             const isPro = t.id === "pro";
             const features = TIER_FEATURES[t.id] || [];
@@ -2069,7 +2070,7 @@ function FourTiers({ onGetStarted }) {
           <div className="flex items-start gap-3">
             <Sparkles size={16} className="mt-0.5 flex-shrink-0" style={{ color: "var(--emerald)" }} />
             <div className="text-sm" style={{ color: "var(--ink)" }}>
-              <span className="font-semibold">How tier selection actually works.</span> If you're a sophisticated agent who already vets your customers' invoices carefully, use Standard tier and capture maximum margin. If you'd rather have XaePay catch invoice issues and bounce them back to your customer for fixes, use Verified tier. If you want a defensible audit report per transaction, use Documented. For high-stakes transactions or aggregator workflows, use Compliance Pro. Same operator, different tiers per transaction — your judgment.
+              <span className="font-semibold">How tier selection actually works.</span> Basic is for small price-competitive transactions ($10K–$25K). Use Standard if you already vet your customers' invoices carefully and want max margin. Verified hands invoice review to XaePay so you don't have to bounce issues yourself. Documented adds a defensible audit pack per transaction. Compliance Pro is for high-stakes flows or aggregator workflows where you want zero compliance work. Same operator, different tiers per transaction — your judgment.
             </div>
           </div>
         </div>
@@ -2081,6 +2082,14 @@ function FourTiers({ onGetStarted }) {
 // Per-tier feature copy used in the FourTiers landing section. Keeps TIERS itself
 // focused on numeric pricing fields; copy lives here so it's easy to edit.
 const TIER_FEATURES = {
+  basic: [
+    "Same-day wire execution via licensed partner",
+    "Light invoice + sanctions check",
+    "Best for small ($10K–$25K) or price-competitive transactions",
+    "Operator handles customer comms",
+    "Transaction receipt + MT103 reference",
+    "75% to you · 25% to XaePay",
+  ],
   standard: [
     "Same-day wire execution via licensed partner",
     "Agent self-validates customer invoices",
@@ -2124,7 +2133,7 @@ function PartnerEconomics({ onGetStarted }) {
       <div className="grid gap-12 lg:grid-cols-12 lg:gap-16">
         <div className="lg:col-span-5">
           <SectionEyebrow>Your economics</SectionEyebrow>
-          <h2 className="font-display mt-4 text-4xl font-[450] leading-[1.05] tracking-tight sm:text-5xl">You keep <span className="italic" style={{ color: "var(--emerald)" }}>55–70%</span><br />based on tier.</h2>
+          <h2 className="font-display mt-4 text-4xl font-[450] leading-[1.05] tracking-tight sm:text-5xl">You keep <span className="italic" style={{ color: "var(--emerald)" }}>55–75%</span><br />based on tier.</h2>
           <p className="mt-6 text-base leading-relaxed" style={{ color: "var(--muted)" }}>Your share of the markup depends on which tier you pick for each transaction. Lower tiers leave more work to you and your share is higher. Higher tiers have us doing more work, so our share grows. Both sides win at every tier.</p>
           <button onClick={onGetStarted} className="mt-7 inline-flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold transition" style={{ background: "var(--ink)", color: "var(--bone)" }}>Become a partner <ArrowRight size={14} /></button>
         </div>
@@ -3395,7 +3404,7 @@ function OperatorQuoteModal({ open, onClose, onCreated }) {
             <h3 className="font-display text-lg font-semibold mb-2">Pick the service tier</h3>
             <p className="text-sm" style={{ color: "var(--muted)" }}>Each tier has a minimum markup and an earnings split. Pick based on what your customer needs and what they'll pay for.</p>
           </div>
-          <div className="grid gap-3 lg:grid-cols-2 xl:grid-cols-4">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
             {Object.values(TIERS).map((t) => {
               const selected = data.selectedTier === t.id;
               const isPro = t.id === "pro";
