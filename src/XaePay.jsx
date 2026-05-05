@@ -3979,20 +3979,25 @@ function BDCRailQuotes() {
 
   // Fetch all in-flight quotes for this BDC (pending / approved / declined). Replaces the per-row polling
   // we had with a single list-fetch every 5s.
-  const fetchPendingQuotes = async () => {
+  const [refreshingPending, setRefreshingPending] = useState(false);
+  const fetchPendingQuotes = async ({ manual = false } = {}) => {
     if (!isSignedIn) return;
+    if (manual) setRefreshingPending(true);
     const { data, error } = await supabase
       .from("quotes")
       .select("*")
       .in("status", ["pending_approval", "customer_approved", "customer_declined"])
       .order("created_at", { ascending: false })
       .limit(20);
+    if (manual) setRefreshingPending(false);
     if (error) {
       // eslint-disable-next-line no-console
       console.error("Fetch pending quotes failed:", error);
+      if (manual) push("Couldn't refresh — check connection.", "warn");
       return;
     }
     setPendingQuotes((data || []).map((q) => ({ ...q, displayRef: `QU-${q.id.slice(0, 4).toUpperCase()}` })));
+    if (manual) push(`Refreshed · ${(data || []).length} in flight`, "success");
   };
 
   useEffect(() => { fetchPendingQuotes(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [auth.user?.id]);
@@ -4141,7 +4146,10 @@ function BDCRailQuotes() {
               <h3 className="font-display text-lg font-semibold">In-flight quotes</h3>
               <p className="text-xs mt-0.5" style={{ color: "var(--muted)" }}>Pending customer reply, approved (ready to submit), or declined. Polls every 5 sec.</p>
             </div>
-            <SecondaryBtn onClick={fetchPendingQuotes}><Loader2 size={14} /> Refresh</SecondaryBtn>
+            <SecondaryBtn onClick={() => fetchPendingQuotes({ manual: true })} disabled={refreshingPending}>
+              <Loader2 size={14} className={refreshingPending ? "spin" : ""} />
+              {refreshingPending ? "Refreshing…" : "Refresh"}
+            </SecondaryBtn>
           </div>
           {pendingQuotes.length === 0 ? (
             <div className="p-8 text-center text-sm" style={{ color: "var(--muted)" }}>No quotes in flight. Send one above.</div>
