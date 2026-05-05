@@ -2006,7 +2006,7 @@ function HowItWorks() {
       <div className="grid gap-5 lg:grid-cols-3">
         {[
           { n: "01", title: "Customer KYC onboarding", body: "You forward your customer's details to XaePay. We submit to our licensed payment partner's compliance team. They review and approve (5–15 business days). Customer becomes 'Approved' status. Only approved customers can transact.", footer: "First-time only · per customer" },
-          { n: "02", title: "Per-transaction quote", body: "Customer messages you with payment details. You forward to XaePay. We quote four tiers, you pick one and set your markup. Customer confirms, gets funding instructions, deposits NGN. Our licensed partner executes the wire same day.", footer: "Every transaction" },
+          { n: "02", title: "Per-transaction quote", body: "Customer messages you with payment details. You forward to XaePay. We quote five tiers, you pick one and set your markup. Customer confirms, gets funding instructions, deposits NGN. Our licensed partner executes the wire same day.", footer: "Every transaction" },
           { n: "03", title: "Documentation + earnings", body: "XaePay handles invoice validation, BOL collection, audit pack assembly per the tier you selected. Earnings calculated on each transaction. Bi-weekly payouts to your Nigerian bank account.", footer: "Automatic · ongoing" },
         ].map((s) => (
           <div key={s.n} className="card-soft rounded-2xl bg-white p-6" style={{ border: "1px solid var(--line)" }}>
@@ -2035,7 +2035,7 @@ function FourTiers({ onGetStarted }) {
       <div className="mx-auto max-w-7xl px-4 py-20 sm:px-6 lg:px-8 lg:py-28">
         <div className="mb-14 max-w-2xl">
           <SectionEyebrow>Service tiers</SectionEyebrow>
-          <h2 className="font-display mt-4 text-4xl font-[450] leading-[1.05] tracking-tight sm:text-5xl">Four tiers. <span className="italic" style={{ color: "var(--emerald)" }}>You pick</span> per transaction.</h2>
+          <h2 className="font-display mt-4 text-4xl font-[450] leading-[1.05] tracking-tight sm:text-5xl">Five tiers. <span className="italic" style={{ color: "var(--emerald)" }}>You pick</span> per transaction.</h2>
           <p className="mt-5 max-w-xl text-base leading-relaxed" style={{ color: "var(--muted)" }}>Each tier has a minimum markup that reflects how much validation work XaePay does. Above the minimum, you set whatever rate your customer can bear. Pick based on whether you're handling invoice review yourself or paying us to do it.</p>
         </div>
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
@@ -4092,7 +4092,7 @@ function BDCRailQuotes() {
                 <MessageCircle size={16} className="mt-0.5 flex-shrink-0" style={{ color: "var(--emerald)" }} />
                 <div>
                   <div className="text-sm font-semibold mb-1">WhatsApp shortcut</div>
-                  <p className="text-sm leading-relaxed" style={{ color: "var(--muted)" }}>Forward customer requests directly to <span className="font-mono font-semibold" style={{ color: "var(--ink)" }}>{WHATSAPP_NUMBER_NG.replace(/(\d{3})(\d{3})(\d{4})$/, '$1 $2 $3').replace(/^234/, '+234 ')}</span> with the customer's invoice and amount. We'll reply with quotes for all four tiers — you pick which one to send back.</p>
+                  <p className="text-sm leading-relaxed" style={{ color: "var(--muted)" }}>Forward customer requests directly to <span className="font-mono font-semibold" style={{ color: "var(--ink)" }}>{WHATSAPP_NUMBER_NG.replace(/(\d{3})(\d{3})(\d{4})$/, '$1 $2 $3').replace(/^234/, '+234 ')}</span> with the customer's invoice and amount. We'll reply with quotes for all five tiers — you pick which one to send back.</p>
                 </div>
               </div>
             </div>
