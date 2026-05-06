@@ -122,7 +122,7 @@ function Modal({ open, onClose, title, children, size = "md" }) {
     return () => window.removeEventListener("keydown", onKey);
   }, [open, onClose]);
   if (!open) return null;
-  const width = size === "lg" ? "max-w-3xl" : size === "sm" ? "max-w-md" : "max-w-lg";
+  const width = size === "xl" ? "max-w-5xl" : size === "lg" ? "max-w-3xl" : size === "sm" ? "max-w-md" : "max-w-lg";
   return (
     <div className="fixed inset-0 z-[90] flex items-center justify-center p-4 font-ui fade-in">
       <div className="absolute inset-0 backdrop-blur-md" style={{ background: "rgba(10,11,13,0.45)" }} onClick={onClose} />
