@@ -7,7 +7,7 @@ import {
   ArrowLeft, ArrowLeftRight, Loader2, Layers, TrendingUp, Wallet, DollarSign, Mail,
   RefreshCw,
 } from "lucide-react";
-import { supabase, sendWhatsAppText, fetchCedarRate, submitCustomerToCedar, submitRecipientToCedar, submitReceiverAccountToCedar, submitCedarTransaction, approveCedarQuote, confirmCedarDeposit } from "./lib/supabase.js";
+import { supabase, sendWhatsAppText, fetchCedarRate, submitCustomerToCedar, submitRecipientToCedar, submitReceiverAccountToCedar, submitCedarTransaction, approveCedarQuote, confirmCedarDeposit, cancelCedarTransaction } from "./lib/supabase.js";
 import { useAuth } from "./lib/auth.js";
 
 // ─── Editable in one place ────────────────────────────────────────────────
@@ -4520,9 +4520,11 @@ function BDCTransactions() {
       ) : (
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
-          <thead><tr style={{ background: "var(--bone)", borderBottom: "1px solid var(--line)" }}>{["Ref", "Customer", "Dest", "Amount", "Rail", "Status", "Date", ""].map((h, i) => (<th key={i} className={`px-4 py-3 text-left font-mono text-[10px] font-semibold uppercase tracking-wider ${h === "Amount" ? "text-right" : ""}`} style={{ color: "var(--muted)" }}>{h}</th>))}</tr></thead>
+          <thead><tr style={{ background: "var(--bone)", borderBottom: "1px solid var(--line)" }}>{["Ref", "Customer", "Dest", "Amount", "Rail", "Status", "Cedar", "Date", ""].map((h, i) => (<th key={i} className={`px-4 py-3 text-left font-mono text-[10px] font-semibold uppercase tracking-wider ${h === "Amount" ? "text-right" : ""}`} style={{ color: "var(--muted)" }}>{h}</th>))}</tr></thead>
           <tbody>
-            {filtered.length === 0 ? (<tr><td colSpan={8} className="px-4 py-12 text-center text-sm" style={{ color: "var(--muted)" }}>No transactions match.</td></tr>) : filtered.map((t) => (
+            {filtered.length === 0 ? (<tr><td colSpan={9} className="px-4 py-12 text-center text-sm" style={{ color: "var(--muted)" }}>No transactions match.</td></tr>) : filtered.map((t) => {
+              const cedarBadge = cedarRequestLabel(t.cedarRequestStatus);
+              return (
               <tr key={t.id} onClick={() => setSelected(t)} className="cursor-pointer transition hover:bg-[color:var(--bone)]" style={{ borderBottom: "1px solid var(--line)" }}>
                 <td className="px-4 py-3.5 font-mono text-xs font-semibold">{t.id}</td>
                 <td className="px-4 py-3.5 font-medium">{t.customer}</td>
@@ -4530,10 +4532,12 @@ function BDCTransactions() {
                 <td className="px-4 py-3.5 text-right font-mono font-semibold">${t.amount.toLocaleString()}</td>
                 <td className="px-4 py-3.5 text-[13px]" style={{ color: "var(--muted)" }}>{SHOW_TRIPLE_A ? t.rail : "Partner"}</td>
                 <td className="px-4 py-3.5"><StatusPill status={t.status} /></td>
+                <td className="px-4 py-3.5">{cedarBadge ? (<span className="rounded-full px-2 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-wider" style={{ background: cedarBadge.bg, color: cedarBadge.color }}>{cedarBadge.label}</span>) : (<span className="font-mono text-[10px]" style={{ color: "var(--muted)" }}>—</span>)}</td>
                 <td className="px-4 py-3.5 font-mono text-xs" style={{ color: "var(--muted)" }}>{t.date}</td>
                 <td className="px-4 py-3.5"><ChevronRight size={14} style={{ color: "var(--muted)" }} /></td>
               </tr>
-            ))}
+              );
+            })}
           </tbody>
         </table>
       </div>
@@ -4749,17 +4753,59 @@ function CedarSubmitPanel({ tx, onSubmitted }) {
 // drives the operator through the remaining lifecycle: approve the locked-in
 // quote → show deposit bank details → confirm customer deposit → watch payout
 // arrive. Renders 0+ stacked panels depending on cedar_request_status.
+const CEDAR_CANCEL_REASONS = [
+  { id: "CUSTOMER_REQUEST", label: "Customer requested cancellation" },
+  { id: "INCORRECT_DETAILS", label: "Incorrect transaction details" },
+  { id: "DUPLICATE", label: "Duplicate transaction" },
+  { id: "COMPLIANCE", label: "Compliance / risk concern" },
+  { id: "OTHER", label: "Other (specify reason)" },
+];
+
 function CedarApprovalSection({ tx, onChanged }) {
   const { push } = useToast();
   const [approving, setApproving] = useState(false);
   const [confirmingDeposit, setConfirmingDeposit] = useState(false);
   const [depositSlipUrl, setDepositSlipUrl] = useState("");
+  const [cancelOpen, setCancelOpen] = useState(false);
+  const [cancelReason, setCancelReason] = useState("CUSTOMER_REQUEST");
+  const [cancelOther, setCancelOther] = useState("");
+  const [canceling, setCanceling] = useState(false);
   const status = (tx.cedarRequestStatus || "").toUpperCase();
   const isAwaitingApproval = status.includes("AWAITING_QUOTE_APPROVAL");
   const isAwaitingDeposit = status.includes("AWAITING_DEPOSIT");
   const isInProgress = status.includes("IN_PROGRESS");
   const isCompleted = status.includes("COMPLETED");
+  const isCanceled = status.includes("CANCELED") || status.includes("CANCELLED");
+  const isExpired = status.includes("EXPIRED");
+  const isTerminal = isCompleted || isCanceled || isExpired;
+  const canCancel = !isTerminal;
   const hasBankDetails = !!tx.cedarBankDetails && Object.keys(tx.cedarBankDetails || {}).length > 0;
+
+  const cancel = async () => {
+    if (!tx.dbId || canceling) return;
+    if (cancelReason === "OTHER" && !cancelOther.trim()) {
+      push("Please describe the cancellation reason.", "warn");
+      return;
+    }
+    setCanceling(true);
+    const { ok, data } = await cancelCedarTransaction({
+      quoteId: tx.dbId,
+      reason: cancelReason,
+      otherReason: cancelReason === "OTHER" ? cancelOther.trim() : undefined,
+    });
+    setCanceling(false);
+    if (ok) {
+      push("Transaction canceled with Cedar", "success");
+      setCancelOpen(false);
+      setCancelOther("");
+      onChanged && onChanged();
+    } else {
+      const detail = data?.cedar?.exception?.message || data?.error || "see console";
+      // eslint-disable-next-line no-console
+      console.error("Cancel failed:", data);
+      push(`Cancel failed: ${detail}`, "warn");
+    }
+  };
 
   const approve = async () => {
     if (!tx.dbId || approving) return;
@@ -4794,19 +4840,56 @@ function CedarApprovalSection({ tx, onChanged }) {
     }
   };
 
+  const cancelBlock = canCancel ? (
+    cancelOpen ? (
+      <div className="rounded-xl p-4 space-y-2" style={{ background: "#fee2e2", border: "1px solid #fecaca" }}>
+        <p className="text-xs font-semibold" style={{ color: "#991b1b" }}>Cancel this transaction</p>
+        <p className="text-[11px]" style={{ color: "#7f1d1d" }}>This tells Cedar to void the request. If the customer hasn't deposited yet, the transaction is fully canceled. If they have, Cedar handles the refund per their policy.</p>
+        <Field label="Reason">
+          <Select value={cancelReason} onChange={(e) => setCancelReason(e.target.value)}>
+            {CEDAR_CANCEL_REASONS.map((r) => <option key={r.id} value={r.id}>{r.label}</option>)}
+          </Select>
+        </Field>
+        {cancelReason === "OTHER" && (
+          <Field label="Describe">
+            <Input value={cancelOther} onChange={(e) => setCancelOther(e.target.value)} placeholder="Why is this transaction being canceled?" />
+          </Field>
+        )}
+        <div className="flex gap-2 justify-end">
+          <SecondaryBtn onClick={() => { setCancelOpen(false); setCancelOther(""); }} disabled={canceling}>Back</SecondaryBtn>
+          <button onClick={cancel} disabled={canceling || (cancelReason === "OTHER" && !cancelOther.trim())} className="rounded-xl px-3 py-2 text-sm font-medium transition disabled:opacity-50" style={{ background: "#991b1b", color: "white" }}>
+            {canceling ? <><Loader2 size={12} className="animate-spin inline mr-1" /> Canceling…</> : "Cancel transaction"}
+          </button>
+        </div>
+      </div>
+    ) : (
+      <div className="text-right">
+        <button onClick={() => setCancelOpen(true)} className="text-xs underline" style={{ color: "#991b1b" }}>
+          Cancel this transaction
+        </button>
+      </div>
+    )
+  ) : null;
+
   // 1. Approve-quote action when Cedar is waiting for our approval.
   if (isAwaitingApproval && !hasBankDetails) {
     return (
-      <div className="rounded-xl p-4 space-y-2" style={{ background: "var(--bone)", border: "1px solid var(--line)" }}>
-        <p className="text-xs" style={{ color: "var(--muted)" }}>Cedar has priced this quote. Approve to lock the rate and receive the deposit bank details for your customer.</p>
-        <PrimaryBtn onClick={approve} disabled={approving} full>
-          {approving ? <><Loader2 size={12} className="animate-spin" /> Approving…</> : <><CheckCircle2 size={12} /> Approve quote</>}
-        </PrimaryBtn>
+      <div className="space-y-3">
+        <div className="rounded-xl p-4 space-y-2" style={{ background: "var(--bone)", border: "1px solid var(--line)" }}>
+          <p className="text-xs" style={{ color: "var(--muted)" }}>Cedar has priced this quote. Approve to lock the rate and receive the deposit bank details for your customer.</p>
+          <PrimaryBtn onClick={approve} disabled={approving} full>
+            {approving ? <><Loader2 size={12} className="animate-spin" /> Approving…</> : <><CheckCircle2 size={12} /> Approve quote</>}
+          </PrimaryBtn>
+        </div>
+        {cancelBlock}
       </div>
     );
   }
 
-  if (!hasBankDetails) return null;
+  if (!hasBankDetails) {
+    // PENDING / SUBMITTED state with no bank details yet — just allow cancel.
+    return canCancel ? <div className="space-y-3">{cancelBlock}</div> : null;
+  }
 
   // 2 + 3 + 4. Bank details + (conditional) confirm-deposit form / progress / completion.
   const bd = tx.cedarBankDetails;
@@ -4867,6 +4950,7 @@ function CedarApprovalSection({ tx, onChanged }) {
           </p>
         </div>
       )}
+      {cancelBlock}
     </div>
   );
 }
@@ -4919,6 +5003,22 @@ function kycStatusLabel(status) {
     default:
       return { label: "Pending KYC", bg: "#fef3c7", color: "#92400e" };
   }
+}
+
+// Map Cedar's OnOff_/Receive_-prefixed request status enum to a short
+// operator-friendly badge. Keep in sync with cedar_request_status values
+// the webhook persists.
+function cedarRequestLabel(status) {
+  const s = (status || "").toUpperCase();
+  if (!s) return null;
+  if (s.includes("CANCELED") || s.includes("CANCELLED")) return { label: "Canceled", bg: "#fee2e2", color: "#991b1b" };
+  if (s.includes("EXPIRED")) return { label: "Expired", bg: "#f3f4f6", color: "#6b7280" };
+  if (s.includes("COMPLETED")) return { label: "Completed", bg: "var(--emerald)", color: "var(--lime)" };
+  if (s.includes("IN_PROGRESS")) return { label: "Paying out", bg: "rgba(15,95,63,0.10)", color: "var(--emerald)" };
+  if (s.includes("AWAITING_DEPOSIT")) return { label: "Awaiting deposit", bg: "#fef3c7", color: "#92400e" };
+  if (s.includes("AWAITING_QUOTE_APPROVAL")) return { label: "Quote ready", bg: "#fef3c7", color: "#92400e" };
+  if (s.includes("PENDING")) return { label: "Submitted", bg: "rgba(15,95,63,0.10)", color: "var(--emerald)" };
+  return { label: s.slice(0, 16), bg: "#f3f4f6", color: "#6b7280" };
 }
 
 // Map a Supabase customers row to the shape the table expects

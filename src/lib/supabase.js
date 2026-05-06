@@ -197,3 +197,27 @@ export async function confirmCedarDeposit({ quoteId, depositConfirmationUrl }) {
     return { ok: false, status: 0, data: null };
   }
 }
+
+// Cancel a Cedar sendf2f request. Cedar accepts cancellation from any
+// non-terminal state. Reason is required; otherReason is required when
+// reason="OTHER".
+export async function cancelCedarTransaction({ quoteId, reason, otherReason }) {
+  try {
+    const res = await fetch(`${url}/functions/v1/cedar-cancel-transaction`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${anonKey}`,
+        "apikey": anonKey,
+      },
+      body: JSON.stringify({ quoteId, reason, otherReason }),
+    });
+    let data = null;
+    try { data = await res.json(); } catch { /* non-JSON */ }
+    return { ok: res.ok, status: res.status, data };
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error("cancelCedarTransaction failed:", err);
+    return { ok: false, status: 0, data: null };
+  }
+}
