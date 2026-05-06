@@ -3709,12 +3709,8 @@ function BDCRailQuotes() {
     return () => clearInterval(i);
   }, []);
 
-  // Customer form (resets after every Send, so BDC can compose more quotes back-to-back)
-  const [customerName, setCustomerName] = useState("");
-  const [customerPhone, setCustomerPhone] = useState("");
-  const [beneficiary, setBeneficiary] = useState("");
-  const [chosenRail, setChosenRail] = useState(null);
-  const [sendingQuote, setSendingQuote] = useState(false);
+  // (Customer-form state lived here for an inline quote composer that's been
+  // replaced by OperatorQuoteModal — see render path. Removed in the C-4 cleanup pass.)
 
   // Pending quotes list — fetched from DB; supports many concurrent quotes per BDC
   const [pendingQuotes, setPendingQuotes] = useState([]);
@@ -3856,15 +3852,6 @@ function BDCRailQuotes() {
   // Equivalent percentage form (for legacy markup_pct DB column and back-compat surfaces)
   const markupPctEffective = cheapest && cheapest.nativeCostNGN > 0 ? (markupAmount / cheapest.nativeCostNGN) * 100 : 0;
 
-  // Default chosenRail to cheapest when it changes
-  useEffect(() => {
-    if (cheapest && !chosenRail) setChosenRail(cheapest.name);
-  }, [cheapest, chosenRail]);
-
-  // Drop the chosen rail when the funding-method filter or direction switches —
-  // the previously chosen rail may no longer be on the visible set.
-  useEffect(() => { setChosenRail(null); }, [fundingMethod, direction]);
-
   // When the operator picks a different tier, snap markup up to the tier's minimum if it's below.
   useEffect(() => {
     setMarkupAmount((m) => Math.max(m, TIERS[selectedTier].minMarkup));
@@ -3900,146 +3887,9 @@ function BDCRailQuotes() {
     );
   };
 
-  const sendQuoteOnWhatsApp = async () => {
-    if (!customerPhone || sendingQuote) { if (!customerPhone) push("Enter a customer WhatsApp number first.", "warn"); return; }
-    if (!cheapest) { push("Pick valid amount/urgency first — no eligible rail.", "warn"); return; }
-    setSendingQuote(true);
-    const phoneDigits = customerPhone.replace(/[^\d]/g, "");
-    const expiresAt = new Date(Date.now() + 4 * 60 * 1000).toISOString();
-    const railName = chosenRail || cheapest.name;
-    const settlement = cheapest.settlement;
-
-    let urlToken;
-    let displayRef;
-
-    if (isSignedIn) {
-      const { data, error } = await supabase
-        .from("quotes")
-        .insert({
-          bdc_user_id: auth.user.id,
-          bdc_name: auth.user.user_metadata?.company || "Corporate Exchange BDC",
-          customer_name: customerName,
-          customer_phone: customerPhone,
-          amount: parseFloat(amount),
-          currency: destinationCcy,
-          beneficiary: beneficiary || destinationCorridor,
-          destination: destinationCorridor,
-          rate: parseFloat(customerRate.toFixed(2)),
-          ngn_total: Math.round(ngnTotal),
-          rail: railName,
-          settlement_text: settlement,
-          cost_basis_ngn: cheapest.nativeCostNGN,
-          // markup_pct kept for back-compat — derived from the operator's new ₦/$ markup
-          // and the rail's NGN cost basis. tier and markup_amount aren't persisted yet
-          // (pending DB migration); they live only in UI state until then.
-          markup_pct: parseFloat(markupPctEffective.toFixed(4)),
-          status: "pending_approval",
-          expires_at: expiresAt,
-        })
-        .select("*")
-        .single();
-      if (error) {
-        // eslint-disable-next-line no-console
-        console.error("Insert quote failed:", error);
-        push("Couldn't save quote — try again.", "warn");
-        setSendingQuote(false);
-        return;
-      }
-      urlToken = data.id;
-      displayRef = `QU-${data.id.slice(0, 4).toUpperCase()}`;
-      // Optimistic insert: prepend to the pending list immediately
-      setPendingQuotes((prev) => [{ ...data, displayRef }, ...prev]);
-    } else {
-      displayRef = `QU-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
-      urlToken = encodeQuoteToken({
-        id: displayRef,
-        customer: customerName,
-        amount: parseFloat(amount),
-        currency: destinationCcy,
-        rate: parseFloat(customerRate.toFixed(2)),
-        ngnTotal: Math.round(ngnTotal),
-        rail: railName,
-        settlement,
-        beneficiary: beneficiary || destinationCorridor,
-        bdcName: "Corporate Exchange BDC",
-        expiresAt,
-      });
-    }
-
-    const message = buildQuoteMessage({
-      customer_name: customerName, amount, currency: destinationCcy,
-      beneficiary, destination: destinationCorridor, rate: customerRate,
-      ngn_total: ngnTotal, settlement_text: settlement,
-    }, displayRef, urlToken);
-    window.open(`https://wa.me/${phoneDigits}?text=${message}`, "_blank");
-    push(`Quote ${displayRef} sent to ${customerName || phoneDigits}`, "success");
-
-    // Reset form so BDC can compose another quote immediately
-    setCustomerName(""); setCustomerPhone(""); setBeneficiary("");
-    setSendingQuote(false);
-  };
-
-  // Auto-send variant: same DB insert as sendQuoteOnWhatsApp, but pushes the message via Cloud API
-  // instead of opening wa.me. Beta — only fires when BDC clicks the dedicated button.
-  const sendQuoteAuto = async () => {
-    if (!isSignedIn) { push("Sign in first to use auto-send.", "warn"); return; }
-    if (!customerPhone || sendingQuote) { if (!customerPhone) push("Enter a customer WhatsApp number first.", "warn"); return; }
-    if (!cheapest) { push("Pick valid amount/urgency first — no eligible rail.", "warn"); return; }
-    setSendingQuote(true);
-    const phoneDigits = customerPhone.replace(/[^\d]/g, "");
-    const expiresAt = new Date(Date.now() + 4 * 60 * 1000).toISOString();
-    const railName = chosenRail || cheapest.name;
-    const settlement = cheapest.settlement;
-
-    const { data, error } = await supabase
-      .from("quotes")
-      .insert({
-        bdc_user_id: auth.user.id,
-        bdc_name: auth.user.user_metadata?.company || "Corporate Exchange BDC",
-        customer_name: customerName,
-        customer_phone: customerPhone,
-        amount: parseFloat(amount),
-        currency: destinationCcy,
-        beneficiary: beneficiary || destinationCorridor,
-        destination: destinationCorridor,
-        rate: parseFloat(customerRate.toFixed(2)),
-        ngn_total: Math.round(ngnTotal),
-        rail: railName,
-        settlement_text: settlement,
-        cost_basis_ngn: cheapest.nativeCostNGN,
-        markup_pct: parseFloat(markupPct || 0),
-        status: "pending_approval",
-        expires_at: expiresAt,
-      })
-      .select("*")
-      .single();
-    if (error) {
-      // eslint-disable-next-line no-console
-      console.error("Insert quote failed:", error);
-      push("Couldn't save quote — try again.", "warn");
-      setSendingQuote(false);
-      return;
-    }
-    const displayRef = `QU-${data.id.slice(0, 4).toUpperCase()}`;
-    setPendingQuotes((prev) => [{ ...data, displayRef }, ...prev]);
-
-    const text = buildQuoteMessagePlain({
-      customer_name: customerName, amount, currency: destinationCcy,
-      beneficiary, destination: destinationCorridor, rate: customerRate,
-      ngn_total: ngnTotal, settlement_text: settlement,
-    }, displayRef, data.id);
-
-    const result = await sendWhatsAppText(phoneDigits, text);
-    if (result.ok) {
-      push(`Auto-sent ${displayRef} to ${customerName || phoneDigits}`, "success");
-      setCustomerName(""); setCustomerPhone(""); setBeneficiary("");
-    } else {
-      // eslint-disable-next-line no-console
-      console.error("Auto-send failed:", result);
-      push(`Auto-send failed (${result.status}) — quote saved, use manual Resend.`, "warn");
-    }
-    setSendingQuote(false);
-  };
+  // (sendQuoteOnWhatsApp + sendQuoteAuto were inline-form quote senders, replaced by
+  // OperatorQuoteModal. Removed in the C-4 cleanup pass — buildQuoteMessage[Plain]
+  // and the resend handlers below still use them for re-sending pending quotes.)
 
   // Fetch all in-flight quotes for this BDC (pending / approved / declined). Replaces the per-row polling
   // we had with a single list-fetch every 5s.
@@ -4671,16 +4521,6 @@ function TxDrawer({ tx, onClose, onRefresh }) {
             )}
           </div>
         )}
-        <div>
-          <Label>Compliance checks</Label>
-          <div className="space-y-2 rounded-xl p-4 text-sm" style={{ background: "var(--bone)", border: "1px solid var(--line)" }}>
-            {["Payer-name match", "Sanctions screening", "Form M pre-flight", "Invoice freshness"].map((c, i) => (<div key={i} className="flex items-center gap-2"><CheckCircle2 size={14} style={{ color: "var(--emerald)" }} strokeWidth={2.5} /> {c}</div>))}
-          </div>
-        </div>
-        <div className="flex flex-col gap-2 pt-4" style={{ borderTop: "1px solid var(--line)" }}>
-          <PrimaryBtn onClick={() => push(`Downloading evidence pack for ${tx.id}`, "success")} full><Download size={14} /> Download evidence pack</PrimaryBtn>
-          <SecondaryBtn onClick={() => push(`Opened dispute for ${tx.id}`, "info")} full>Open dispute</SecondaryBtn>
-        </div>
       </div>
     </Drawer>
   );
