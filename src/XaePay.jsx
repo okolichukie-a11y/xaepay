@@ -7,7 +7,7 @@ import {
   ArrowLeft, ArrowLeftRight, Loader2, Layers, TrendingUp, Wallet, DollarSign, Mail,
   RefreshCw,
 } from "lucide-react";
-import { supabase, sendWhatsAppText, fetchCedarRate, submitCustomerToCedar, submitRecipientToCedar } from "./lib/supabase.js";
+import { supabase, sendWhatsAppText, fetchCedarRate, submitCustomerToCedar, submitRecipientToCedar, submitReceiverAccountToCedar } from "./lib/supabase.js";
 import { useAuth } from "./lib/auth.js";
 
 // ─── Editable in one place ────────────────────────────────────────────────
@@ -4812,6 +4812,7 @@ function BDCRecipients() {
   const [recipients, setRecipients] = useState([]);
   const [loading, setLoading] = useState(false);
   const [submittingId, setSubmittingId] = useState(null);
+  const [selectedRecipient, setSelectedRecipient] = useState(null);
 
   const fetchRecipients = async () => {
     if (!isSignedIn) return;
@@ -4910,7 +4911,7 @@ function BDCRecipients() {
                 const industry = CEDAR_INDUSTRIES.find((i) => i.id === r.industry);
                 const submitting = submittingId === r.id;
                 return (
-                  <tr key={r.id} style={{ borderBottom: "1px solid var(--line)" }}>
+                  <tr key={r.id} onClick={() => setSelectedRecipient(r)} className="cursor-pointer transition hover:bg-[color:var(--bone)]" style={{ borderBottom: "1px solid var(--line)" }}>
                     <td className="px-4 py-3.5">
                       <div className="font-medium">{r.legalBusinessName}</div>
                       {r.tradingName && r.tradingName !== r.legalBusinessName && (
@@ -4927,7 +4928,7 @@ function BDCRecipients() {
                       {r.cedarLastError && <div className="font-mono text-[9px] mt-1 truncate max-w-[200px]" style={{ color: "#991b1b" }} title={r.cedarLastError}>{r.cedarLastError}</div>}
                     </td>
                     <td className="px-4 py-3.5 font-mono text-xs" style={{ color: "var(--muted)" }}>{r.cedarBusinessId || "—"}</td>
-                    <td className="px-4 py-3.5 text-right">
+                    <td className="px-4 py-3.5 text-right" onClick={(e) => e.stopPropagation()}>
                       {!r.cedarBusinessId && (
                         <SecondaryBtn onClick={() => handleResubmit(r.id, r.legalBusinessName)} disabled={submitting}>
                           {submitting ? <Loader2 size={12} className="animate-spin" /> : <Send size={12} />}
@@ -4944,6 +4945,7 @@ function BDCRecipients() {
       )}
     </Card>
     <AddRecipientModal open={addOpen} onClose={() => setAddOpen(false)} onAdded={handleAdded} />
+    <RecipientDrawer recipient={selectedRecipient} onClose={() => { setSelectedRecipient(null); fetchRecipients(); }} />
     </>
   );
 }
@@ -5063,6 +5065,355 @@ function AddRecipientModal({ open, onClose, onAdded }) {
         </div>
       </form>
     </Modal>
+  );
+}
+
+// Maps a recipient_external_accounts row → camelCase shape used in JSX.
+function dbAccountToUi(row) {
+  return {
+    id: row.id,
+    recipientId: row.recipient_id,
+    currencySymbol: row.currency_symbol,
+    accountHolderName: row.account_holder_name,
+    accountNumber: row.account_number,
+    bankName: row.bank_name,
+    swiftCode: row.swift_code,
+    iban: row.iban,
+    routingNumber: row.routing_number,
+    country: row.country,
+    state: row.state,
+    city: row.city,
+    address: row.address,
+    streetNumber: row.street_number,
+    zipcode: row.zipcode,
+    invoiceUrl: row.invoice_url,
+    cedarExternalAccountId: row.cedar_external_account_id,
+    cedarAccountStatus: row.cedar_account_status,
+    cedarLastError: row.cedar_last_error,
+    addedAt: row.created_at,
+  };
+}
+
+function accountStatusLabel(status) {
+  switch ((status || "").toLowerCase()) {
+    case "active":
+      return { label: "Active", bg: "var(--emerald)", color: "var(--lime)" };
+    case "pending":
+      return { label: "Pending", bg: "#fef3c7", color: "#92400e" };
+    case "frozen":
+      return { label: "Frozen", bg: "#fee2e2", color: "#991b1b" };
+    case "closed":
+      return { label: "Closed", bg: "#f3f4f6", color: "#6b7280" };
+    default:
+      return { label: "Not submitted", bg: "#f3f4f6", color: "#6b7280" };
+  }
+}
+
+function RecipientDrawer({ recipient, onClose }) {
+  const open = !!recipient;
+  const { push } = useToast();
+  const [accounts, setAccounts] = useState([]);
+  const [loadingAccts, setLoadingAccts] = useState(false);
+  const [addOpen, setAddOpen] = useState(false);
+  const [submittingAcctId, setSubmittingAcctId] = useState(null);
+
+  const fetchAccounts = async (recipientId) => {
+    if (!recipientId) return;
+    setLoadingAccts(true);
+    const { data, error } = await supabase
+      .from("recipient_external_accounts")
+      .select("*")
+      .eq("recipient_id", recipientId)
+      .order("created_at", { ascending: false });
+    if (error) {
+      // eslint-disable-next-line no-console
+      console.error("Fetch bank accounts failed:", error);
+      push("Couldn't load bank accounts — check console.", "warn");
+    } else {
+      setAccounts((data || []).map(dbAccountToUi));
+    }
+    setLoadingAccts(false);
+  };
+
+  useEffect(() => {
+    if (recipient?.id) fetchAccounts(recipient.id);
+    else { setAccounts([]); setAddOpen(false); }
+    /* eslint-disable-next-line react-hooks/exhaustive-deps */
+  }, [recipient?.id]);
+
+  const handleAcctAdded = async (insertedRow) => {
+    setAccounts((prev) => [dbAccountToUi(insertedRow), ...prev]);
+    setAddOpen(false);
+    push(`${insertedRow.bank_name} ${insertedRow.currency_symbol} account saved — submitting to Cedar…`, "info");
+    setSubmittingAcctId(insertedRow.id);
+    const { ok, data } = await submitReceiverAccountToCedar(insertedRow.id);
+    setSubmittingAcctId(null);
+    if (ok && data?.cedar_external_account_id) {
+      push(`${insertedRow.bank_name} → Cedar account id ${data.cedar_external_account_id}`, "success");
+    } else {
+      const detail = data?.cedar?.exception?.message || data?.error || "see console";
+      // eslint-disable-next-line no-console
+      console.error("Cedar account submit failed:", data);
+      push(`Cedar submit failed: ${detail}`, "warn");
+    }
+    fetchAccounts(recipient.id);
+  };
+
+  const handleAcctResubmit = async (acctId, label) => {
+    setSubmittingAcctId(acctId);
+    const { ok, data } = await submitReceiverAccountToCedar(acctId);
+    setSubmittingAcctId(null);
+    if (ok && data?.cedar_external_account_id) {
+      push(`${label} → Cedar account id ${data.cedar_external_account_id}`, "success");
+      fetchAccounts(recipient.id);
+    } else {
+      const detail = data?.cedar?.exception?.message || data?.error || "see console";
+      // eslint-disable-next-line no-console
+      console.error("Cedar account resubmit failed:", data);
+      push(`Cedar submit failed: ${detail}`, "warn");
+    }
+  };
+
+  if (!open) return null;
+  const k = kycStatusLabel(recipient.cedarKycStatus);
+  const country = RECIPIENT_COUNTRIES.find((c) => c.iso === recipient.country);
+  const industry = CEDAR_INDUSTRIES.find((i) => i.id === recipient.industry);
+  const kycApproved = (recipient.cedarKycStatus || "").toLowerCase() === "valid";
+
+  return (
+    <Drawer open={open} onClose={onClose} title={recipient.legalBusinessName}>
+      {/* Identity */}
+      <div className="space-y-3 text-sm">
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <div className="font-mono text-[9px] uppercase tracking-wider" style={{ color: "var(--muted)" }}>Cedar KYC</div>
+            <div className="mt-1"><span className="rounded-full px-2 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-wider" style={{ background: k.bg, color: k.color }}>{k.label}</span></div>
+          </div>
+          <div>
+            <div className="font-mono text-[9px] uppercase tracking-wider" style={{ color: "var(--muted)" }}>Cedar ID</div>
+            <div className="mt-1 font-mono text-xs">{recipient.cedarBusinessId || "—"}</div>
+          </div>
+          <div>
+            <div className="font-mono text-[9px] uppercase tracking-wider" style={{ color: "var(--muted)" }}>Country</div>
+            <div className="mt-1 text-xs">{country?.label || recipient.country}</div>
+          </div>
+          <div>
+            <div className="font-mono text-[9px] uppercase tracking-wider" style={{ color: "var(--muted)" }}>Industry</div>
+            <div className="mt-1 text-xs" style={{ color: "var(--muted)" }}>{industry?.label || recipient.industry}</div>
+          </div>
+          <div className="col-span-2">
+            <div className="font-mono text-[9px] uppercase tracking-wider" style={{ color: "var(--muted)" }}>Contact</div>
+            <div className="mt-1 text-xs">{recipient.contactName} · {recipient.email}</div>
+            <div className="font-mono text-[10px] mt-0.5" style={{ color: "var(--muted)" }}>+{recipient.contactPhonePrefix} {recipient.contactPhone}</div>
+          </div>
+          <div className="col-span-2">
+            <div className="font-mono text-[9px] uppercase tracking-wider" style={{ color: "var(--muted)" }}>Address</div>
+            <div className="mt-1 text-xs">{recipient.streetNumber} {recipient.address}</div>
+            <div className="text-xs" style={{ color: "var(--muted)" }}>{recipient.city}{recipient.state ? `, ${recipient.state}` : ""} {recipient.zipcode} · {recipient.country}</div>
+          </div>
+        </div>
+      </div>
+
+      {/* Bank accounts */}
+      <div className="mt-6 pt-5" style={{ borderTop: "1px solid var(--line)" }}>
+        <div className="flex items-center justify-between mb-3">
+          <div>
+            <h4 className="font-display text-base font-semibold">Bank accounts</h4>
+            <p className="font-mono text-[10px] mt-0.5" style={{ color: "var(--muted)" }}>One per currency. Required to receive payouts.</p>
+          </div>
+          {kycApproved && !addOpen && (
+            <SecondaryBtn onClick={() => setAddOpen(true)}><Plus size={12} /> Add</SecondaryBtn>
+          )}
+        </div>
+
+        {!kycApproved && (
+          <div className="rounded-lg p-3 text-xs" style={{ background: "#fef3c7", color: "#92400e" }}>
+            Cedar must approve KYC before bank accounts can be added. Current status: <strong>{k.label}</strong>.
+          </div>
+        )}
+
+        {kycApproved && (
+          <>
+            {loadingAccts && accounts.length === 0 ? (
+              <div className="text-xs" style={{ color: "var(--muted)" }}>Loading…</div>
+            ) : accounts.length === 0 && !addOpen ? (
+              <div className="rounded-lg p-4 text-center" style={{ background: "var(--bone)" }}>
+                <p className="text-sm" style={{ color: "var(--muted)" }}>No bank accounts yet.</p>
+                <div className="mt-3"><PrimaryBtn onClick={() => setAddOpen(true)}><Plus size={12} /> Add first account</PrimaryBtn></div>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {accounts.map((a) => {
+                  const s = accountStatusLabel(a.cedarAccountStatus);
+                  const submitting = submittingAcctId === a.id;
+                  const last4 = (a.accountNumber || "").slice(-4);
+                  return (
+                    <div key={a.id} className="rounded-lg p-3" style={{ border: "1px solid var(--line)" }}>
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-mono text-xs font-semibold">{a.currencySymbol}</span>
+                            <span className="text-sm font-medium truncate">{a.bankName}</span>
+                            <span className="rounded-full px-2 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-wider" style={{ background: s.bg, color: s.color }}>{s.label}</span>
+                          </div>
+                          <div className="font-mono text-[10px] mt-1" style={{ color: "var(--muted)" }}>•••• {last4} · {a.swiftCode || "—"}</div>
+                          <div className="font-mono text-[10px]" style={{ color: "var(--muted)" }}>{a.accountHolderName}</div>
+                          {a.cedarLastError && <div className="font-mono text-[9px] mt-1 break-words" style={{ color: "#991b1b" }}>{a.cedarLastError}</div>}
+                        </div>
+                        {!a.cedarExternalAccountId && (
+                          <SecondaryBtn onClick={() => handleAcctResubmit(a.id, `${a.bankName} ${a.currencySymbol}`)} disabled={submitting}>
+                            {submitting ? <Loader2 size={12} className="animate-spin" /> : <Send size={12} />}
+                          </SecondaryBtn>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {addOpen && (
+              <AddBankAccountForm
+                recipient={recipient}
+                onCancel={() => setAddOpen(false)}
+                onAdded={handleAcctAdded}
+              />
+            )}
+          </>
+        )}
+      </div>
+    </Drawer>
+  );
+}
+
+function AddBankAccountForm({ recipient, onCancel, onAdded }) {
+  const { push } = useToast();
+  // Default address fields to the recipient's own address — most receiver
+  // accounts are at the same location as the business itself.
+  const empty = {
+    currency_symbol: "USD",
+    account_holder_name: recipient.legalBusinessName || "",
+    account_number: "",
+    bank_name: "",
+    swift_code: "",
+    iban: "",
+    routing_number: "",
+    country: recipient.country || "US",
+    state: recipient.state || "",
+    city: recipient.city || "",
+    address: recipient.address || "",
+    street_number: recipient.streetNumber || "",
+    zipcode: recipient.zipcode || "",
+    invoice_url: "",
+  };
+  const [data, setData] = useState(empty);
+  const [saving, setSaving] = useState(false);
+
+  const canSubmit = data.currency_symbol && data.account_holder_name && data.account_number &&
+    data.bank_name && data.swift_code && data.country && data.zipcode && data.street_number &&
+    data.invoice_url;
+
+  const submit = async (e) => {
+    e.preventDefault();
+    if (!canSubmit || saving) return;
+    setSaving(true);
+    const { data: inserted, error } = await supabase
+      .from("recipient_external_accounts")
+      .insert({
+        recipient_id: recipient.id,
+        currency_symbol: data.currency_symbol,
+        account_holder_name: data.account_holder_name,
+        account_number: data.account_number,
+        bank_name: data.bank_name,
+        swift_code: data.swift_code,
+        iban: data.iban || null,
+        routing_number: data.routing_number || null,
+        country: data.country,
+        state: data.state || null,
+        city: data.city || null,
+        address: data.address || null,
+        street_number: data.street_number,
+        zipcode: data.zipcode,
+        invoice_url: data.invoice_url,
+      })
+      .select()
+      .single();
+    setSaving(false);
+    if (error) {
+      // eslint-disable-next-line no-console
+      console.error("Insert bank account failed:", error);
+      push(`Couldn't save bank account: ${error.message}`, "warn");
+      return;
+    }
+    onAdded(inserted);
+  };
+
+  return (
+    <div className="mt-4 rounded-lg p-4 space-y-3" style={{ background: "var(--bone)" }}>
+      <div className="flex items-center justify-between">
+        <h5 className="font-display text-sm font-semibold">New bank account</h5>
+        <button type="button" onClick={onCancel} className="text-stone-400 hover:text-stone-900"><X size={14} /></button>
+      </div>
+      <form onSubmit={submit} className="space-y-3">
+        <Field label="Currency">
+          <Select value={data.currency_symbol} onChange={(e) => setData({ ...data, currency_symbol: e.target.value })}>
+            <option value="USD">USD</option>
+            <option value="GBP">GBP</option>
+            <option value="EUR">EUR</option>
+          </Select>
+        </Field>
+        <Field label="Account holder name">
+          <Input value={data.account_holder_name} onChange={(e) => setData({ ...data, account_holder_name: e.target.value })} />
+        </Field>
+        <Field label="Account number">
+          <Input value={data.account_number} onChange={(e) => setData({ ...data, account_number: e.target.value })} />
+        </Field>
+        <Field label="Bank name">
+          <Input value={data.bank_name} onChange={(e) => setData({ ...data, bank_name: e.target.value })} placeholder="JPMorgan Chase" />
+        </Field>
+        <Field label="SWIFT / BIC">
+          <Input value={data.swift_code} onChange={(e) => setData({ ...data, swift_code: e.target.value })} placeholder="CHASUS33" />
+        </Field>
+        <Field label="IBAN (optional)">
+          <Input value={data.iban} onChange={(e) => setData({ ...data, iban: e.target.value })} />
+        </Field>
+        <Field label="Routing number (US, optional)">
+          <Input value={data.routing_number} onChange={(e) => setData({ ...data, routing_number: e.target.value })} />
+        </Field>
+        <Field label="Country">
+          <Select value={data.country} onChange={(e) => setData({ ...data, country: e.target.value })}>
+            {RECIPIENT_COUNTRIES.map((c) => <option key={c.iso} value={c.iso}>{c.iso} — {c.label}</option>)}
+          </Select>
+        </Field>
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="State / region">
+            <Input value={data.state} onChange={(e) => setData({ ...data, state: e.target.value })} />
+          </Field>
+          <Field label="City">
+            <Input value={data.city} onChange={(e) => setData({ ...data, city: e.target.value })} />
+          </Field>
+          <Field label="Street number">
+            <Input value={data.street_number} onChange={(e) => setData({ ...data, street_number: e.target.value })} />
+          </Field>
+          <Field label="Zip / postal">
+            <Input value={data.zipcode} onChange={(e) => setData({ ...data, zipcode: e.target.value })} />
+          </Field>
+        </div>
+        <Field label="Address (street name)">
+          <Input value={data.address} onChange={(e) => setData({ ...data, address: e.target.value })} />
+        </Field>
+        <Field label="Invoice URL">
+          <Input value={data.invoice_url} onChange={(e) => setData({ ...data, invoice_url: e.target.value })} placeholder="https://… (link to a sample invoice)" />
+          <div className="font-mono text-[9px] mt-1" style={{ color: "var(--muted)" }}>Cedar requires a public link to a sample invoice. Google Drive, S3, or any public URL works.</div>
+        </Field>
+        <div className="flex justify-end gap-2 pt-1">
+          <SecondaryBtn type="button" onClick={onCancel} disabled={saving}>Cancel</SecondaryBtn>
+          <PrimaryBtn type="submit" disabled={!canSubmit || saving}>
+            {saving ? <><Loader2 size={12} className="animate-spin" /> Saving…</> : <>Save & submit</>}
+          </PrimaryBtn>
+        </div>
+      </form>
+    </div>
   );
 }
 

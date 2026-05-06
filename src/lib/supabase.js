@@ -100,3 +100,26 @@ export async function submitRecipientToCedar(recipientId) {
     return { ok: false, status: 0, data: null };
   }
 }
+
+// Submit a recipient_external_accounts row (a bank account on a recipient) to
+// Cedar via cedar-create-receiver-account. Same idempotent pattern.
+export async function submitReceiverAccountToCedar(accountId) {
+  try {
+    const res = await fetch(`${url}/functions/v1/cedar-create-receiver-account`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${anonKey}`,
+        "apikey": anonKey,
+      },
+      body: JSON.stringify({ accountId }),
+    });
+    let data = null;
+    try { data = await res.json(); } catch { /* non-JSON */ }
+    return { ok: res.ok, status: res.status, data };
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error("submitReceiverAccountToCedar failed:", err);
+    return { ok: false, status: 0, data: null };
+  }
+}
