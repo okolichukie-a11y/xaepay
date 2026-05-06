@@ -3216,6 +3216,7 @@ function OperatorQuoteModal({ open, onClose, onCreated }) {
   const isSignedIn = !!auth.user;
   const { push } = useToast();
   const empty = {
+    customerId: "",        // empty = manual entry; UUID = picked existing customer
     customerName: "",
     customerPhone: "",
     direction: "outbound", // 'outbound' (NG → world) or 'inbound' (world → NG)
@@ -3231,6 +3232,7 @@ function OperatorQuoteModal({ open, onClose, onCreated }) {
   const [data, setData] = useState(empty);
   const [sending, setSending] = useState(false);
   const [createdRef, setCreatedRef] = useState(""); // populated after successful send
+  const [savedCustomers, setSavedCustomers] = useState([]);
   // Live wholesale rate from Cedar (via cedar-rate Edge Function → relay → Cedar's /v1/sendf2f/price).
   // Falls back to a sane default while loading or if Cedar is unreachable.
   const [cedarRate, setCedarRate] = useState(null);
@@ -3243,6 +3245,28 @@ function OperatorQuoteModal({ open, onClose, onCreated }) {
       return () => clearTimeout(t);
     }
   }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Load existing customers so the operator can pick rather than re-typing.
+  // Linking customer_id at quote time means later "Submit to Cedar" flows already
+  // know which customer to use (matters once the customer has cedar_business_id).
+  useEffect(() => {
+    if (!open || !isSignedIn) return;
+    let cancelled = false;
+    (async () => {
+      const { data: rows, error } = await supabase
+        .from("customers")
+        .select("id, name, phone, cedar_kyc_status")
+        .order("name");
+      if (cancelled) return;
+      if (error) {
+        // eslint-disable-next-line no-console
+        console.error("Fetch customers for picker failed:", error);
+      } else {
+        setSavedCustomers(rows || []);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [open, isSignedIn]);
 
   // Fetch live Cedar rate whenever the modal opens, the amount changes, or the currency changes.
   // Debounced lightly so typing doesn't fire dozens of calls.
@@ -3313,6 +3337,7 @@ function OperatorQuoteModal({ open, onClose, onCreated }) {
       .insert({
         bdc_user_id: auth.user.id,
         bdc_name: auth.user.user_metadata?.company || "Operator",
+        customer_id: data.customerId || null,
         customer_name: data.customerName,
         customer_phone: data.customerPhone,
         amount,
@@ -3376,8 +3401,37 @@ function OperatorQuoteModal({ open, onClose, onCreated }) {
             </div>
           </div>
           <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="Customer name"><Input value={data.customerName} onChange={(e) => setData({ ...data, customerName: e.target.value })} placeholder="Adekunle Imports Ltd" /></Field>
-            <Field label="Customer WhatsApp"><Input value={data.customerPhone} onChange={(e) => setData({ ...data, customerPhone: e.target.value })} placeholder="+234 803 123 4567" /></Field>
+            <Field label="Customer" full>
+              <Select
+                value={data.customerId}
+                onChange={(e) => {
+                  const picked = savedCustomers.find((c) => c.id === e.target.value);
+                  if (picked) {
+                    setData({ ...data, customerId: picked.id, customerName: picked.name || "", customerPhone: picked.phone || "" });
+                  } else {
+                    setData({ ...data, customerId: "", customerName: "", customerPhone: "" });
+                  }
+                }}
+              >
+                <option value="">— New customer (enter manually) —</option>
+                {savedCustomers.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name || "Unnamed"} · {c.phone || "no phone"}{(c.cedar_kyc_status || "").toUpperCase() === "VALID" ? " · Cedar ✓" : ""}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+            {!data.customerId && (
+              <>
+                <Field label="Customer name"><Input value={data.customerName} onChange={(e) => setData({ ...data, customerName: e.target.value })} placeholder="Adekunle Imports Ltd" /></Field>
+                <Field label="Customer WhatsApp"><Input value={data.customerPhone} onChange={(e) => setData({ ...data, customerPhone: e.target.value })} placeholder="+234 803 123 4567" /></Field>
+              </>
+            )}
+            {data.customerId && (
+              <div className="sm:col-span-2 rounded-xl px-3 py-2 text-xs font-mono" style={{ background: "var(--bone)", color: "var(--muted)", border: "1px solid var(--line)" }}>
+                {data.customerName} · {data.customerPhone}
+              </div>
+            )}
             <Field label={`Amount (${data.currency})`}>
               <div className="focus-ring flex items-center rounded-xl transition" style={{ background: "white", border: "1px solid var(--line)" }}>
                 <span className="pl-3.5 text-sm font-mono" style={{ color: "var(--muted)" }}>$</span>
