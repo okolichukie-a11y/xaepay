@@ -7,7 +7,7 @@ import {
   ArrowLeft, ArrowLeftRight, Loader2, Layers, TrendingUp, Wallet, DollarSign, Mail,
   RefreshCw,
 } from "lucide-react";
-import { supabase, sendWhatsAppText, fetchCedarRate, submitCustomerToCedar, submitRecipientToCedar, submitReceiverAccountToCedar, submitCedarTransaction, approveCedarQuote, confirmCedarDeposit, cancelCedarTransaction, uploadCedarFile } from "./lib/supabase.js";
+import { supabase, sendWhatsAppText, sendWhatsAppTemplate, fetchCedarRate, submitCustomerToCedar, submitRecipientToCedar, submitReceiverAccountToCedar, submitCedarTransaction, approveCedarQuote, confirmCedarDeposit, cancelCedarTransaction, uploadCedarFile } from "./lib/supabase.js";
 import { useAuth } from "./lib/auth.js";
 
 // ─── Editable in one place ────────────────────────────────────────────────
@@ -3364,16 +3364,29 @@ function OperatorQuoteModal({ open, onClose, onCreated }) {
     }
     const displayRef = `QU-${quoteRow.id.slice(0, 4).toUpperCase()}`;
     setCreatedRef(displayRef);
-    // Try Cloud API send; fall back to opening wa.me if that fails
-    const text = buildMessage(displayRef, quoteRow.id, true);
-    const result = await sendWhatsAppText(phoneDigits, text);
-    if (result.ok) {
-      push(`Quote ${displayRef} auto-sent`, "success");
-    } else {
-      const message = buildMessage(displayRef, quoteRow.id, false);
-      window.open(`https://wa.me/${phoneDigits}?text=${message}`, "_blank");
-      push(`Quote ${displayRef} sent · WhatsApp opened`, "success");
-    }
+
+    // Always open wa.me with the rich quote message — this is the actual delivery
+    // path until we have a custom Meta-approved template (e.g. quote_notification)
+    // that can carry the quote info as variables. The operator hits send manually.
+    const message = buildMessage(displayRef, quoteRow.id, false);
+    window.open(`https://wa.me/${phoneDigits}?text=${message}`, "_blank");
+
+    // In parallel, fire a `hello_world` template ping via the Cloud API. This is
+    // purely a pipeline-verification step right now — Meta's test number can ONLY
+    // send pre-approved templates, and hello_world is the default. When a custom
+    // template lands (1-3 day Meta review), swap "hello_world" for that name and
+    // add a `components` array with the quote variables, then drop the wa.me line
+    // above and Cloud API does end-to-end delivery on its own.
+    sendWhatsAppTemplate(phoneDigits, "hello_world", "en_US").then((tmplRes) => {
+      // eslint-disable-next-line no-console
+      console.log("WhatsApp template ping:", tmplRes);
+      if (tmplRes.ok) {
+        push(`Quote ${displayRef} sent · WhatsApp opened · pipeline verified`, "success");
+      } else {
+        push(`Quote ${displayRef} sent · WhatsApp opened (template ping failed — see console)`, "info");
+      }
+    });
+
     if (onCreated) onCreated(quoteRow);
     setSending(false);
     setStep(4);

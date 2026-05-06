@@ -24,6 +24,28 @@ export async function sendWhatsAppText(phoneDigits, text) {
   return { ok: res.ok, status: res.status, data };
 }
 
+// Send a WhatsApp template message via hyper-function. Templates are the only
+// message type Meta delivers (a) from a Test Number, (b) outside the 24h
+// session window, or (c) before business verification — so this is what we
+// use for first-contact messages to customers. Custom templates must be
+// pre-approved in WhatsApp Manager. Default `hello_world` is always available
+// for pipeline testing.
+//
+// `components` is an optional array shaping the Cloud API payload, e.g.:
+//   [{ type: "body", parameters: [{ type: "text", text: "QU-1234" }, ...] }]
+export async function sendWhatsAppTemplate(phoneDigits, templateName = "hello_world", language = "en_US", components = null) {
+  const body = { to: phoneDigits, template: templateName, language };
+  if (components) body.components = components;
+  const res = await fetch(`${url}/functions/v1/hyper-function`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  let data = null;
+  try { data = await res.json(); } catch { /* non-JSON */ }
+  return { ok: res.ok, status: res.status, data };
+}
+
 // Live wholesale rate quote from Cedar Money via the cedar-rate Edge Function (which
 // goes through our static-IP Fly relay). Returns { ok, data } where data is Cedar's
 // price response: { fromCurrencySymbol, toCurrencySymbol, rate, amount }.
