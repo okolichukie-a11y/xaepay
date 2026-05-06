@@ -73,3 +73,30 @@ export async function fetchCedarRate({ fromCurrencySymbol, toCurrencySymbol, toA
     return { ok: false, data: null };
   }
 }
+
+// Submit a recipient (target merchant — supplier abroad) to Cedar via the
+// cedar-create-recipient Edge Function. Same idempotent pattern as
+// submitCustomerToCedar: function reads the row, validates Cedar-required
+// fields, calls Cedar via the relay, persists cedar_business_id + cedar_kyc_status
+// back to the row. Includes the anon key so it works whether or not the function
+// is deployed with verify_jwt enabled.
+export async function submitRecipientToCedar(recipientId) {
+  try {
+    const res = await fetch(`${url}/functions/v1/cedar-create-recipient`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${anonKey}`,
+        "apikey": anonKey,
+      },
+      body: JSON.stringify({ recipientId }),
+    });
+    let data = null;
+    try { data = await res.json(); } catch { /* non-JSON */ }
+    return { ok: res.ok, status: res.status, data };
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error("submitRecipientToCedar failed:", err);
+    return { ok: false, status: 0, data: null };
+  }
+}

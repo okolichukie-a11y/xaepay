@@ -5,8 +5,9 @@ import {
   BarChart3, Zap, Eye, Download, Send, Filter, Plus, History, LogIn,
   ExternalLink, Sparkles, User, Building2, Briefcase, Coins, Lock, Unlock,
   ArrowLeft, ArrowLeftRight, Loader2, Layers, TrendingUp, Wallet, DollarSign, Mail,
+  RefreshCw,
 } from "lucide-react";
-import { supabase, sendWhatsAppText, fetchCedarRate, submitCustomerToCedar } from "./lib/supabase.js";
+import { supabase, sendWhatsAppText, fetchCedarRate, submitCustomerToCedar, submitRecipientToCedar } from "./lib/supabase.js";
 import { useAuth } from "./lib/auth.js";
 
 // ─── Editable in one place ────────────────────────────────────────────────
@@ -4593,17 +4594,24 @@ const DEMO_CUSTOMERS = [
 // label + colors for the badge. Customers must be "Approved" before they can transact.
 function kycStatusLabel(status) {
   switch ((status || "").toLowerCase()) {
+    case "valid":          // Cedar's success state
     case "approved":
     case "verified":
       return { label: "Approved", bg: "var(--emerald)", color: "var(--lime)" };
     case "under_review":
+    case "pending_review": // Cedar
     case "in_review":
     case "submitted":
       return { label: "Under Review", bg: "rgba(15,95,63,0.10)", color: "var(--emerald)" };
     case "action_needed":
       return { label: "Action Needed", bg: "#fef3c7", color: "#92400e" };
     case "rejected":
+    case "flagged":        // Cedar
       return { label: "Rejected", bg: "#fee2e2", color: "#991b1b" };
+    case "abandoned":      // Cedar
+      return { label: "Abandoned", bg: "#f3f4f6", color: "#6b7280" };
+    case "new":            // Cedar — created but not yet onboarded
+      return { label: "Not submitted", bg: "#f3f4f6", color: "#6b7280" };
     case "pending":
     case "":
     case null:
@@ -4744,25 +4752,56 @@ function BDCCustomers({ addedCustomers = [], onAddCustomer }) {
 }
 
 // ─── Recipients ─────────────────────────────────────────────────────────────
-// Saved supplier / beneficiary banking details, scoped per-customer. Operator
-// reuses these when composing quotes so they don't re-key bank info each time.
-// Persistence backend deferred — for now this is component-local + demo seed.
-const DEMO_RECIPIENTS = [
-  { id: 1, customer: "Adekunle Imports Ltd", direction: "outbound", name: "Shenzhen Electronics Co., Ltd", country: "China", bank: "Bank of China", account: "•••• 4521", currency: "USD", lastUsed: "Today", txCount: 6 },
-  { id: 2, customer: "Adekunle Imports Ltd", direction: "outbound", name: "Hangzhou Logistics", country: "China", bank: "ICBC", account: "•••• 8829", currency: "USD", lastUsed: "Apr 15", txCount: 3 },
-  { id: 3, customer: "Sahara Foods", direction: "outbound", name: "Mumbai Pharma Ltd", country: "India", bank: "State Bank of India", account: "•••• 2341", currency: "USD", lastUsed: "Apr 12", txCount: 4 },
-  { id: 4, customer: "Delta Petrochem", direction: "outbound", name: "Hamburg Auto Parts GmbH", country: "Germany", bank: "Deutsche Bank", account: "•••• 1198", currency: "EUR", lastUsed: "Apr 18", txCount: 2 },
-  { id: 5, customer: "London Diaspora Ltd", direction: "inbound", name: "Lagos Trading Hub Ltd", country: "Nigeria", bank: "GTBank", account: "•••• 7733", currency: "NGN", lastUsed: "Today", txCount: 4 },
-  { id: 6, customer: "Boston Imports US", direction: "inbound", name: "Onitsha Distributors", country: "Nigeria", bank: "Access Bank", account: "•••• 4408", currency: "NGN", lastUsed: "Apr 14", txCount: 2 },
+// A recipient is a target merchant on Cedar (the supplier/beneficiary abroad).
+// We persist identity here and submit it to Cedar via cedar-create-recipient;
+// once Cedar approves KYC (status=VALID), bank accounts can be attached
+// (see C-4-b: recipient_external_accounts).
+
+const RECIPIENT_COUNTRIES = [
+  { iso: "US", label: "United States" },
+  { iso: "GB", label: "United Kingdom" },
+  { iso: "CN", label: "China" },
+  { iso: "IN", label: "India" },
+  { iso: "AE", label: "United Arab Emirates" },
+  { iso: "DE", label: "Germany" },
+  { iso: "FR", label: "France" },
+  { iso: "NL", label: "Netherlands" },
+  { iso: "IT", label: "Italy" },
+  { iso: "ES", label: "Spain" },
+  { iso: "TR", label: "Türkiye" },
+  { iso: "HK", label: "Hong Kong" },
+  { iso: "SG", label: "Singapore" },
+  { iso: "JP", label: "Japan" },
+  { iso: "KR", label: "South Korea" },
+  { iso: "ZA", label: "South Africa" },
+  { iso: "KE", label: "Kenya" },
+  { iso: "GH", label: "Ghana" },
+  { iso: "EG", label: "Egypt" },
+  { iso: "CA", label: "Canada" },
+  { iso: "AU", label: "Australia" },
 ];
 
-function DirectionBadge({ direction }) {
-  const isOut = direction === "outbound";
-  return (
-    <span className="rounded-full px-2 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-wider inline-flex items-center gap-1" style={{ background: isOut ? "rgba(15,95,63,0.12)" : "rgba(212,168,44,0.12)", color: isOut ? "var(--emerald)" : "var(--amber)" }}>
-      {isOut ? "→ Out" : "← In"}
-    </span>
-  );
+function dbRecipientToUi(row) {
+  return {
+    id: row.id,
+    legalBusinessName: row.legal_business_name,
+    tradingName: row.trading_name,
+    email: row.email,
+    contactName: row.contact_name,
+    contactPhonePrefix: row.contact_phone_prefix,
+    contactPhone: row.contact_phone,
+    country: row.country,
+    state: row.state,
+    city: row.city,
+    address: row.address,
+    streetNumber: row.street_number,
+    zipcode: row.zipcode,
+    industry: row.industry,
+    cedarBusinessId: row.cedar_business_id,
+    cedarKycStatus: row.cedar_kyc_status,
+    cedarLastError: row.cedar_last_error,
+    addedAt: row.created_at,
+  };
 }
 
 function BDCRecipients() {
@@ -4770,68 +4809,135 @@ function BDCRecipients() {
   const auth = useAuth();
   const isSignedIn = !!auth.user;
   const [addOpen, setAddOpen] = useState(false);
-  const [filterCustomer, setFilterCustomer] = useState("all");
-  const [localAdds, setLocalAdds] = useState([]);
+  const [recipients, setRecipients] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [submittingId, setSubmittingId] = useState(null);
 
-  // Until the recipients table lands, signed-in users see only their own session adds
-  // (no cross-device persistence) and unsigned visitors see the demo seed.
-  const recipients = isSignedIn ? localAdds : [...localAdds, ...DEMO_RECIPIENTS];
-  const filtered = filterCustomer === "all" ? recipients : recipients.filter((r) => r.customer === filterCustomer);
-  const customers = [...new Set(recipients.map((r) => r.customer))];
-
-  const handleAdded = (rec) => {
-    setLocalAdds((prev) => [{ ...rec, id: Date.now(), lastUsed: "Just now", txCount: 0 }, ...prev]);
-    setAddOpen(false);
-    push(`${rec.name} saved as recipient for ${rec.customer}`, "success");
+  const fetchRecipients = async () => {
+    if (!isSignedIn) return;
+    setLoading(true);
+    const { data, error } = await supabase
+      .from("recipients")
+      .select("*")
+      .order("created_at", { ascending: false });
+    if (error) {
+      // eslint-disable-next-line no-console
+      console.error("Fetch recipients failed:", error);
+      push("Couldn't load recipients — check console.", "warn");
+    } else {
+      setRecipients((data || []).map(dbRecipientToUi));
+    }
+    setLoading(false);
   };
+
+  useEffect(() => { fetchRecipients(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [auth.user?.id]);
+
+  const handleAdded = async (newRecipient) => {
+    setRecipients((prev) => [dbRecipientToUi(newRecipient), ...prev]);
+    setAddOpen(false);
+    push(`${newRecipient.legal_business_name} added — submitting to Cedar…`, "info");
+    // Auto-submit to Cedar right after insert. The Edge Function is idempotent.
+    setSubmittingId(newRecipient.id);
+    const { ok, data } = await submitRecipientToCedar(newRecipient.id);
+    setSubmittingId(null);
+    if (ok && data?.cedar_business_id) {
+      push(`${newRecipient.legal_business_name} submitted to Cedar (id ${data.cedar_business_id})`, "success");
+      fetchRecipients();
+    } else {
+      const detail = data?.cedar?.exception?.message || data?.error || "see console";
+      // eslint-disable-next-line no-console
+      console.error("Cedar submit failed:", data);
+      push(`Cedar submit failed: ${detail}`, "warn");
+      fetchRecipients();
+    }
+  };
+
+  const handleResubmit = async (recipientId, name) => {
+    setSubmittingId(recipientId);
+    const { ok, data } = await submitRecipientToCedar(recipientId);
+    setSubmittingId(null);
+    if (ok && data?.cedar_business_id) {
+      push(`${name} → Cedar id ${data.cedar_business_id}`, "success");
+      fetchRecipients();
+    } else {
+      const detail = data?.cedar?.exception?.message || data?.error || "see console";
+      // eslint-disable-next-line no-console
+      console.error("Cedar resubmit failed:", data);
+      push(`Cedar submit failed: ${detail}`, "warn");
+    }
+  };
+
+  if (!isSignedIn) {
+    return (
+      <Card>
+        <div className="p-8 text-center">
+          <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full" style={{ background: "var(--bone-2)" }}><Briefcase size={20} style={{ color: "var(--muted)" }} /></div>
+          <h3 className="font-display text-lg font-semibold">Sign in to manage recipients</h3>
+          <p className="mt-1.5 text-sm max-w-md mx-auto" style={{ color: "var(--muted)" }}>Recipients are the suppliers and beneficiaries abroad that your customers send money to. Each one is KYC'd through Cedar before transactions can route through them.</p>
+        </div>
+      </Card>
+    );
+  }
 
   return (
     <>
     <Card padding="none">
       <div className="flex flex-col items-stretch gap-3 p-4 sm:flex-row sm:items-center" style={{ borderBottom: "1px solid var(--line)" }}>
         <div className="flex-1">
-          <div className="text-sm font-semibold">{filtered.length} saved recipient{filtered.length === 1 ? "" : "s"}</div>
-          <div className="font-mono text-[10px] mt-0.5" style={{ color: "var(--muted)" }}>Reuse these in quotes — no need to re-enter banking details each time. {isSignedIn && localAdds.length === 0 && "Persistence lands with the backend pass."}</div>
+          <div className="text-sm font-semibold">{recipients.length} recipient{recipients.length === 1 ? "" : "s"}</div>
+          <div className="font-mono text-[10px] mt-0.5" style={{ color: "var(--muted)" }}>Suppliers / beneficiaries abroad. Each is KYC'd through Cedar — transactions can only route to recipients with KYC status Approved.</div>
         </div>
         <div className="flex flex-wrap gap-2">
-          {customers.length > 0 && (
-            <Select value={filterCustomer} onChange={(e) => setFilterCustomer(e.target.value)}>
-              <option value="all">All customers</option>
-              {customers.map((c) => <option key={c} value={c}>{c}</option>)}
-            </Select>
-          )}
+          <SecondaryBtn onClick={fetchRecipients} disabled={loading}><RefreshCw size={14} className={loading ? "animate-spin" : ""} /> Refresh</SecondaryBtn>
           <PrimaryBtn onClick={() => setAddOpen(true)}><Plus size={14} /> Add recipient</PrimaryBtn>
         </div>
       </div>
-      {filtered.length === 0 ? (
+      {recipients.length === 0 ? (
         <div className="p-12 text-center">
           <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full" style={{ background: "var(--bone-2)" }}><Briefcase size={20} style={{ color: "var(--muted)" }} /></div>
-          <h3 className="font-display text-lg font-semibold">No recipients saved yet</h3>
-          <p className="mt-1.5 text-sm max-w-md mx-auto" style={{ color: "var(--muted)" }}>Save the suppliers and beneficiaries your customers transact with most often. They'll appear as quick-select chips in the quote builder.</p>
-          <div className="mt-4"><PrimaryBtn onClick={() => setAddOpen(true)}><Plus size={14} /> Add your first recipient</PrimaryBtn></div>
+          <h3 className="font-display text-lg font-semibold">{loading ? "Loading recipients…" : "No recipients yet"}</h3>
+          {!loading && <p className="mt-1.5 text-sm max-w-md mx-auto" style={{ color: "var(--muted)" }}>Add the suppliers your customers send money to. We'll KYC them through Cedar so transactions can route to them.</p>}
+          {!loading && <div className="mt-4"><PrimaryBtn onClick={() => setAddOpen(true)}><Plus size={14} /> Add your first recipient</PrimaryBtn></div>}
         </div>
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
-            <thead><tr style={{ background: "var(--bone)", borderBottom: "1px solid var(--line)" }}>{["Recipient", "Customer", "Direction", "Banking", "Currency", "Last used", "Transactions"].map((h, i) => (<th key={i} className={`px-4 py-3 text-left font-mono text-[10px] font-semibold uppercase tracking-wider ${["Transactions"].includes(h) ? "text-right" : ""}`} style={{ color: "var(--muted)" }}>{h}</th>))}</tr></thead>
+            <thead><tr style={{ background: "var(--bone)", borderBottom: "1px solid var(--line)" }}>{["Recipient", "Country", "Industry", "Cedar KYC", "Cedar ID", ""].map((h, i) => (<th key={i} className="px-4 py-3 text-left font-mono text-[10px] font-semibold uppercase tracking-wider" style={{ color: "var(--muted)" }}>{h}</th>))}</tr></thead>
             <tbody>
-              {filtered.map((r) => (
-                <tr key={r.id} onClick={() => push(`Opening ${r.name}`, "info")} className="cursor-pointer transition hover:bg-[color:var(--bone)]" style={{ borderBottom: "1px solid var(--line)" }}>
-                  <td className="px-4 py-3.5">
-                    <div className="font-medium">{r.name}</div>
-                    <div className="font-mono text-[10px] mt-0.5" style={{ color: "var(--muted)" }}>{r.country}</div>
-                  </td>
-                  <td className="px-4 py-3.5 text-sm" style={{ color: "var(--muted)" }}>{r.customer}</td>
-                  <td className="px-4 py-3.5"><DirectionBadge direction={r.direction} /></td>
-                  <td className="px-4 py-3.5">
-                    <div className="text-sm">{r.bank}</div>
-                    <div className="font-mono text-[10px] mt-0.5" style={{ color: "var(--muted)" }}>{r.account}</div>
-                  </td>
-                  <td className="px-4 py-3.5 font-mono text-xs">{r.currency}</td>
-                  <td className="px-4 py-3.5 font-mono text-xs" style={{ color: "var(--muted)" }}>{r.lastUsed}</td>
-                  <td className="px-4 py-3.5 text-right font-mono">{r.txCount}</td>
-                </tr>
-              ))}
+              {recipients.map((r) => {
+                const k = kycStatusLabel(r.cedarKycStatus);
+                const country = RECIPIENT_COUNTRIES.find((c) => c.iso === r.country);
+                const industry = CEDAR_INDUSTRIES.find((i) => i.id === r.industry);
+                const submitting = submittingId === r.id;
+                return (
+                  <tr key={r.id} style={{ borderBottom: "1px solid var(--line)" }}>
+                    <td className="px-4 py-3.5">
+                      <div className="font-medium">{r.legalBusinessName}</div>
+                      {r.tradingName && r.tradingName !== r.legalBusinessName && (
+                        <div className="font-mono text-[10px] mt-0.5" style={{ color: "var(--muted)" }}>aka {r.tradingName}</div>
+                      )}
+                    </td>
+                    <td className="px-4 py-3.5">
+                      <div className="font-mono text-xs">{r.country}</div>
+                      <div className="text-[10px]" style={{ color: "var(--muted)" }}>{country?.label || ""}</div>
+                    </td>
+                    <td className="px-4 py-3.5 text-xs" style={{ color: "var(--muted)" }}>{industry?.label || r.industry}</td>
+                    <td className="px-4 py-3.5">
+                      <span className="rounded-full px-2 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-wider" style={{ background: k.bg, color: k.color }}>{k.label}</span>
+                      {r.cedarLastError && <div className="font-mono text-[9px] mt-1 truncate max-w-[200px]" style={{ color: "#991b1b" }} title={r.cedarLastError}>{r.cedarLastError}</div>}
+                    </td>
+                    <td className="px-4 py-3.5 font-mono text-xs" style={{ color: "var(--muted)" }}>{r.cedarBusinessId || "—"}</td>
+                    <td className="px-4 py-3.5 text-right">
+                      {!r.cedarBusinessId && (
+                        <SecondaryBtn onClick={() => handleResubmit(r.id, r.legalBusinessName)} disabled={submitting}>
+                          {submitting ? <Loader2 size={12} className="animate-spin" /> : <Send size={12} />}
+                          {submitting ? " Submitting…" : " Submit to Cedar"}
+                        </SecondaryBtn>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -4843,51 +4949,117 @@ function BDCRecipients() {
 }
 
 function AddRecipientModal({ open, onClose, onAdded }) {
-  const empty = { customer: "", direction: "outbound", name: "", country: "China", bank: "", account: "", swift: "", currency: "USD" };
-  const [data, setData] = useState(empty);
-  const submit = (e) => {
-    e.preventDefault();
-    onAdded({ ...data, account: data.account ? `•••• ${data.account.slice(-4)}` : data.account });
-    setData(empty);
+  const { push } = useToast();
+  const empty = {
+    legal_business_name: "",
+    trading_name: "",
+    email: "",
+    contact_name: "",
+    contact_phone_prefix: "",
+    contact_phone: "",
+    country: "US",
+    state: "",
+    city: "",
+    address: "",
+    street_number: "",
+    zipcode: "",
+    industry: "BUSINESS_INFORMATION",
   };
+  const [data, setData] = useState(empty);
+  const [saving, setSaving] = useState(false);
+
+  const canSubmit = data.legal_business_name && data.email && data.contact_name &&
+    data.contact_phone_prefix && data.contact_phone && data.country && data.state &&
+    data.city && data.address && data.street_number && data.zipcode && data.industry;
+
+  const submit = async (e) => {
+    e.preventDefault();
+    if (!canSubmit || saving) return;
+    setSaving(true);
+    const { data: inserted, error } = await supabase
+      .from("recipients")
+      .insert({
+        legal_business_name: data.legal_business_name,
+        trading_name: data.trading_name || null,
+        email: data.email,
+        contact_name: data.contact_name,
+        contact_phone_prefix: data.contact_phone_prefix.replace(/[^\d]/g, ""),
+        contact_phone: data.contact_phone.replace(/[^\d]/g, ""),
+        country: data.country,
+        state: data.state,
+        city: data.city,
+        address: data.address,
+        street_number: data.street_number,
+        zipcode: data.zipcode,
+        industry: data.industry,
+      })
+      .select()
+      .single();
+    setSaving(false);
+    if (error) {
+      // eslint-disable-next-line no-console
+      console.error("Insert recipient failed:", error);
+      push(`Couldn't save recipient: ${error.message}`, "warn");
+      return;
+    }
+    setData(empty);
+    onAdded(inserted);
+  };
+
   return (
     <Modal open={open} onClose={onClose} title="Add recipient" size="lg">
-      <p className="text-sm mb-5" style={{ color: "var(--muted)" }}>Save a supplier or beneficiary's banking details for fast reuse in quotes. Linked to a specific customer.</p>
+      <p className="text-sm mb-5" style={{ color: "var(--muted)" }}>The supplier or beneficiary abroad. Cedar requires the full address + contact details for KYC. Once approved, you can add their bank account.</p>
       <form onSubmit={submit} className="space-y-4">
         <div className="grid gap-4 sm:grid-cols-2">
-          <Field label="Linked customer" full>
-            <Input value={data.customer} onChange={(e) => setData({ ...data, customer: e.target.value })} placeholder="Customer business name" />
+          <Field label="Legal business name" full>
+            <Input value={data.legal_business_name} onChange={(e) => setData({ ...data, legal_business_name: e.target.value })} placeholder="Shenzhen Electronics Co., Ltd" />
           </Field>
-          <Field label="Direction">
-            <div className="grid grid-cols-2 gap-2">
-              <button type="button" onClick={() => setData({ ...data, direction: "outbound", country: "China", currency: "USD" })} className="rounded-xl px-3 py-2.5 text-sm font-medium transition" style={data.direction === "outbound" ? { background: "var(--ink)", color: "var(--bone)" } : { background: "white", color: "var(--ink)", border: "1px solid var(--line)" }}>Outbound</button>
-              <button type="button" onClick={() => setData({ ...data, direction: "inbound", country: "Nigeria", currency: "NGN" })} className="rounded-xl px-3 py-2.5 text-sm font-medium transition" style={data.direction === "inbound" ? { background: "var(--ink)", color: "var(--bone)" } : { background: "white", color: "var(--ink)", border: "1px solid var(--line)" }}>Inbound</button>
-            </div>
+          <Field label="Trading name (optional)" full>
+            <Input value={data.trading_name} onChange={(e) => setData({ ...data, trading_name: e.target.value })} placeholder="If different from legal name" />
           </Field>
-          <Field label="Recipient name"><Input value={data.name} onChange={(e) => setData({ ...data, name: e.target.value })} placeholder={data.direction === "inbound" ? "Lagos Trading Hub Ltd" : "Shenzhen Electronics Co., Ltd"} /></Field>
+          <Field label="Contact email">
+            <Input type="email" value={data.email} onChange={(e) => setData({ ...data, email: e.target.value })} placeholder="ops@supplier.com" />
+          </Field>
+          <Field label="Contact name">
+            <Input value={data.contact_name} onChange={(e) => setData({ ...data, contact_name: e.target.value })} placeholder="Jane Doe" />
+          </Field>
+          <Field label="Phone prefix (digits only)">
+            <Input value={data.contact_phone_prefix} onChange={(e) => setData({ ...data, contact_phone_prefix: e.target.value })} placeholder="86" />
+          </Field>
+          <Field label="Contact phone (digits only)">
+            <Input value={data.contact_phone} onChange={(e) => setData({ ...data, contact_phone: e.target.value })} placeholder="13800001234" />
+          </Field>
           <Field label="Country">
             <Select value={data.country} onChange={(e) => setData({ ...data, country: e.target.value })}>
-              {data.direction === "inbound" ? (
-                <option>Nigeria</option>
-              ) : (
-                <>
-                  <option>China</option><option>USA</option><option>UK</option><option>Germany</option><option>UAE</option><option>India</option><option>Türkiye</option>
-                </>
-              )}
+              {RECIPIENT_COUNTRIES.map((c) => <option key={c.iso} value={c.iso}>{c.iso} — {c.label}</option>)}
             </Select>
           </Field>
-          <Field label="Bank name" full><Input value={data.bank} onChange={(e) => setData({ ...data, bank: e.target.value })} placeholder="Bank of China" /></Field>
-          <Field label="Account number"><Input value={data.account} onChange={(e) => setData({ ...data, account: e.target.value })} /></Field>
-          <Field label={data.direction === "inbound" ? "Sort code (if applicable)" : "SWIFT / IBAN"}><Input value={data.swift} onChange={(e) => setData({ ...data, swift: e.target.value })} /></Field>
-          <Field label="Currency" full>
-            <Select value={data.currency} onChange={(e) => setData({ ...data, currency: e.target.value })}>
-              {data.direction === "inbound" ? <option>NGN</option> : <><option>USD</option><option>GBP</option><option>EUR</option><option>CNY</option></>}
+          <Field label="State / region">
+            <Input value={data.state} onChange={(e) => setData({ ...data, state: e.target.value })} placeholder="Guangdong" />
+          </Field>
+          <Field label="City">
+            <Input value={data.city} onChange={(e) => setData({ ...data, city: e.target.value })} placeholder="Shenzhen" />
+          </Field>
+          <Field label="Zip / postal code">
+            <Input value={data.zipcode} onChange={(e) => setData({ ...data, zipcode: e.target.value })} placeholder="518000" />
+          </Field>
+          <Field label="Street address" full>
+            <Input value={data.address} onChange={(e) => setData({ ...data, address: e.target.value })} placeholder="Huaqiang Bei Road" />
+          </Field>
+          <Field label="Street number">
+            <Input value={data.street_number} onChange={(e) => setData({ ...data, street_number: e.target.value })} placeholder="1234" />
+          </Field>
+          <Field label="Industry" full>
+            <Select value={data.industry} onChange={(e) => setData({ ...data, industry: e.target.value })}>
+              {CEDAR_INDUSTRIES.map((i) => <option key={i.id} value={i.id}>{i.label}</option>)}
             </Select>
           </Field>
         </div>
         <div className="flex justify-end gap-2 pt-2">
-          <SecondaryBtn type="button" onClick={onClose}>Cancel</SecondaryBtn>
-          <PrimaryBtn type="submit" disabled={!data.customer || !data.name || !data.bank || !data.account}>Save recipient</PrimaryBtn>
+          <SecondaryBtn type="button" onClick={onClose} disabled={saving}>Cancel</SecondaryBtn>
+          <PrimaryBtn type="submit" disabled={!canSubmit || saving}>
+            {saving ? <><Loader2 size={14} className="animate-spin" /> Saving…</> : <>Save & submit to Cedar</>}
+          </PrimaryBtn>
         </div>
       </form>
     </Modal>
@@ -5099,27 +5271,29 @@ const DOC_TYPES = [
   { id: "other", label: "Other" },
 ];
 
-// Cedar's industry enum (POST /v1/business/ requires one). Only the most common ones —
-// the full Cedar list is ~25, but operators typically pick from these for trade payments.
+// Cedar's full BusinessIndustry enum (POST /v1/business/ requires one). Must match
+// Cedar's accepted values exactly — sending anything else returns REQUIRED_FIELD_MISSING.
 const CEDAR_INDUSTRIES = [
   { id: "AGRICULTURE_FORESTRY_WILDLIFE", label: "Agriculture / Forestry / Wildlife" },
   { id: "BUSINESS_INFORMATION", label: "Business Information / Professional Services" },
   { id: "CONSTRUCTION_UTILITIES_CONTRACTING", label: "Construction / Utilities / Contracting" },
   { id: "EDUCATION", label: "Education" },
+  { id: "ENTERTAINMENT", label: "Entertainment" },
   { id: "FINANCE_INSURANCE", label: "Finance / Insurance" },
   { id: "FOOD_HOSPITALITY", label: "Food / Hospitality" },
+  { id: "GAMING", label: "Gaming" },
+  { id: "GARMENTS", label: "Garments / Textiles / Fashion" },
   { id: "HEALTH_SERVICES", label: "Health Services" },
+  { id: "MANUFACTURING", label: "Manufacturing" },
   { id: "MOTOR_VEHICLE", label: "Motor Vehicle" },
   { id: "NATURAL_RESOURCES_ENVIRONMENTAL", label: "Natural Resources / Environmental" },
   { id: "PERSONAL_SERVICES", label: "Personal Services" },
-  { id: "REAL_ESTATE_HOUSING", label: "Real Estate / Housing" },
-  { id: "TRANSPORTATION", label: "Transportation / Freight" },
-  { id: "GARMENTS", label: "Garments / Textiles / Fashion" },
   { id: "PHARMACEUTICALS", label: "Pharmaceuticals" },
+  { id: "REAL_ESTATE_HOUSING", label: "Real Estate / Housing" },
+  { id: "SAFETY_SECURITY_LEGAL", label: "Safety / Security / Legal" },
   { id: "TECHNOLOGY", label: "Technology" },
-  { id: "MANUFACTURING", label: "Manufacturing" },
-  { id: "ENTERTAINMENT", label: "Entertainment" },
   { id: "TELECOMMUNICATIONS", label: "Telecommunications" },
+  { id: "TRANSPORTATION", label: "Transportation / Freight" },
 ];
 
 function CustomerDrawer({ customer, onClose }) {
