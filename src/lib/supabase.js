@@ -148,3 +148,28 @@ export async function submitCedarTransaction({ quoteId, customerId, recipientExt
     return { ok: false, status: 0, data: null };
   }
 }
+
+// Approve a Cedar sendf2f quote that's in OnOff_AWAITING_QUOTE_APPROVAL.
+// Cedar locks the rate and returns deposit bank details, which the Edge
+// Function persists to the quote row (cedar_bank_details, cedar_quote_rate,
+// cedar_deposit_amount_minor).
+export async function approveCedarQuote(quoteId) {
+  try {
+    const res = await fetch(`${url}/functions/v1/cedar-approve-quote`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${anonKey}`,
+        "apikey": anonKey,
+      },
+      body: JSON.stringify({ quoteId }),
+    });
+    let data = null;
+    try { data = await res.json(); } catch { /* non-JSON */ }
+    return { ok: res.ok, status: res.status, data };
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error("approveCedarQuote failed:", err);
+    return { ok: false, status: 0, data: null };
+  }
+}

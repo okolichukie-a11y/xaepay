@@ -7,7 +7,7 @@ import {
   ArrowLeft, ArrowLeftRight, Loader2, Layers, TrendingUp, Wallet, DollarSign, Mail,
   RefreshCw,
 } from "lucide-react";
-import { supabase, sendWhatsAppText, fetchCedarRate, submitCustomerToCedar, submitRecipientToCedar, submitReceiverAccountToCedar, submitCedarTransaction } from "./lib/supabase.js";
+import { supabase, sendWhatsAppText, fetchCedarRate, submitCustomerToCedar, submitRecipientToCedar, submitReceiverAccountToCedar, submitCedarTransaction, approveCedarQuote } from "./lib/supabase.js";
 import { useAuth } from "./lib/auth.js";
 
 // ─── Editable in one place ────────────────────────────────────────────────
@@ -4440,7 +4440,7 @@ function BDCTransactions() {
     setLoading(true);
     const { data, error } = await supabase
       .from("quotes")
-      .select("id, customer_name, customer_phone, customer_id, beneficiary, destination, amount, currency, rate, ngn_total, rail, status, submitted_at, created_at, markup_pct, cost_basis_ngn, recipient_id, recipient_external_account_id, cedar_business_request_id, cedar_request_status, cedar_purpose, cedar_invoice_url, cedar_last_error, cedar_request_status_updated_at")
+      .select("id, customer_name, customer_phone, customer_id, beneficiary, destination, amount, currency, rate, ngn_total, rail, status, submitted_at, created_at, markup_pct, cost_basis_ngn, recipient_id, recipient_external_account_id, cedar_business_request_id, cedar_request_status, cedar_purpose, cedar_invoice_url, cedar_last_error, cedar_request_status_updated_at, cedar_bank_details, cedar_quote_rate, cedar_deposit_amount_minor, cedar_deposit_currency, cedar_payout_status")
       .order("created_at", { ascending: false })
       .limit(50);
     if (error) {
@@ -4473,6 +4473,11 @@ function BDCTransactions() {
         cedarInvoiceUrl: q.cedar_invoice_url,
         cedarLastError: q.cedar_last_error,
         cedarRequestStatusUpdatedAt: q.cedar_request_status_updated_at,
+        cedarBankDetails: q.cedar_bank_details,
+        cedarQuoteRate: q.cedar_quote_rate != null ? parseFloat(q.cedar_quote_rate) : null,
+        cedarDepositAmountMinor: q.cedar_deposit_amount_minor,
+        cedarDepositCurrency: q.cedar_deposit_currency,
+        cedarPayoutStatus: q.cedar_payout_status,
       })));
     }
     setLoading(false);
@@ -4578,15 +4583,18 @@ function TxDrawer({ tx, onClose, onRefresh }) {
           <div>
             <Label>Cedar Money</Label>
             {tx.cedarBusinessRequestId ? (
-              <div className="rounded-xl p-4 text-xs space-y-1.5" style={{ background: "var(--bone)", border: "1px solid var(--line)" }}>
-                <div className="flex items-baseline justify-between">
-                  <span style={{ color: "var(--muted)" }}>Status</span>
-                  <span className="rounded-full px-2 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-wider" style={{ background: "rgba(15,95,63,0.10)", color: "var(--emerald)" }}>{tx.cedarRequestStatus || "pending"}</span>
+              <div className="space-y-3">
+                <div className="rounded-xl p-4 text-xs space-y-1.5" style={{ background: "var(--bone)", border: "1px solid var(--line)" }}>
+                  <div className="flex items-baseline justify-between">
+                    <span style={{ color: "var(--muted)" }}>Status</span>
+                    <span className="rounded-full px-2 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-wider" style={{ background: "rgba(15,95,63,0.10)", color: "var(--emerald)" }}>{tx.cedarRequestStatus || "pending"}</span>
+                  </div>
+                  <div className="flex items-baseline justify-between font-mono"><span style={{ color: "var(--muted)" }}>Cedar request ID</span><span className="font-semibold">{tx.cedarBusinessRequestId}</span></div>
+                  <div className="flex items-baseline justify-between font-mono"><span style={{ color: "var(--muted)" }}>Purpose</span><span className="font-semibold">{tx.cedarPurpose || "—"}</span></div>
+                  {tx.cedarInvoiceUrl && <div className="font-mono break-all" style={{ color: "var(--muted)" }}>Invoice: <a href={tx.cedarInvoiceUrl} target="_blank" rel="noreferrer" className="underline" style={{ color: "var(--emerald)" }}>{tx.cedarInvoiceUrl.slice(0, 40)}…</a></div>}
+                  {tx.cedarLastError && <div className="font-mono break-words" style={{ color: "#991b1b" }}>{tx.cedarLastError}</div>}
                 </div>
-                <div className="flex items-baseline justify-between font-mono"><span style={{ color: "var(--muted)" }}>Cedar request ID</span><span className="font-semibold">{tx.cedarBusinessRequestId}</span></div>
-                <div className="flex items-baseline justify-between font-mono"><span style={{ color: "var(--muted)" }}>Purpose</span><span className="font-semibold">{tx.cedarPurpose || "—"}</span></div>
-                {tx.cedarInvoiceUrl && <div className="font-mono break-all" style={{ color: "var(--muted)" }}>Invoice: <a href={tx.cedarInvoiceUrl} target="_blank" rel="noreferrer" className="underline" style={{ color: "var(--emerald)" }}>{tx.cedarInvoiceUrl.slice(0, 40)}…</a></div>}
-                {tx.cedarLastError && <div className="font-mono break-words" style={{ color: "#991b1b" }}>{tx.cedarLastError}</div>}
+                <CedarApprovalSection tx={tx} onChanged={() => { onRefresh && onRefresh(); }} />
               </div>
             ) : (
               <CedarSubmitPanel tx={tx} onSubmitted={() => { onRefresh && onRefresh(); }} />
@@ -4733,6 +4741,86 @@ function CedarSubmitPanel({ tx, onSubmitted }) {
           {submitting ? <><Loader2 size={12} className="animate-spin" /> Submitting…</> : <><Send size={12} /> Submit to Cedar</>}
         </PrimaryBtn>
       </div>
+    </div>
+  );
+}
+
+// CedarApprovalSection — once a quote has a Cedar request ID, this section
+// drives the next steps: approve the locked-in quote, show deposit bank
+// details to the operator. Renders nothing for states where there's no
+// operator action available (PENDING, IN_PROGRESS, COMPLETED, etc.).
+function CedarApprovalSection({ tx, onChanged }) {
+  const { push } = useToast();
+  const [approving, setApproving] = useState(false);
+  const status = (tx.cedarRequestStatus || "").toUpperCase();
+  const isAwaitingApproval = status.includes("AWAITING_QUOTE_APPROVAL");
+  const hasBankDetails = !!tx.cedarBankDetails && Object.keys(tx.cedarBankDetails || {}).length > 0;
+
+  const approve = async () => {
+    if (!tx.dbId || approving) return;
+    setApproving(true);
+    const { ok, data } = await approveCedarQuote(tx.dbId);
+    setApproving(false);
+    if (ok && data?.cedar_bank_details) {
+      push("Quote approved — deposit instructions ready", "success");
+      onChanged && onChanged();
+    } else {
+      const detail = data?.cedar?.exception?.message || data?.error || "see console";
+      // eslint-disable-next-line no-console
+      console.error("Approve quote failed:", data);
+      push(`Approve failed: ${detail}`, "warn");
+    }
+  };
+
+  if (hasBankDetails) {
+    const bd = tx.cedarBankDetails;
+    const depositMajor = tx.cedarDepositAmountMinor != null ? (tx.cedarDepositAmountMinor / 100) : null;
+    const depositCcy = tx.cedarDepositCurrency || "NGN";
+    return (
+      <div className="rounded-xl p-4 text-xs space-y-2" style={{ background: "var(--ink)", color: "var(--bone)" }}>
+        <div className="flex items-center justify-between">
+          <div className="font-mono text-[10px] uppercase tracking-wider" style={{ color: "rgba(247,245,240,0.5)" }}>Deposit instructions</div>
+          <span className="rounded-full px-2 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-wider" style={{ background: "var(--lime)", color: "var(--ink)" }}>Quote locked</span>
+        </div>
+        {depositMajor != null && (
+          <div>
+            <div className="font-mono text-[10px]" style={{ color: "rgba(247,245,240,0.5)" }}>Customer must deposit</div>
+            <div className="font-display text-2xl font-[500]" style={{ color: "var(--lime)" }}>{depositCcy} {Math.round(depositMajor).toLocaleString()}</div>
+            {tx.cedarQuoteRate != null && <div className="font-mono text-[10px] mt-0.5" style={{ color: "rgba(247,245,240,0.5)" }}>Locked rate: {tx.cedarQuoteRate}</div>}
+          </div>
+        )}
+        <div className="space-y-1 pt-2" style={{ borderTop: "1px solid rgba(247,245,240,0.15)" }}>
+          {bd.bankName && <KvLine k="Bank" v={bd.bankName} />}
+          {(bd.nameOnAccount || bd.accountHolderName) && <KvLine k="Name on account" v={bd.nameOnAccount || bd.accountHolderName} />}
+          {bd.accountNumber && <KvLine k="Account number" v={bd.accountNumber} />}
+          {bd.bankAddress && <KvLine k="Bank address" v={bd.bankAddress} />}
+          {bd.reference && <KvLine k="Reference" v={bd.reference} highlight />}
+          {bd.swiftCode && <KvLine k="SWIFT" v={bd.swiftCode} />}
+          {bd.iban && <KvLine k="IBAN" v={bd.iban} />}
+        </div>
+      </div>
+    );
+  }
+
+  if (isAwaitingApproval) {
+    return (
+      <div className="rounded-xl p-4 space-y-2" style={{ background: "var(--bone)", border: "1px solid var(--line)" }}>
+        <p className="text-xs" style={{ color: "var(--muted)" }}>Cedar has priced this quote. Approve to lock the rate and receive the deposit bank details for your customer.</p>
+        <PrimaryBtn onClick={approve} disabled={approving} full>
+          {approving ? <><Loader2 size={12} className="animate-spin" /> Approving…</> : <><CheckCircle2 size={12} /> Approve quote</>}
+        </PrimaryBtn>
+      </div>
+    );
+  }
+
+  return null;
+}
+
+function KvLine({ k, v, highlight }) {
+  return (
+    <div className="flex items-baseline justify-between gap-3">
+      <span className="font-mono text-[10px] flex-shrink-0" style={{ color: "rgba(247,245,240,0.5)" }}>{k}</span>
+      <span className={`font-mono text-right break-all ${highlight ? "font-semibold" : ""}`} style={{ color: highlight ? "var(--lime)" : "var(--bone)" }}>{v}</span>
     </div>
   );
 }
