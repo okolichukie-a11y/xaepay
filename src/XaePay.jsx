@@ -7,7 +7,7 @@ import {
   ArrowLeft, ArrowLeftRight, Loader2, Layers, TrendingUp, Wallet, DollarSign, Mail,
   RefreshCw,
 } from "lucide-react";
-import { supabase, sendWhatsAppText, fetchCedarRate, submitCustomerToCedar, submitRecipientToCedar, submitReceiverAccountToCedar, submitCedarTransaction, approveCedarQuote, confirmCedarDeposit, cancelCedarTransaction } from "./lib/supabase.js";
+import { supabase, sendWhatsAppText, fetchCedarRate, submitCustomerToCedar, submitRecipientToCedar, submitReceiverAccountToCedar, submitCedarTransaction, approveCedarQuote, confirmCedarDeposit, cancelCedarTransaction, uploadCedarFile } from "./lib/supabase.js";
 import { useAuth } from "./lib/auth.js";
 
 // ─── Editable in one place ────────────────────────────────────────────────
@@ -4485,6 +4485,18 @@ function BDCTransactions() {
 
   useEffect(() => { fetchTxs(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [auth.user?.id]);
 
+  // Live-refresh on Cedar webhook → quote row updates so operators don't need to
+  // hit Refresh after submitting / approving / canceling.
+  useEffect(() => {
+    if (!isSignedIn) return;
+    const channel = supabase
+      .channel("quotes-realtime")
+      .on("postgres_changes", { event: "*", schema: "public", table: "quotes" }, () => { fetchTxs(); })
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+    /* eslint-disable-next-line react-hooks/exhaustive-deps */
+  }, [isSignedIn]);
+
   const txs = isSignedIn ? realTxs : DEMO_TRANSACTIONS;
   const showEmptyState = isSignedIn && !loading && realTxs.length === 0;
   const filtered = txs.filter((t) => {
@@ -4737,8 +4749,8 @@ function CedarSubmitPanel({ tx, onSubmitted }) {
           {CEDAR_PURPOSES.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
         </Select>
       </Field>
-      <Field label="Invoice URL">
-        <Input value={invoiceUrl} onChange={(e) => setInvoiceUrl(e.target.value)} placeholder="https://… (link to the customer's invoice)" />
+      <Field label="Customer invoice (PDF or image)">
+        <FileUploadField category="invoices" value={invoiceUrl} onChange={setInvoiceUrl} />
       </Field>
       <div className="flex justify-end pt-1">
         <PrimaryBtn onClick={submit} disabled={!canSubmit}>
@@ -4926,8 +4938,8 @@ function CedarApprovalSection({ tx, onChanged }) {
       {isAwaitingDeposit && (
         <div className="rounded-xl p-4 space-y-2" style={{ background: "var(--bone)", border: "1px solid var(--line)" }}>
           <p className="text-xs" style={{ color: "var(--muted)" }}>Once your customer deposits the NGN amount above, paste a public link to the bank slip (screenshot or PDF) and confirm. Cedar will then start the {tx.currency} payout to the recipient.</p>
-          <Field label="Deposit slip URL">
-            <Input value={depositSlipUrl} onChange={(e) => setDepositSlipUrl(e.target.value)} placeholder="https://… (Drive / S3 / any public link)" />
+          <Field label="Deposit slip (PDF or image)">
+            <FileUploadField category="deposits" value={depositSlipUrl} onChange={setDepositSlipUrl} />
           </Field>
           <PrimaryBtn onClick={confirmDeposit} disabled={!depositSlipUrl || confirmingDeposit} full>
             {confirmingDeposit ? <><Loader2 size={12} className="animate-spin" /> Confirming…</> : <><Upload size={12} /> Confirm deposit received</>}
@@ -4960,6 +4972,51 @@ function KvLine({ k, v, highlight }) {
     <div className="flex items-baseline justify-between gap-3">
       <span className="font-mono text-[10px] flex-shrink-0" style={{ color: "rgba(247,245,240,0.5)" }}>{k}</span>
       <span className={`font-mono text-right break-all ${highlight ? "font-semibold" : ""}`} style={{ color: highlight ? "var(--lime)" : "var(--bone)" }}>{v}</span>
+    </div>
+  );
+}
+
+// Drop-in replacement for a URL <Input> that uploads the chosen file to
+// Supabase Storage and emits the resulting public URL via onChange. Cedar
+// fetches the URL during compliance review, so the bucket is intentionally
+// public-read.
+function FileUploadField({ category, value, onChange, accept = "image/*,application/pdf" }) {
+  const { push } = useToast();
+  const [uploading, setUploading] = useState(false);
+  const [filename, setFilename] = useState("");
+
+  const handleChange = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploading(true);
+    const result = await uploadCedarFile(file, category);
+    setUploading(false);
+    if (result.ok) {
+      setFilename(file.name);
+      onChange(result.url);
+      push("File uploaded", "success");
+    } else {
+      push(`Upload failed: ${result.error}`, "warn");
+    }
+    // Reset the input so picking the same file twice still triggers onChange
+    e.target.value = "";
+  };
+
+  return (
+    <div className="space-y-1">
+      <input
+        type="file"
+        accept={accept}
+        onChange={handleChange}
+        disabled={uploading}
+        className="block w-full text-xs file:mr-3 file:rounded-lg file:border-0 file:bg-[color:var(--ink)] file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-[color:var(--bone)] hover:file:opacity-90"
+      />
+      {uploading && <div className="font-mono text-[10px]" style={{ color: "var(--muted)" }}>Uploading…</div>}
+      {value && !uploading && (
+        <div className="font-mono text-[10px]" style={{ color: "var(--muted)" }}>
+          ✓ {filename || "uploaded"} · <a href={value} target="_blank" rel="noreferrer" className="underline" style={{ color: "var(--emerald)" }}>view</a>
+        </div>
+      )}
     </div>
   );
 }
@@ -5232,6 +5289,18 @@ function BDCRecipients() {
   };
 
   useEffect(() => { fetchRecipients(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [auth.user?.id]);
+
+  // Live-refresh on Cedar webhook → recipient or account row updates.
+  useEffect(() => {
+    if (!isSignedIn) return;
+    const channel = supabase
+      .channel("recipients-realtime")
+      .on("postgres_changes", { event: "*", schema: "public", table: "recipients" }, () => { fetchRecipients(); })
+      .on("postgres_changes", { event: "*", schema: "public", table: "recipient_external_accounts" }, () => { fetchRecipients(); })
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+    /* eslint-disable-next-line react-hooks/exhaustive-deps */
+  }, [isSignedIn]);
 
   const handleAdded = async (newRecipient) => {
     setRecipients((prev) => [dbRecipientToUi(newRecipient), ...prev]);
@@ -5541,6 +5610,23 @@ function RecipientDrawer({ recipient, onClose }) {
     /* eslint-disable-next-line react-hooks/exhaustive-deps */
   }, [recipient?.id]);
 
+  // While the drawer is open, live-refresh the bank-account list so Cedar
+  // webhook status changes (PENDING → ACTIVE) appear without manual refresh.
+  useEffect(() => {
+    if (!recipient?.id) return;
+    const channel = supabase
+      .channel(`recipient-accounts-${recipient.id}`)
+      .on("postgres_changes", {
+        event: "*",
+        schema: "public",
+        table: "recipient_external_accounts",
+        filter: `recipient_id=eq.${recipient.id}`,
+      }, () => { fetchAccounts(recipient.id); })
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+    /* eslint-disable-next-line react-hooks/exhaustive-deps */
+  }, [recipient?.id]);
+
   const handleAcctAdded = async (insertedRow) => {
     setAccounts((prev) => [dbAccountToUi(insertedRow), ...prev]);
     setAddOpen(false);
@@ -5802,9 +5888,9 @@ function AddBankAccountForm({ recipient, onCancel, onAdded }) {
         <Field label="Address (street name)">
           <Input value={data.address} onChange={(e) => setData({ ...data, address: e.target.value })} />
         </Field>
-        <Field label="Invoice URL">
-          <Input value={data.invoice_url} onChange={(e) => setData({ ...data, invoice_url: e.target.value })} placeholder="https://… (link to a sample invoice)" />
-          <div className="font-mono text-[9px] mt-1" style={{ color: "var(--muted)" }}>Cedar requires a public link to a sample invoice. Google Drive, S3, or any public URL works.</div>
+        <Field label="Sample invoice (PDF or image)">
+          <FileUploadField category="invoices" value={data.invoice_url} onChange={(url) => setData({ ...data, invoice_url: url })} />
+          <div className="font-mono text-[9px] mt-1" style={{ color: "var(--muted)" }}>Cedar requires a sample invoice for compliance. Upload the file here — we'll host it.</div>
         </Field>
         <div className="flex justify-end gap-2 pt-1">
           <SecondaryBtn type="button" onClick={onCancel} disabled={saving}>Cancel</SecondaryBtn>

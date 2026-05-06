@@ -198,6 +198,31 @@ export async function confirmCedarDeposit({ quoteId, depositConfirmationUrl }) {
   }
 }
 
+// Upload a file (invoice, deposit slip, etc.) to the public `cedar-files`
+// Storage bucket and return its public URL. Caller passes a category so the
+// path is segmented sensibly (`invoices/`, `deposits/`, etc.). 10 MB cap.
+export async function uploadCedarFile(file, category = "misc") {
+  if (!file) return { ok: false, error: "No file selected" };
+  if (file.size > 10 * 1024 * 1024) {
+    return { ok: false, error: "File too large (max 10 MB)" };
+  }
+  // Sanitize filename — keep extension visible for humans, prefix with random uuid
+  // so paths are unguessable and never collide.
+  const safeBase = (file.name || "file").replace(/[^\w.-]/g, "_").slice(0, 80);
+  const id = (crypto && crypto.randomUUID) ? crypto.randomUUID() : String(Date.now());
+  const path = `${category}/${id}-${safeBase}`;
+  const { error } = await supabase.storage
+    .from("cedar-files")
+    .upload(path, file, { contentType: file.type || "application/octet-stream", upsert: false });
+  if (error) {
+    // eslint-disable-next-line no-console
+    console.error("uploadCedarFile failed:", error);
+    return { ok: false, error: error.message };
+  }
+  const { data } = supabase.storage.from("cedar-files").getPublicUrl(path);
+  return { ok: true, url: data.publicUrl, path };
+}
+
 // Cancel a Cedar sendf2f request. Cedar accepts cancellation from any
 // non-terminal state. Reason is required; otherReason is required when
 // reason="OTHER".
