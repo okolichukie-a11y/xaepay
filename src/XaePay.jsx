@@ -7,7 +7,7 @@ import {
   ArrowLeft, ArrowLeftRight, Loader2, Layers, TrendingUp, Wallet, DollarSign, Mail,
   RefreshCw,
 } from "lucide-react";
-import { supabase, sendWhatsAppText, fetchCedarRate, submitCustomerToCedar, submitRecipientToCedar, submitReceiverAccountToCedar } from "./lib/supabase.js";
+import { supabase, sendWhatsAppText, fetchCedarRate, submitCustomerToCedar, submitRecipientToCedar, submitReceiverAccountToCedar, submitCedarTransaction } from "./lib/supabase.js";
 import { useAuth } from "./lib/auth.js";
 
 // ─── Editable in one place ────────────────────────────────────────────────
@@ -4440,7 +4440,7 @@ function BDCTransactions() {
     setLoading(true);
     const { data, error } = await supabase
       .from("quotes")
-      .select("id, customer_name, customer_phone, beneficiary, destination, amount, currency, rate, ngn_total, rail, status, submitted_at, created_at, markup_pct, cost_basis_ngn")
+      .select("id, customer_name, customer_phone, customer_id, beneficiary, destination, amount, currency, rate, ngn_total, rail, status, submitted_at, created_at, markup_pct, cost_basis_ngn, recipient_id, recipient_external_account_id, cedar_business_request_id, cedar_request_status, cedar_purpose, cedar_invoice_url, cedar_last_error, cedar_request_status_updated_at")
       .order("created_at", { ascending: false })
       .limit(50);
     if (error) {
@@ -4453,6 +4453,7 @@ function BDCTransactions() {
         dbId: q.id,
         customer: q.customer_name || "Unnamed",
         customerPhone: q.customer_phone,
+        customerId: q.customer_id,
         beneficiary: q.beneficiary,
         dest: q.destination || "—",
         amount: parseFloat(q.amount),
@@ -4464,6 +4465,14 @@ function BDCTransactions() {
         rail: q.rail || "—",
         status: QUOTE_STATUS_TO_TX_STATUS[q.status] || "pending",
         date: relativeTime(q.submitted_at || q.created_at),
+        recipientId: q.recipient_id,
+        recipientExternalAccountId: q.recipient_external_account_id,
+        cedarBusinessRequestId: q.cedar_business_request_id,
+        cedarRequestStatus: q.cedar_request_status,
+        cedarPurpose: q.cedar_purpose,
+        cedarInvoiceUrl: q.cedar_invoice_url,
+        cedarLastError: q.cedar_last_error,
+        cedarRequestStatusUpdatedAt: q.cedar_request_status_updated_at,
       })));
     }
     setLoading(false);
@@ -4525,12 +4534,12 @@ function BDCTransactions() {
       </div>
       )}
     </Card>
-    <TxDrawer tx={selected} onClose={() => setSelected(null)} />
+    <TxDrawer tx={selected} onClose={() => setSelected(null)} onRefresh={fetchTxs} />
     </>
   );
 }
 
-function TxDrawer({ tx, onClose }) {
+function TxDrawer({ tx, onClose, onRefresh }) {
   const { push } = useToast();
   if (!tx) return null;
   return (
@@ -4565,6 +4574,25 @@ function TxDrawer({ tx, onClose }) {
             <div>3. {SHOW_TRIPLE_A ? (tx.rail || "Rail") : "Partner"} → MT103 → {tx.beneficiary || "beneficiary"}</div>
           </div>
         </div>
+        {tx.dbId && (
+          <div>
+            <Label>Cedar Money</Label>
+            {tx.cedarBusinessRequestId ? (
+              <div className="rounded-xl p-4 text-xs space-y-1.5" style={{ background: "var(--bone)", border: "1px solid var(--line)" }}>
+                <div className="flex items-baseline justify-between">
+                  <span style={{ color: "var(--muted)" }}>Status</span>
+                  <span className="rounded-full px-2 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-wider" style={{ background: "rgba(15,95,63,0.10)", color: "var(--emerald)" }}>{tx.cedarRequestStatus || "pending"}</span>
+                </div>
+                <div className="flex items-baseline justify-between font-mono"><span style={{ color: "var(--muted)" }}>Cedar request ID</span><span className="font-semibold">{tx.cedarBusinessRequestId}</span></div>
+                <div className="flex items-baseline justify-between font-mono"><span style={{ color: "var(--muted)" }}>Purpose</span><span className="font-semibold">{tx.cedarPurpose || "—"}</span></div>
+                {tx.cedarInvoiceUrl && <div className="font-mono break-all" style={{ color: "var(--muted)" }}>Invoice: <a href={tx.cedarInvoiceUrl} target="_blank" rel="noreferrer" className="underline" style={{ color: "var(--emerald)" }}>{tx.cedarInvoiceUrl.slice(0, 40)}…</a></div>}
+                {tx.cedarLastError && <div className="font-mono break-words" style={{ color: "#991b1b" }}>{tx.cedarLastError}</div>}
+              </div>
+            ) : (
+              <CedarSubmitPanel tx={tx} onSubmitted={() => { onRefresh && onRefresh(); }} />
+            )}
+          </div>
+        )}
         <div>
           <Label>Compliance checks</Label>
           <div className="space-y-2 rounded-xl p-4 text-sm" style={{ background: "var(--bone)", border: "1px solid var(--line)" }}>
@@ -4577,6 +4605,135 @@ function TxDrawer({ tx, onClose }) {
         </div>
       </div>
     </Drawer>
+  );
+}
+
+// Submit-to-Cedar panel rendered inside TxDrawer for quotes that haven't been
+// submitted yet. Loads VALID customers + ACTIVE receiver accounts (filtered to
+// the quote's currency) and lets the operator pick the source/target + purpose
+// + invoice URL, then calls cedar-create-transaction.
+const CEDAR_PURPOSES = [
+  { id: "GOODS_PURCHASED", label: "Goods purchased" },
+  { id: "PAYMENT_OF_GOODS", label: "Payment for goods" },
+  { id: "PAYMENT_OF_SERVICES", label: "Payment for services" },
+  { id: "OTHER_SERVICES", label: "Other services" },
+];
+
+function CedarSubmitPanel({ tx, onSubmitted }) {
+  const { push } = useToast();
+  const [customers, setCustomers] = useState([]);
+  const [accounts, setAccounts] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [customerId, setCustomerId] = useState(tx.customerId || "");
+  const [accountId, setAccountId] = useState(tx.recipientExternalAccountId || "");
+  const [purpose, setPurpose] = useState("GOODS_PURCHASED");
+  const [invoiceUrl, setInvoiceUrl] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      setLoading(true);
+      const [cRes, aRes] = await Promise.all([
+        supabase.from("customers").select("id, name, cedar_business_id, cedar_kyc_status").eq("cedar_kyc_status", "VALID").order("name"),
+        supabase.from("recipient_external_accounts")
+          .select("id, currency_symbol, bank_name, account_number, cedar_external_account_id, cedar_account_status, recipients(legal_business_name)")
+          .eq("cedar_account_status", "ACTIVE")
+          .eq("currency_symbol", (tx.currency || "").toUpperCase()),
+      ]);
+      if (cancelled) return;
+      if (cRes.error) {
+        // eslint-disable-next-line no-console
+        console.error("Fetch customers failed:", cRes.error);
+      }
+      if (aRes.error) {
+        // eslint-disable-next-line no-console
+        console.error("Fetch receiver accounts failed:", aRes.error);
+      }
+      setCustomers(cRes.data || []);
+      setAccounts(aRes.data || []);
+      setLoading(false);
+    })();
+    return () => { cancelled = true; };
+  }, [tx.currency]);
+
+  const canSubmit = customerId && accountId && purpose && invoiceUrl && !submitting;
+
+  const submit = async () => {
+    if (!canSubmit) return;
+    setSubmitting(true);
+    const { ok, data } = await submitCedarTransaction({
+      quoteId: tx.dbId,
+      customerId,
+      recipientExternalAccountId: accountId,
+      purpose,
+      invoiceUrl,
+    });
+    setSubmitting(false);
+    if (ok && data?.cedar_business_request_id) {
+      push(`Submitted to Cedar — request id ${data.cedar_business_request_id}`, "success");
+      onSubmitted && onSubmitted();
+    } else {
+      const detail = data?.cedar?.exception?.message || data?.error || "see console";
+      // eslint-disable-next-line no-console
+      console.error("Cedar transaction submit failed:", data);
+      push(`Cedar submit failed: ${detail}`, "warn");
+    }
+  };
+
+  if (loading) {
+    return <div className="rounded-xl p-4 text-xs" style={{ background: "var(--bone)", border: "1px solid var(--line)", color: "var(--muted)" }}>Loading customers + receiver accounts…</div>;
+  }
+
+  if (customers.length === 0) {
+    return (
+      <div className="rounded-xl p-4 text-xs" style={{ background: "#fef3c7", color: "#92400e" }}>
+        No customers with Cedar KYC = Approved. Submit a customer in the Customers tab first.
+      </div>
+    );
+  }
+
+  if (accounts.length === 0) {
+    return (
+      <div className="rounded-xl p-4 text-xs" style={{ background: "#fef3c7", color: "#92400e" }}>
+        No active {tx.currency} receiver accounts. Add a recipient bank account in the Recipients tab first.
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-xl p-4 space-y-3" style={{ background: "var(--bone)", border: "1px solid var(--line)" }}>
+      <p className="text-xs" style={{ color: "var(--muted)" }}>Submit this quote to Cedar to start the cross-border payout. Cedar will return a deposit reference and bank details after we approve the locked-in quote (next step).</p>
+      <Field label="Source customer (Cedar VALID)">
+        <Select value={customerId} onChange={(e) => setCustomerId(e.target.value)}>
+          <option value="">— pick a customer —</option>
+          {customers.map((c) => <option key={c.id} value={c.id}>{c.name} (#{c.cedar_business_id})</option>)}
+        </Select>
+      </Field>
+      <Field label={`Receiver bank account (${tx.currency} · ACTIVE)`}>
+        <Select value={accountId} onChange={(e) => setAccountId(e.target.value)}>
+          <option value="">— pick a bank account —</option>
+          {accounts.map((a) => {
+            const last4 = (a.account_number || "").slice(-4);
+            const recipientName = a.recipients?.legal_business_name || "—";
+            return <option key={a.id} value={a.id}>{recipientName} · {a.bank_name} •••• {last4}</option>;
+          })}
+        </Select>
+      </Field>
+      <Field label="Purpose">
+        <Select value={purpose} onChange={(e) => setPurpose(e.target.value)}>
+          {CEDAR_PURPOSES.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
+        </Select>
+      </Field>
+      <Field label="Invoice URL">
+        <Input value={invoiceUrl} onChange={(e) => setInvoiceUrl(e.target.value)} placeholder="https://… (link to the customer's invoice)" />
+      </Field>
+      <div className="flex justify-end pt-1">
+        <PrimaryBtn onClick={submit} disabled={!canSubmit}>
+          {submitting ? <><Loader2 size={12} className="animate-spin" /> Submitting…</> : <><Send size={12} /> Submit to Cedar</>}
+        </PrimaryBtn>
+      </div>
+    </div>
   );
 }
 

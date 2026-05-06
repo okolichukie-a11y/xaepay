@@ -123,3 +123,28 @@ export async function submitReceiverAccountToCedar(accountId) {
     return { ok: false, status: 0, data: null };
   }
 }
+
+// Submit a quote (already saved in our quotes table) to Cedar's send-fiat-to-fiat
+// endpoint via cedar-create-transaction. The Edge Function validates that the
+// chosen customer is Cedar-VALID and the chosen receiver account is ACTIVE,
+// then calls Cedar and writes back cedar_business_request_id + status.
+export async function submitCedarTransaction({ quoteId, customerId, recipientExternalAccountId, purpose, invoiceUrl }) {
+  try {
+    const res = await fetch(`${url}/functions/v1/cedar-create-transaction`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${anonKey}`,
+        "apikey": anonKey,
+      },
+      body: JSON.stringify({ quoteId, customerId, recipientExternalAccountId, purpose, invoiceUrl }),
+    });
+    let data = null;
+    try { data = await res.json(); } catch { /* non-JSON */ }
+    return { ok: res.ok, status: res.status, data };
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error("submitCedarTransaction failed:", err);
+    return { ok: false, status: 0, data: null };
+  }
+}
