@@ -6,7 +6,7 @@ import {
   ExternalLink, Sparkles, User, Building2, Briefcase, Coins, Lock, Unlock,
   ArrowLeft, ArrowLeftRight, Loader2, Layers, TrendingUp, Wallet, DollarSign, Mail,
 } from "lucide-react";
-import { supabase, sendWhatsAppText, fetchCedarRate } from "./lib/supabase.js";
+import { supabase, sendWhatsAppText, fetchCedarRate, submitCustomerToCedar } from "./lib/supabase.js";
 import { useAuth } from "./lib/auth.js";
 
 // ─── Editable in one place ────────────────────────────────────────────────
@@ -4620,6 +4620,7 @@ function dbCustomerToUi(row) {
     name: row.name,
     phone: row.phone,
     email: row.email,
+    contactName: row.contact_name,
     tier: row.type || "SME",
     kycTier: row.kyc_tier ?? 0,
     kycStatus: row.kyc_status,
@@ -4627,6 +4628,19 @@ function dbCustomerToUi(row) {
     count: row.transaction_count || 0,
     onboardedVia: row.onboarded_via,
     addedAt: row.created_at,
+    // Cedar Money compliance state
+    cedarBusinessId: row.cedar_business_id,
+    cedarKycStatus: row.cedar_kyc_status,
+    cedarCountryIso: row.cedar_country_iso,
+    cedarState: row.cedar_state,
+    cedarCity: row.cedar_city,
+    cedarAddress: row.cedar_address,
+    cedarStreetNumber: row.cedar_street_number,
+    cedarZipcode: row.cedar_zipcode,
+    cedarContactPhonePrefix: row.cedar_contact_phone_prefix,
+    cedarIndustry: row.cedar_industry,
+    cedarLocalRegNumber: row.cedar_local_reg_number,
+    cedarSubmittedAt: row.cedar_submitted_at,
   };
 }
 
@@ -5085,6 +5099,29 @@ const DOC_TYPES = [
   { id: "other", label: "Other" },
 ];
 
+// Cedar's industry enum (POST /v1/business/ requires one). Only the most common ones —
+// the full Cedar list is ~25, but operators typically pick from these for trade payments.
+const CEDAR_INDUSTRIES = [
+  { id: "AGRICULTURE_FORESTRY_WILDLIFE", label: "Agriculture / Forestry / Wildlife" },
+  { id: "BUSINESS_INFORMATION", label: "Business Information / Professional Services" },
+  { id: "CONSTRUCTION_UTILITIES_CONTRACTING", label: "Construction / Utilities / Contracting" },
+  { id: "EDUCATION", label: "Education" },
+  { id: "FINANCE_INSURANCE", label: "Finance / Insurance" },
+  { id: "FOOD_HOSPITALITY", label: "Food / Hospitality" },
+  { id: "HEALTH_SERVICES", label: "Health Services" },
+  { id: "MOTOR_VEHICLE", label: "Motor Vehicle" },
+  { id: "NATURAL_RESOURCES_ENVIRONMENTAL", label: "Natural Resources / Environmental" },
+  { id: "PERSONAL_SERVICES", label: "Personal Services" },
+  { id: "REAL_ESTATE_HOUSING", label: "Real Estate / Housing" },
+  { id: "TRANSPORTATION", label: "Transportation / Freight" },
+  { id: "GARMENTS", label: "Garments / Textiles / Fashion" },
+  { id: "PHARMACEUTICALS", label: "Pharmaceuticals" },
+  { id: "TECHNOLOGY", label: "Technology" },
+  { id: "MANUFACTURING", label: "Manufacturing" },
+  { id: "ENTERTAINMENT", label: "Entertainment" },
+  { id: "TELECOMMUNICATIONS", label: "Telecommunications" },
+];
+
 function CustomerDrawer({ customer, onClose }) {
   const { push } = useToast();
   // hooks must always run — guard the body, not the hooks
@@ -5093,6 +5130,80 @@ function CustomerDrawer({ customer, onClose }) {
   const [loadingDocs, setLoadingDocs] = useState(false);
   const [docType, setDocType] = useState("id_front");
   const [uploading, setUploading] = useState(false);
+
+  // Cedar Money compliance submission form. Pre-populates from the customer row
+  // (so re-opening the drawer remembers what's already saved).
+  const [cedarForm, setCedarForm] = useState({
+    countryIso: "NG",
+    state: "",
+    city: "",
+    address: "",
+    streetNumber: "",
+    zipcode: "",
+    contactPhonePrefix: "234",
+    industry: "",
+    localRegNumber: "",
+  });
+  const [submittingCedar, setSubmittingCedar] = useState(false);
+  const [cedarError, setCedarError] = useState(null); // { error, missing? }
+
+  // Re-hydrate form from the customer record whenever it changes (drawer opens).
+  useEffect(() => {
+    if (!customer) return;
+    setCedarForm({
+      countryIso: customer.cedarCountryIso || "NG",
+      state: customer.cedarState || "",
+      city: customer.cedarCity || "",
+      address: customer.cedarAddress || "",
+      streetNumber: customer.cedarStreetNumber || "",
+      zipcode: customer.cedarZipcode || "",
+      contactPhonePrefix: customer.cedarContactPhonePrefix || "234",
+      industry: customer.cedarIndustry || "",
+      localRegNumber: customer.cedarLocalRegNumber || "",
+    });
+    setCedarError(null);
+    /* eslint-disable-next-line react-hooks/exhaustive-deps */
+  }, [customer?.id]);
+
+  // Save the Cedar fields to the customer row, then call cedar-create-customer.
+  const submitToCedar = async () => {
+    if (!customer?.id) return;
+    setSubmittingCedar(true);
+    setCedarError(null);
+    try {
+      // 1) Persist the cedar_* columns the operator just filled in.
+      const { error: patchErr } = await supabase.from("customers").update({
+        cedar_country_iso: cedarForm.countryIso || null,
+        cedar_state: cedarForm.state || null,
+        cedar_city: cedarForm.city || null,
+        cedar_address: cedarForm.address || null,
+        cedar_street_number: cedarForm.streetNumber || null,
+        cedar_zipcode: cedarForm.zipcode || null,
+        cedar_contact_phone_prefix: cedarForm.contactPhonePrefix || null,
+        cedar_industry: cedarForm.industry || null,
+        cedar_local_reg_number: cedarForm.localRegNumber || null,
+      }).eq("id", customer.id);
+      if (patchErr) {
+        // eslint-disable-next-line no-console
+        console.error("Save Cedar fields failed:", patchErr);
+        setCedarError({ error: "Couldn't save details — check console." });
+        push("Save failed.", "warn");
+        return;
+      }
+      // 2) Hit the Edge Function to actually create the merchant on Cedar's side.
+      const { ok, data } = await submitCustomerToCedar(customer.id);
+      if (!ok || !data?.cedar_business_id) {
+        setCedarError({ error: data?.error || "Submit failed", missing: data?.missing });
+        push(data?.error || "Cedar submit failed", "warn");
+        return;
+      }
+      push(`${customer.name} submitted to Cedar · ID ${data.cedar_business_id}`, "success");
+      // Drawer will pick up the new state when the parent customers list refreshes.
+      onClose();
+    } finally {
+      setSubmittingCedar(false);
+    }
+  };
 
   const fetchDocs = async () => {
     if (!isRealCustomer) { setDocs([]); return; }
@@ -5178,6 +5289,75 @@ function CustomerDrawer({ customer, onClose }) {
           <div className="relative font-display mt-1 text-4xl font-[500] tracking-tight" style={{ color: "var(--lime)" }}>${customer.volume.toLocaleString()}</div>
           <div className="relative mt-1 font-mono text-[11px]" style={{ color: "rgba(247,245,240,0.6)" }}>{customer.count} transactions · KYC: {kycStatusLabel(customer.kycStatus).label}</div>
         </div>
+
+        {/* Cedar compliance submission panel — only for real customers, not the demo seed */}
+        {isRealCustomer && (
+          <div className="rounded-xl p-5" style={{ background: "rgba(15,95,63,0.04)", border: "1px solid rgba(15,95,63,0.18)" }}>
+            <div className="flex items-start justify-between gap-3 mb-3">
+              <div>
+                <div className="text-sm font-semibold" style={{ color: "var(--ink)" }}>Cedar compliance partner</div>
+                <div className="font-mono text-[10px] uppercase tracking-wider mt-0.5" style={{ color: "var(--muted)" }}>
+                  {customer.cedarBusinessId ? `Cedar ID #${customer.cedarBusinessId}` : "Not yet submitted"}
+                </div>
+              </div>
+              {customer.cedarBusinessId && (() => {
+                const k = kycStatusLabel(customer.cedarKycStatus);
+                return (
+                  <span className="rounded-full px-2 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-wider whitespace-nowrap" style={{ background: k.bg, color: k.color }}>{k.label}</span>
+                );
+              })()}
+            </div>
+
+            {customer.cedarBusinessId ? (
+              <div className="text-xs leading-relaxed" style={{ color: "var(--muted)" }}>
+                Customer is registered on Cedar's side. KYC review typically takes 5–15 business days. The status pill above auto-updates when Cedar's compliance team reviews.
+              </div>
+            ) : (
+              <>
+                <p className="text-xs leading-relaxed mb-3" style={{ color: "var(--muted)" }}>
+                  Submit this customer to Cedar's compliance team. Fill in the address + business details below; Cedar requires these for KYC review.
+                </p>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <Field label="Country">
+                    <Select value={cedarForm.countryIso} onChange={(e) => setCedarForm({ ...cedarForm, countryIso: e.target.value })}>
+                      <option value="NG">Nigeria (NG)</option>
+                      <option value="US">United States (US)</option>
+                      <option value="GB">United Kingdom (GB)</option>
+                      <option value="DE">Germany (DE)</option>
+                      <option value="ZA">South Africa (ZA)</option>
+                      <option value="GH">Ghana (GH)</option>
+                      <option value="KE">Kenya (KE)</option>
+                    </Select>
+                  </Field>
+                  <Field label="State (ISO2, optional)"><Input value={cedarForm.state} onChange={(e) => setCedarForm({ ...cedarForm, state: e.target.value.toUpperCase().slice(0, 2) })} placeholder="LA" /></Field>
+                  <Field label="City"><Input value={cedarForm.city} onChange={(e) => setCedarForm({ ...cedarForm, city: e.target.value })} placeholder="Lagos" /></Field>
+                  <Field label="Street address"><Input value={cedarForm.address} onChange={(e) => setCedarForm({ ...cedarForm, address: e.target.value })} placeholder="Akanu Ibiam Rd" /></Field>
+                  <Field label="Street number"><Input value={cedarForm.streetNumber} onChange={(e) => setCedarForm({ ...cedarForm, streetNumber: e.target.value })} placeholder="12" /></Field>
+                  <Field label="ZIP / postal code"><Input value={cedarForm.zipcode} onChange={(e) => setCedarForm({ ...cedarForm, zipcode: e.target.value })} placeholder="100001" /></Field>
+                  <Field label="Phone country code"><Input value={cedarForm.contactPhonePrefix} onChange={(e) => setCedarForm({ ...cedarForm, contactPhonePrefix: e.target.value.replace(/[^\d]/g, "") })} placeholder="234" /></Field>
+                  <Field label="Industry">
+                    <Select value={cedarForm.industry} onChange={(e) => setCedarForm({ ...cedarForm, industry: e.target.value })}>
+                      <option value="">Select industry…</option>
+                      {CEDAR_INDUSTRIES.map((i) => <option key={i.id} value={i.id}>{i.label}</option>)}
+                    </Select>
+                  </Field>
+                  <Field label="Registration number (optional)" full><Input value={cedarForm.localRegNumber} onChange={(e) => setCedarForm({ ...cedarForm, localRegNumber: e.target.value })} placeholder="RC1234567 / EIN / etc." /></Field>
+                </div>
+                {cedarError && (
+                  <div className="mt-3 rounded-lg p-3 text-xs" style={{ background: "#fef3c7", color: "#92400e", border: "1px solid #fcd34d" }}>
+                    <div className="font-semibold">{cedarError.error}</div>
+                    {Array.isArray(cedarError.missing) && cedarError.missing.length > 0 && (
+                      <div className="mt-1">Missing: {cedarError.missing.join(", ")}</div>
+                    )}
+                  </div>
+                )}
+                <PrimaryBtn full onClick={submitToCedar} disabled={submittingCedar} className="mt-4">
+                  {submittingCedar ? <><Loader2 size={14} className="spin" /> Submitting…</> : <><Shield size={14} /> Submit to compliance partner</>}
+                </PrimaryBtn>
+              </>
+            )}
+          </div>
+        )}
 
         {isRealCustomer && (
           <>

@@ -32,6 +32,31 @@ export async function sendWhatsAppText(phoneDigits, text) {
 // toAmount=foreign-currency payout amount → returns NGN/$ rate + NGN deposit amount.
 //
 // Inbound flow: same shape, just flipped — fromCurrencySymbol=foreign, toCurrencySymbol="NGN".
+// Submit a customer (already saved in our customers table) to Cedar's create-merchant
+// endpoint via the cedar-create-customer Edge Function. The function reads the row,
+// validates the Cedar-required fields, calls Cedar via the relay, and persists the
+// returned cedar_business_id + cedar_kyc_status back to the row. Idempotent: if the
+// customer already has a cedar_business_id, returns that without re-calling Cedar.
+//
+// Returns { ok, status, data }. On 400 with `missing` array, the caller should surface
+// those field names so the operator can fill them in.
+export async function submitCustomerToCedar(customerId) {
+  try {
+    const res = await fetch(`${url}/functions/v1/cedar-create-customer`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ customerId }),
+    });
+    let data = null;
+    try { data = await res.json(); } catch { /* non-JSON */ }
+    return { ok: res.ok, status: res.status, data };
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error("submitCustomerToCedar failed:", err);
+    return { ok: false, status: 0, data: null };
+  }
+}
+
 export async function fetchCedarRate({ fromCurrencySymbol, toCurrencySymbol, toAmount }) {
   try {
     const res = await fetch(`${url}/functions/v1/cedar-rate`, {
