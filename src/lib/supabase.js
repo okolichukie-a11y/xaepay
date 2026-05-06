@@ -173,3 +173,27 @@ export async function approveCedarQuote(quoteId) {
     return { ok: false, status: 0, data: null };
   }
 }
+
+// Confirm the customer's NGN deposit was received. Calls cedar-approve-deposit
+// which forwards to Cedar POST /v1/sendf2f/approveDeposit/{id} with the slip URL.
+// On success the request advances to OnOff_IN_PROGRESS and Cedar starts the payout.
+export async function confirmCedarDeposit({ quoteId, depositConfirmationUrl }) {
+  try {
+    const res = await fetch(`${url}/functions/v1/cedar-approve-deposit`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${anonKey}`,
+        "apikey": anonKey,
+      },
+      body: JSON.stringify({ quoteId, depositConfirmationUrl }),
+    });
+    let data = null;
+    try { data = await res.json(); } catch { /* non-JSON */ }
+    return { ok: res.ok, status: res.status, data };
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error("confirmCedarDeposit failed:", err);
+    return { ok: false, status: 0, data: null };
+  }
+}

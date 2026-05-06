@@ -7,7 +7,7 @@ import {
   ArrowLeft, ArrowLeftRight, Loader2, Layers, TrendingUp, Wallet, DollarSign, Mail,
   RefreshCw,
 } from "lucide-react";
-import { supabase, sendWhatsAppText, fetchCedarRate, submitCustomerToCedar, submitRecipientToCedar, submitReceiverAccountToCedar, submitCedarTransaction, approveCedarQuote } from "./lib/supabase.js";
+import { supabase, sendWhatsAppText, fetchCedarRate, submitCustomerToCedar, submitRecipientToCedar, submitReceiverAccountToCedar, submitCedarTransaction, approveCedarQuote, confirmCedarDeposit } from "./lib/supabase.js";
 import { useAuth } from "./lib/auth.js";
 
 // ─── Editable in one place ────────────────────────────────────────────────
@@ -4746,14 +4746,19 @@ function CedarSubmitPanel({ tx, onSubmitted }) {
 }
 
 // CedarApprovalSection — once a quote has a Cedar request ID, this section
-// drives the next steps: approve the locked-in quote, show deposit bank
-// details to the operator. Renders nothing for states where there's no
-// operator action available (PENDING, IN_PROGRESS, COMPLETED, etc.).
+// drives the operator through the remaining lifecycle: approve the locked-in
+// quote → show deposit bank details → confirm customer deposit → watch payout
+// arrive. Renders 0+ stacked panels depending on cedar_request_status.
 function CedarApprovalSection({ tx, onChanged }) {
   const { push } = useToast();
   const [approving, setApproving] = useState(false);
+  const [confirmingDeposit, setConfirmingDeposit] = useState(false);
+  const [depositSlipUrl, setDepositSlipUrl] = useState("");
   const status = (tx.cedarRequestStatus || "").toUpperCase();
   const isAwaitingApproval = status.includes("AWAITING_QUOTE_APPROVAL");
+  const isAwaitingDeposit = status.includes("AWAITING_DEPOSIT");
+  const isInProgress = status.includes("IN_PROGRESS");
+  const isCompleted = status.includes("COMPLETED");
   const hasBankDetails = !!tx.cedarBankDetails && Object.keys(tx.cedarBankDetails || {}).length > 0;
 
   const approve = async () => {
@@ -4772,15 +4777,50 @@ function CedarApprovalSection({ tx, onChanged }) {
     }
   };
 
-  if (hasBankDetails) {
-    const bd = tx.cedarBankDetails;
-    const depositMajor = tx.cedarDepositAmountMinor != null ? (tx.cedarDepositAmountMinor / 100) : null;
-    const depositCcy = tx.cedarDepositCurrency || "NGN";
+  const confirmDeposit = async () => {
+    if (!tx.dbId || !depositSlipUrl || confirmingDeposit) return;
+    setConfirmingDeposit(true);
+    const { ok, data } = await confirmCedarDeposit({ quoteId: tx.dbId, depositConfirmationUrl: depositSlipUrl });
+    setConfirmingDeposit(false);
+    if (ok) {
+      push("Deposit confirmed — Cedar is processing payout", "success");
+      setDepositSlipUrl("");
+      onChanged && onChanged();
+    } else {
+      const detail = data?.cedar?.exception?.message || data?.error || "see console";
+      // eslint-disable-next-line no-console
+      console.error("Confirm deposit failed:", data);
+      push(`Confirm failed: ${detail}`, "warn");
+    }
+  };
+
+  // 1. Approve-quote action when Cedar is waiting for our approval.
+  if (isAwaitingApproval && !hasBankDetails) {
     return (
+      <div className="rounded-xl p-4 space-y-2" style={{ background: "var(--bone)", border: "1px solid var(--line)" }}>
+        <p className="text-xs" style={{ color: "var(--muted)" }}>Cedar has priced this quote. Approve to lock the rate and receive the deposit bank details for your customer.</p>
+        <PrimaryBtn onClick={approve} disabled={approving} full>
+          {approving ? <><Loader2 size={12} className="animate-spin" /> Approving…</> : <><CheckCircle2 size={12} /> Approve quote</>}
+        </PrimaryBtn>
+      </div>
+    );
+  }
+
+  if (!hasBankDetails) return null;
+
+  // 2 + 3 + 4. Bank details + (conditional) confirm-deposit form / progress / completion.
+  const bd = tx.cedarBankDetails;
+  const depositMajor = tx.cedarDepositAmountMinor != null ? (tx.cedarDepositAmountMinor / 100) : null;
+  const depositCcy = tx.cedarDepositCurrency || "NGN";
+  const payoutStatus = (tx.cedarPayoutStatus || "").toUpperCase();
+  const payoutArrived = payoutStatus.includes("ARRIVED");
+
+  return (
+    <div className="space-y-3">
       <div className="rounded-xl p-4 text-xs space-y-2" style={{ background: "var(--ink)", color: "var(--bone)" }}>
         <div className="flex items-center justify-between">
           <div className="font-mono text-[10px] uppercase tracking-wider" style={{ color: "rgba(247,245,240,0.5)" }}>Deposit instructions</div>
-          <span className="rounded-full px-2 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-wider" style={{ background: "var(--lime)", color: "var(--ink)" }}>Quote locked</span>
+          <span className="rounded-full px-2 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-wider" style={{ background: isAwaitingDeposit ? "var(--lime)" : "rgba(247,245,240,0.15)", color: isAwaitingDeposit ? "var(--ink)" : "var(--bone)" }}>{isAwaitingDeposit ? "Awaiting deposit" : isInProgress ? "Deposit confirmed" : isCompleted ? "Completed" : "Quote locked"}</span>
         </div>
         {depositMajor != null && (
           <div>
@@ -4799,21 +4839,36 @@ function CedarApprovalSection({ tx, onChanged }) {
           {bd.iban && <KvLine k="IBAN" v={bd.iban} />}
         </div>
       </div>
-    );
-  }
 
-  if (isAwaitingApproval) {
-    return (
-      <div className="rounded-xl p-4 space-y-2" style={{ background: "var(--bone)", border: "1px solid var(--line)" }}>
-        <p className="text-xs" style={{ color: "var(--muted)" }}>Cedar has priced this quote. Approve to lock the rate and receive the deposit bank details for your customer.</p>
-        <PrimaryBtn onClick={approve} disabled={approving} full>
-          {approving ? <><Loader2 size={12} className="animate-spin" /> Approving…</> : <><CheckCircle2 size={12} /> Approve quote</>}
-        </PrimaryBtn>
-      </div>
-    );
-  }
+      {isAwaitingDeposit && (
+        <div className="rounded-xl p-4 space-y-2" style={{ background: "var(--bone)", border: "1px solid var(--line)" }}>
+          <p className="text-xs" style={{ color: "var(--muted)" }}>Once your customer deposits the NGN amount above, paste a public link to the bank slip (screenshot or PDF) and confirm. Cedar will then start the {tx.currency} payout to the recipient.</p>
+          <Field label="Deposit slip URL">
+            <Input value={depositSlipUrl} onChange={(e) => setDepositSlipUrl(e.target.value)} placeholder="https://… (Drive / S3 / any public link)" />
+          </Field>
+          <PrimaryBtn onClick={confirmDeposit} disabled={!depositSlipUrl || confirmingDeposit} full>
+            {confirmingDeposit ? <><Loader2 size={12} className="animate-spin" /> Confirming…</> : <><Upload size={12} /> Confirm deposit received</>}
+          </PrimaryBtn>
+        </div>
+      )}
 
-  return null;
+      {(isInProgress || isCompleted) && (
+        <div className="rounded-xl p-4 text-xs space-y-1.5" style={{ background: "var(--bone)", border: "1px solid var(--line)" }}>
+          <div className="flex items-baseline justify-between">
+            <span style={{ color: "var(--muted)" }}>Payout status</span>
+            <span className="rounded-full px-2 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-wider" style={{ background: payoutArrived ? "var(--emerald)" : "rgba(15,95,63,0.10)", color: payoutArrived ? "var(--lime)" : "var(--emerald)" }}>{tx.cedarPayoutStatus || (isCompleted ? "Completed" : "Processing")}</span>
+          </div>
+          <p className="text-[11px]" style={{ color: "var(--muted)" }}>
+            {payoutArrived
+              ? `Funds delivered to the recipient bank account. Transaction complete.`
+              : isCompleted
+                ? `Cedar has marked this transaction complete. Payout reconciliation may still be in flight.`
+                : `Cedar received the deposit confirmation and is processing the ${tx.currency} payout. This typically lands within a few hours; we'll update this card automatically when Cedar confirms arrival.`}
+          </p>
+        </div>
+      )}
+    </div>
+  );
 }
 
 function KvLine({ k, v, highlight }) {
