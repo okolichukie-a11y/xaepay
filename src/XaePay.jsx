@@ -4871,7 +4871,7 @@ function BDCTransactions() {
     setLoading(true);
     const { data, error } = await supabase
       .from("quotes")
-      .select("id, customer_name, customer_phone, customer_id, beneficiary, destination, amount, currency, rate, ngn_total, rail, status, submitted_at, created_at, markup_pct, cost_basis_ngn, recipient_id, recipient_external_account_id, cedar_business_request_id, cedar_request_status, cedar_purpose, cedar_invoice_url, cedar_last_error, cedar_request_status_updated_at, cedar_bank_details, cedar_quote_rate, cedar_deposit_amount_minor, cedar_deposit_currency, cedar_payout_status, invoice_url, invoice_uploaded_at, invoice_uploaded_by, customer_deposit_slip_url, customer_deposit_slip_uploaded_at, review_decision, review_reason, review_details, review_tier, reviewed_at")
+      .select("id, customer_name, customer_phone, customer_id, beneficiary, destination, amount, currency, rate, ngn_total, rail, status, submitted_at, created_at, markup_pct, cost_basis_ngn, recipient_id, recipient_external_account_id, cedar_business_request_id, cedar_request_status, cedar_purpose, cedar_invoice_url, cedar_last_error, cedar_request_status_updated_at, cedar_bank_details, cedar_quote_rate, cedar_deposit_amount_minor, cedar_deposit_currency, cedar_payout_status, invoice_url, invoice_uploaded_at, invoice_uploaded_by, customer_deposit_slip_url, customer_deposit_slip_uploaded_at, review_decision, review_reason, review_details, review_tier, reviewed_at, operator_review_override, operator_review_override_at, operator_review_override_reason, invoice_total_amount, invoice_total_currency, invoice_payment_label")
       .order("created_at", { ascending: false })
       .limit(50);
     if (error) {
@@ -4919,6 +4919,12 @@ function BDCTransactions() {
         reviewDetails: q.review_details,
         reviewTier: q.review_tier,
         reviewedAt: q.reviewed_at,
+        operatorReviewOverride: q.operator_review_override,
+        operatorReviewOverrideAt: q.operator_review_override_at,
+        operatorReviewOverrideReason: q.operator_review_override_reason,
+        invoiceTotalAmount: q.invoice_total_amount != null ? parseFloat(q.invoice_total_amount) : null,
+        invoiceTotalCurrency: q.invoice_total_currency,
+        invoicePaymentLabel: q.invoice_payment_label,
       })));
     }
     setLoading(false);
@@ -5144,6 +5150,8 @@ function CedarSubmitPanel({ tx, onSubmitted }) {
   // Operator can override with a fresh upload if needed.
   const [invoiceUrl, setInvoiceUrl] = useState(tx.invoiceUrl || "");
   const [submitting, setSubmitting] = useState(false);
+  const [overrideChecked, setOverrideChecked] = useState(false);
+  const [overrideReason, setOverrideReason] = useState("");
 
   useEffect(() => {
     let cancelled = false;
@@ -5177,6 +5185,16 @@ function CedarSubmitPanel({ tx, onSubmitted }) {
   const submit = async () => {
     if (!canSubmit) return;
     setSubmitting(true);
+    const decision = (tx.reviewDecision || "").toLowerCase();
+    // If operator is overriding a rejection (or proceeding past a soft flag),
+    // record the override audit trail before firing Cedar.
+    if (decision === "rejected" || decision === "flagged") {
+      await supabase.from("quotes").update({
+        operator_review_override: true,
+        operator_review_override_at: new Date().toISOString(),
+        operator_review_override_reason: overrideReason || null,
+      }).eq("id", tx.dbId);
+    }
     const { ok, data } = await submitCedarTransaction({
       quoteId: tx.dbId,
       customerId,
@@ -5260,15 +5278,34 @@ function CedarSubmitPanel({ tx, onSubmitted }) {
         const decision = (tx.reviewDecision || "").toLowerCase();
         const tier = tx.reviewTier || "";
         const requiresReview = ["verified", "documented", "pro"].includes(tier);
+        const failedChecks = (tx.reviewDetails && tx.reviewDetails.checks || []).filter((c) => !c.pass);
         if (decision === "rejected") {
           return (
-            <div className="rounded-lg p-3 text-xs" style={{ background: "#fee2e2", color: "#991b1b" }}>
+            <div className="rounded-lg p-3 text-xs space-y-2" style={{ background: "#fee2e2", color: "#991b1b" }}>
               <div className="flex items-start gap-2">
                 <AlertTriangle size={14} className="mt-0.5 flex-shrink-0" />
-                <div>
-                  <div className="font-semibold">Compliance review rejected</div>
-                  <p className="mt-1">{tx.reviewReason || "Hard fail in pre-screen. Resolve flagged items before resubmitting."}</p>
+                <div className="flex-1">
+                  <div className="font-semibold">Compliance review rejected — operator override required</div>
+                  <p className="mt-1">{tx.reviewReason || "Hard fail in pre-screen."}</p>
+                  {failedChecks.length > 0 && (
+                    <ul className="mt-2 space-y-1 list-none font-mono text-[10px]">
+                      {failedChecks.filter((c) => c.fix).map((c) => (
+                        <li key={c.id}><strong>{c.id}:</strong> {c.fix}</li>
+                      ))}
+                    </ul>
+                  )}
                 </div>
+              </div>
+              <div className="rounded-md p-2 mt-2" style={{ background: "rgba(255,255,255,0.5)", border: "1px solid rgba(153,27,27,0.3)" }}>
+                <label className="flex items-start gap-2 cursor-pointer">
+                  <input type="checkbox" className="mt-0.5" checked={overrideChecked} onChange={(e) => setOverrideChecked(e.target.checked)} />
+                  <span className="text-[11px] font-medium">I'm aware of the issues above and accept responsibility for pushing this transaction through. (Audit-logged.)</span>
+                </label>
+                {overrideChecked && (
+                  <div className="mt-2">
+                    <input type="text" value={overrideReason} onChange={(e) => setOverrideReason(e.target.value)} placeholder="Optional: reason for override (audit log)" className="w-full rounded-lg px-2 py-1 text-[11px]" style={{ background: "white", border: "1px solid rgba(153,27,27,0.3)", color: "#991b1b" }} />
+                  </div>
+                )}
               </div>
             </div>
           );
@@ -5281,6 +5318,13 @@ function CedarSubmitPanel({ tx, onSubmitted }) {
                 <div>
                   <div className="font-semibold">Compliance soft-flag — operator override allowed</div>
                   <p className="mt-1">{tx.reviewReason || "Some checks raised concerns. Review the per-check breakdown above before submitting."}</p>
+                  {failedChecks.length > 0 && (
+                    <ul className="mt-2 space-y-1 list-none font-mono text-[10px]">
+                      {failedChecks.filter((c) => c.fix).map((c) => (
+                        <li key={c.id}><strong>{c.id}:</strong> {c.fix}</li>
+                      ))}
+                    </ul>
+                  )}
                 </div>
               </div>
             </div>
@@ -5298,13 +5342,17 @@ function CedarSubmitPanel({ tx, onSubmitted }) {
       <div className="flex justify-end pt-1">
         <PrimaryBtn
           onClick={submit}
-          disabled={
-            !canSubmit ||
-            (tx.reviewDecision || "").toLowerCase() === "rejected" ||
-            (!tx.reviewDecision && ["verified", "documented", "pro"].includes(tx.reviewTier || ""))
-          }
+          disabled={(() => {
+            if (!canSubmit) return true;
+            const dec = (tx.reviewDecision || "").toLowerCase();
+            // Hard rejection requires explicit override checkbox
+            if (dec === "rejected" && !overrideChecked) return true;
+            // Verified+ tier with no review yet must wait for review
+            if (!dec && ["verified", "documented", "pro"].includes(tx.reviewTier || "")) return true;
+            return false;
+          })()}
         >
-          {submitting ? <><Loader2 size={12} className="animate-spin" /> Submitting…</> : <><Send size={12} /> Submit to Cedar</>}
+          {submitting ? <><Loader2 size={12} className="animate-spin" /> Submitting…</> : <><Send size={12} /> {(tx.reviewDecision || "").toLowerCase() === "rejected" ? "Override & submit" : "Submit to Cedar"}</>}
         </PrimaryBtn>
       </div>
     </div>
@@ -5591,12 +5639,19 @@ function ComplianceReviewPanel({ tx, onChanged }) {
           <div className="text-[11px]" style={{ color: "var(--muted)" }}>{tx.reviewReason}</div>
         )}
         {checks.length > 0 && (
-          <ul className="space-y-1 pt-2" style={{ borderTop: "1px solid var(--line)" }}>
+          <ul className="space-y-2 pt-2" style={{ borderTop: "1px solid var(--line)" }}>
             {checks.map((c) => (
-              <li key={c.id} className="flex items-baseline gap-2 font-mono text-[10px]">
-                {c.pass ? <CheckCircle2 size={11} style={{ color: "var(--emerald)" }} /> : <AlertTriangle size={11} style={{ color: c.severity === "hard" ? "#991b1b" : "#92400e" }} />}
-                <span className={c.pass ? "" : "font-semibold"} style={{ color: c.pass ? "var(--ink)" : (c.severity === "hard" ? "#991b1b" : "#92400e") }}>{c.id}</span>
-                <span style={{ color: "var(--muted)" }}>· {c.detail}</span>
+              <li key={c.id} className="space-y-0.5">
+                <div className="flex items-baseline gap-2 font-mono text-[10px]">
+                  {c.pass ? <CheckCircle2 size={11} style={{ color: "var(--emerald)" }} /> : <AlertTriangle size={11} style={{ color: c.severity === "hard" ? "#991b1b" : "#92400e" }} />}
+                  <span className={c.pass ? "" : "font-semibold"} style={{ color: c.pass ? "var(--ink)" : (c.severity === "hard" ? "#991b1b" : "#92400e") }}>{c.id}</span>
+                  <span style={{ color: "var(--muted)" }}>· {c.detail}</span>
+                </div>
+                {!c.pass && c.fix && (
+                  <div className="ml-5 text-[10px] leading-snug" style={{ color: c.severity === "hard" ? "#991b1b" : "#92400e", fontStyle: "italic" }}>
+                    Fix: {c.fix}
+                  </div>
+                )}
               </li>
             ))}
           </ul>
