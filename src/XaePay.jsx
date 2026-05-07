@@ -7,7 +7,7 @@ import {
   ArrowLeft, ArrowLeftRight, Loader2, Layers, TrendingUp, Wallet, DollarSign, Mail,
   RefreshCw,
 } from "lucide-react";
-import { supabase, sendWhatsAppText, sendWhatsAppTemplate, fetchCedarRate, submitCustomerToCedar, submitRecipientToCedar, submitReceiverAccountToCedar, submitCedarTransaction, approveCedarQuote, confirmCedarDeposit, cancelCedarTransaction, uploadCedarFile, runComplianceReview } from "./lib/supabase.js";
+import { supabase, sendWhatsAppText, sendWhatsAppTemplate, fetchCedarRate, submitCustomerToCedar, submitRecipientToCedar, submitReceiverAccountToCedar, submitCedarTransaction, approveCedarQuote, confirmCedarDeposit, cancelCedarTransaction, uploadCedarFile, runComplianceReview, sendEmail } from "./lib/supabase.js";
 import { useAuth } from "./lib/auth.js";
 
 // ─── Editable in one place ────────────────────────────────────────────────
@@ -3790,7 +3790,7 @@ function OperatorQuoteModal({ open, onClose, onCreated }) {
     (async () => {
       const { data: rows, error } = await supabase
         .from("customers")
-        .select("id, name, phone, cedar_kyc_status")
+        .select("id, name, phone, email, cedar_kyc_status")
         .order("name");
       if (cancelled) return;
       if (error) {
@@ -3921,6 +3921,49 @@ function OperatorQuoteModal({ open, onClose, onCreated }) {
         push(`Quote ${displayRef} sent · WhatsApp opened (template ping failed — see console)`, "info");
       }
     });
+
+    // Email the customer — Meta-independent path. Picks up email from the picked
+    // customer row (savedCustomers) or falls back to data.customerEmail if entered.
+    const pickedCustomer = savedCustomers.find((c) => c.id === data.customerId);
+    const customerEmail = pickedCustomer?.email || null;
+    if (customerEmail) {
+      const operatorName = auth.user?.user_metadata?.company || auth.user?.email || "your XaePay operator";
+      const approvalUrl = `${window.location.origin}/?quote=${quoteRow.id}`;
+      const portalUrl = `${window.location.origin}/`;
+      const ngnText = `₦${Math.round(ngnTotal).toLocaleString()}`;
+      const emailHtml = `<!doctype html><html><body style="font-family:system-ui,-apple-system,sans-serif;color:#0a0b0d;background:#fcfbf7;margin:0;padding:24px;">
+        <div style="max-width:560px;margin:0 auto;background:white;border:1px solid #e5e7eb;border-radius:16px;padding:32px;">
+          <h2 style="margin:0 0 8px;font-size:24px;">Hello ${data.customerName || "there"},</h2>
+          <p style="color:#6b7280;margin:0 0 24px;">${operatorName} just sent you a quote on XaePay.</p>
+          <div style="background:#0a0b0d;color:#d4f570;border-radius:12px;padding:24px;margin-bottom:24px;">
+            <div style="font-size:11px;text-transform:uppercase;letter-spacing:0.05em;color:rgba(247,245,240,0.5);margin-bottom:8px;">Amount</div>
+            <div style="font-size:36px;font-weight:500;">$${amount.toLocaleString()} ${data.currency}</div>
+            <div style="margin-top:12px;font-family:monospace;font-size:11px;color:rgba(247,245,240,0.6);">to ${data.supplier || data.country || "supplier"}</div>
+          </div>
+          <table style="width:100%;font-family:monospace;font-size:13px;color:#0a0b0d;border-collapse:collapse;margin-bottom:24px;">
+            <tr><td style="padding:6px 0;color:#6b7280;">Reference</td><td style="padding:6px 0;text-align:right;font-weight:600;">${displayRef}</td></tr>
+            <tr><td style="padding:6px 0;color:#6b7280;">Rate</td><td style="padding:6px 0;text-align:right;font-weight:600;">₦${customerRate.toFixed(2)}/$</td></tr>
+            <tr><td style="padding:6px 0;color:#6b7280;">You pay</td><td style="padding:6px 0;text-align:right;font-weight:600;">${ngnText}</td></tr>
+          </table>
+          <p style="color:#374151;font-size:14px;line-height:1.5;margin:0 0 24px;">Rate is locked for 4 minutes once you approve. Tap below to review and approve, or sign in to your portal at <a href="${portalUrl}" style="color:#0f5f3f;">xaepay.com</a>.</p>
+          <p style="text-align:center;margin:0 0 8px;">
+            <a href="${approvalUrl}" style="display:inline-block;background:#0a0b0d;color:#d4f570;padding:14px 28px;border-radius:12px;text-decoration:none;font-weight:600;font-size:14px;">Review &amp; approve</a>
+          </p>
+          <p style="color:#9ca3af;font-size:11px;text-align:center;margin:24px 0 0;">— XaePay</p>
+        </div>
+      </body></html>`;
+      const emailText = `Hello ${data.customerName || "there"},\n\n${operatorName} just sent you a quote on XaePay.\n\n  Amount: $${amount.toLocaleString()} ${data.currency}\n  Rate: ₦${customerRate.toFixed(2)}/$\n  You pay: ${ngnText}\n  Reference: ${displayRef}\n\nReview and approve: ${approvalUrl}\n\nOr sign in to your portal at ${portalUrl}.\n\n— XaePay`;
+      sendEmail({
+        to: customerEmail,
+        subject: `New trade payment quote from ${operatorName} — ${displayRef}`,
+        html: emailHtml,
+        text: emailText,
+      }).then((r) => {
+        // eslint-disable-next-line no-console
+        console.log("Quote-sent email:", r);
+        if (r.ok) push(`Quote also emailed to ${customerEmail}`, "info");
+      });
+    }
 
     if (onCreated) onCreated(quoteRow);
     setSending(false);
@@ -5447,6 +5490,59 @@ function CedarApprovalSection({ tx, onChanged }) {
     setApproving(false);
     if (ok && data?.cedar_bank_details) {
       push("Quote approved — deposit instructions ready", "success");
+      // Fire deposit-instructions email to the customer (Meta-independent).
+      // Look up customer email; safe to fire-and-forget.
+      if (tx.customerId) {
+        (async () => {
+          const { data: cRows } = await supabase
+            .from("customers")
+            .select("email, name")
+            .eq("id", tx.customerId)
+            .limit(1);
+          const customer = cRows && cRows[0];
+          if (!customer?.email) return;
+          const bd = data.cedar_bank_details || {};
+          const depositMajor = data.cedar_deposit_amount != null ? Number(data.cedar_deposit_amount) : null;
+          const depositCcy = "NGN";
+          const depositText = depositMajor != null ? `${depositCcy} ${Math.round(depositMajor).toLocaleString()}` : `the amount shown in your portal`;
+          const portalUrl = `${window.location.origin}/`;
+          const lines = [
+            bd.bankName && `Bank: ${bd.bankName}`,
+            (bd.nameOnAccount || bd.accountHolderName) && `Name on account: ${bd.nameOnAccount || bd.accountHolderName}`,
+            bd.accountNumber && `Account number: ${bd.accountNumber}`,
+            bd.bankAddress && `Bank address: ${bd.bankAddress}`,
+            bd.swiftCode && `SWIFT: ${bd.swiftCode}`,
+            bd.iban && `IBAN: ${bd.iban}`,
+            bd.reference && `Reference: ${bd.reference}`,
+          ].filter(Boolean);
+          const html = `<!doctype html><html><body style="font-family:system-ui,-apple-system,sans-serif;color:#0a0b0d;background:#fcfbf7;margin:0;padding:24px;">
+            <div style="max-width:560px;margin:0 auto;background:white;border:1px solid #e5e7eb;border-radius:16px;padding:32px;">
+              <h2 style="margin:0 0 8px;font-size:24px;">Deposit instructions ready</h2>
+              <p style="color:#6b7280;margin:0 0 24px;">Your quote has been approved. To complete the payment, deposit the amount below to the bank account shown.</p>
+              <div style="background:#0a0b0d;color:#d4f570;border-radius:12px;padding:24px;margin-bottom:24px;">
+                <div style="font-size:11px;text-transform:uppercase;letter-spacing:0.05em;color:rgba(247,245,240,0.5);margin-bottom:8px;">Pay this amount</div>
+                <div style="font-size:36px;font-weight:500;">${depositText}</div>
+              </div>
+              <table style="width:100%;font-family:monospace;font-size:13px;color:#0a0b0d;border-collapse:collapse;margin-bottom:24px;">
+                ${lines.map((l) => { const idx = l.indexOf(":"); const k = l.slice(0, idx); const v = l.slice(idx + 1).trim(); return `<tr><td style="padding:6px 0;color:#6b7280;">${k}</td><td style="padding:6px 0;text-align:right;font-weight:600;word-break:break-all;">${v}</td></tr>`; }).join("")}
+              </table>
+              ${bd.reference ? `<p style="background:#fef3c7;color:#92400e;padding:12px;border-radius:8px;font-size:13px;margin:0 0 24px;"><strong>Important:</strong> include the reference <strong>${bd.reference}</strong> in your transfer narration. Otherwise we cannot match your deposit.</p>` : ""}
+              <p style="color:#374151;font-size:14px;line-height:1.5;margin:0 0 24px;">Once your operator confirms receipt, your payout starts automatically. Track status anytime at <a href="${portalUrl}" style="color:#0f5f3f;">xaepay.com</a>.</p>
+              <p style="color:#9ca3af;font-size:11px;text-align:center;margin:24px 0 0;">— XaePay</p>
+            </div>
+          </body></html>`;
+          const text = `Deposit instructions ready\n\nYour quote has been approved. To complete the payment, deposit:\n\n  ${depositText}\n\nTo this account:\n  ${lines.join("\n  ")}\n\n${bd.reference ? `IMPORTANT: include the reference ${bd.reference} in your transfer narration.\n\n` : ""}Track status at ${portalUrl}\n\n— XaePay`;
+          sendEmail({
+            to: customer.email,
+            subject: `Deposit instructions for your payment — ${tx.id || ""}`.trim(),
+            html,
+            text,
+          }).then((r) => {
+            // eslint-disable-next-line no-console
+            console.log("Deposit-instructions email:", r);
+          });
+        })();
+      }
       onChanged && onChanged();
     } else {
       const detail = data?.cedar?.exception?.message || data?.error || "see console";

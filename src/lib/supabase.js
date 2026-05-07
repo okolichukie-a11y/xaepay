@@ -245,6 +245,32 @@ export async function uploadCedarFile(file, category = "misc") {
   return { ok: true, url: data.publicUrl, path };
 }
 
+// Send an email via the send-email Edge Function (which forwards to Resend).
+// Caller passes { to, subject, html?, text?, replyTo? }. Returns { ok, status, data }.
+// Used for customer-facing quote notifications + deposit instructions, and
+// later for operator-facing approval/status alerts. Meta-independent — works
+// regardless of WhatsApp business verification state.
+export async function sendEmail({ to, subject, html, text, replyTo }) {
+  try {
+    const res = await fetch(`${url}/functions/v1/send-email`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${anonKey}`,
+        "apikey": anonKey,
+      },
+      body: JSON.stringify({ to, subject, html, text, replyTo }),
+    });
+    let data = null;
+    try { data = await res.json(); } catch { /* non-JSON */ }
+    return { ok: res.ok, status: res.status, data };
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error("sendEmail failed:", err);
+    return { ok: false, status: 0, data: null };
+  }
+}
+
 // Run the tier-aware compliance review for a quote. Edge Function persists
 // the decision (approved | flagged | rejected) + per-check details back
 // to the quote row. Caller can subscribe via realtime to see the result
