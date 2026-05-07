@@ -2738,7 +2738,7 @@ function CustomerPortal({ session, customerRows }) {
     setLoading(true);
     const { data, error } = await supabase
       .from("quotes")
-      .select("id, customer_id, amount, currency, rate, ngn_total, beneficiary, destination, status, expires_at, created_at, cedar_request_status, cedar_payout_status, cedar_business_request_id, cedar_bank_details, cedar_quote_rate, cedar_deposit_amount_minor, cedar_deposit_currency")
+      .select("id, customer_id, amount, currency, rate, ngn_total, beneficiary, destination, status, expires_at, created_at, cedar_request_status, cedar_payout_status, cedar_business_request_id, cedar_bank_details, cedar_quote_rate, cedar_deposit_amount_minor, cedar_deposit_currency, invoice_url, invoice_uploaded_at, invoice_uploaded_by, customer_deposit_slip_url, customer_deposit_slip_uploaded_at")
       .eq("customer_id", activeCustomerId)
       .order("created_at", { ascending: false });
     if (error) {
@@ -2874,7 +2874,7 @@ function CustomerPortal({ session, customerRows }) {
           </Card>
         )}
         <div className="space-y-3">
-          {openQuotes.map((q) => <CustomerQuoteCard key={q.id} q={q} onDecide={decide} />)}
+          {openQuotes.map((q) => <CustomerQuoteCard key={q.id} q={q} onDecide={decide} onInvoiceUploaded={fetchQuotes} />)}
         </div>
       </section>
 
@@ -2884,7 +2884,7 @@ function CustomerPortal({ session, customerRows }) {
             {inProgressQuotes.length} in progress
           </h2>
           <div className="space-y-3">
-            {inProgressQuotes.map((q) => <CustomerTransactionCard key={q.id} q={q} />)}
+            {inProgressQuotes.map((q) => <CustomerTransactionCard key={q.id} q={q} onSlipUploaded={fetchQuotes} />)}
           </div>
         </section>
       )}
@@ -2941,7 +2941,31 @@ function customerQuoteStatusPill(status, cedarStatus) {
 // Mirrors the operator's Cedar lifecycle panel but read-only and customer-
 // facing — uses generic "payment partner" language (per the project memory:
 // neither XaeccoX nor Cedar are named on customer surfaces).
-function CustomerTransactionCard({ q }) {
+function CustomerTransactionCard({ q, onSlipUploaded }) {
+  const { push } = useToast();
+  const [uploadingSlip, setUploadingSlip] = useState(false);
+  const uploadDepositSlip = async (file) => {
+    if (!file) return;
+    setUploadingSlip(true);
+    const result = await uploadCedarFile(file, "deposits");
+    if (!result.ok) {
+      setUploadingSlip(false);
+      push(`Upload failed: ${result.error}`, "warn");
+      return;
+    }
+    const { error } = await supabase.from("quotes").update({
+      customer_deposit_slip_url: result.url,
+      customer_deposit_slip_uploaded_at: new Date().toISOString(),
+    }).eq("id", q.id);
+    setUploadingSlip(false);
+    if (error) {
+      push(`Couldn't save slip: ${error.message}`, "warn");
+      return;
+    }
+    push("Deposit slip uploaded — your operator will confirm shortly", "success");
+    onSlipUploaded && onSlipUploaded();
+  };
+  // ─── lifecycle stage ───
   const cs = (q.cedar_request_status || "").toUpperCase();
   const isPending = !q.cedar_business_request_id || cs.includes("PENDING") && !cs.includes("AWAITING");
   const isAwaitingQuoteApproval = cs.includes("AWAITING_QUOTE_APPROVAL");
@@ -2979,6 +3003,13 @@ function CustomerTransactionCard({ q }) {
         </div>
         <p className="text-sm" style={{ color: "var(--muted)" }}>{detail}</p>
 
+        {q.invoice_url && (
+          <div className="rounded-lg p-2.5 text-xs flex items-center justify-between" style={{ background: "var(--bone)", border: "1px solid var(--line)" }}>
+            <span style={{ color: "var(--muted)" }}>Invoice on file</span>
+            <a href={q.invoice_url} target="_blank" rel="noreferrer" className="font-medium underline" style={{ color: "var(--emerald)" }}>View</a>
+          </div>
+        )}
+
         {hasBankDetails && isAwaitingDeposit && (
           <div className="rounded-xl p-4 text-xs space-y-2" style={{ background: "var(--ink)", color: "var(--bone)" }}>
             <div className="font-mono text-[10px] uppercase tracking-wider" style={{ color: "rgba(247,245,240,0.5)" }}>Deposit instructions</div>
@@ -3005,6 +3036,31 @@ function CustomerTransactionCard({ q }) {
           </div>
         )}
 
+        {isAwaitingDeposit && (
+          q.customer_deposit_slip_url ? (
+            <div className="rounded-lg p-3 text-xs flex items-center justify-between" style={{ background: "rgba(15,95,63,0.06)", border: "1px solid rgba(15,95,63,0.2)" }}>
+              <div className="flex items-center gap-2" style={{ color: "var(--emerald)" }}>
+                <CheckCircle2 size={14} />
+                <span className="font-medium">Slip uploaded — awaiting operator confirmation</span>
+              </div>
+              <a href={q.customer_deposit_slip_url} target="_blank" rel="noreferrer" className="font-medium underline" style={{ color: "var(--emerald)" }}>View</a>
+            </div>
+          ) : (
+            <div className="rounded-lg p-3 space-y-2" style={{ background: "var(--bone)", border: "1px dashed var(--line)" }}>
+              <p className="text-xs font-medium">Made the deposit? Upload your slip</p>
+              <p className="text-[10px]" style={{ color: "var(--muted)" }}>Once your operator verifies it, our payment partner releases the payout to your supplier.</p>
+              <input
+                type="file"
+                accept="image/*,application/pdf"
+                onChange={(e) => uploadDepositSlip(e.target.files?.[0])}
+                disabled={uploadingSlip}
+                className="block w-full text-xs file:mr-3 file:rounded-lg file:border-0 file:bg-[color:var(--ink)] file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-[color:var(--bone)] hover:file:opacity-90"
+              />
+              {uploadingSlip && <div className="font-mono text-[10px]" style={{ color: "var(--muted)" }}>Uploading…</div>}
+            </div>
+          )
+        )}
+
         {isInProgress && (
           <div className="rounded-xl p-3 text-xs" style={{ background: "var(--bone)", border: "1px solid var(--line)" }}>
             <div className="flex items-baseline justify-between">
@@ -3018,14 +3074,39 @@ function CustomerTransactionCard({ q }) {
   );
 }
 
-function CustomerQuoteCard({ q, onDecide }) {
+function CustomerQuoteCard({ q, onDecide, onInvoiceUploaded }) {
+  const { push } = useToast();
   const [submitting, setSubmitting] = useState(null);
+  const [uploading, setUploading] = useState(false);
   const expiresAt = q.expires_at ? new Date(q.expires_at) : null;
   const expired = expiresAt && expiresAt < new Date();
+  const hasInvoice = !!q.invoice_url;
   const handle = async (action) => {
     setSubmitting(action);
     await onDecide(q.id, action);
     setSubmitting(null);
+  };
+  const uploadInvoice = async (file) => {
+    if (!file) return;
+    setUploading(true);
+    const result = await uploadCedarFile(file, "invoices");
+    if (!result.ok) {
+      setUploading(false);
+      push(`Upload failed: ${result.error}`, "warn");
+      return;
+    }
+    const { error } = await supabase.from("quotes").update({
+      invoice_url: result.url,
+      invoice_uploaded_at: new Date().toISOString(),
+      invoice_uploaded_by: "customer",
+    }).eq("id", q.id);
+    setUploading(false);
+    if (error) {
+      push(`Couldn't save invoice: ${error.message}`, "warn");
+      return;
+    }
+    push("Invoice uploaded", "success");
+    onInvoiceUploaded && onInvoiceUploaded();
   };
   return (
     <Card>
@@ -3047,6 +3128,31 @@ function CustomerQuoteCard({ q, onDecide }) {
             <div className="font-semibold mt-0.5 text-sm">₦{Math.round(q.ngn_total || 0).toLocaleString()}</div>
           </div>
         </div>
+        {/* Invoice section — required before customer can approve */}
+        {hasInvoice ? (
+          <div className="rounded-lg p-3 text-xs flex items-center justify-between" style={{ background: "rgba(15,95,63,0.06)", border: "1px solid rgba(15,95,63,0.2)" }}>
+            <div className="flex items-center gap-2" style={{ color: "var(--emerald)" }}>
+              <CheckCircle2 size={14} />
+              <span className="font-medium">Invoice attached</span>
+              <span className="font-mono text-[10px]" style={{ color: "var(--muted)" }}>by {q.invoice_uploaded_by || "—"}</span>
+            </div>
+            <a href={q.invoice_url} target="_blank" rel="noreferrer" className="font-medium underline" style={{ color: "var(--emerald)" }}>View</a>
+          </div>
+        ) : (
+          <div className="rounded-lg p-3 space-y-2" style={{ background: "var(--bone)", border: "1px dashed var(--line)" }}>
+            <p className="text-xs font-medium">Upload your supplier's invoice to approve</p>
+            <p className="text-[10px]" style={{ color: "var(--muted)" }}>The invoice your supplier issued for this payment. Required before approval — gives your operator and our payment partner what they need to clear it.</p>
+            <input
+              type="file"
+              accept="image/*,application/pdf"
+              onChange={(e) => uploadInvoice(e.target.files?.[0])}
+              disabled={uploading}
+              className="block w-full text-xs file:mr-3 file:rounded-lg file:border-0 file:bg-[color:var(--ink)] file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-[color:var(--bone)] hover:file:opacity-90"
+            />
+            {uploading && <div className="font-mono text-[10px]" style={{ color: "var(--muted)" }}>Uploading…</div>}
+          </div>
+        )}
+
         {expiresAt && !expired && (
           <div className="text-xs" style={{ color: "var(--muted)" }}>
             Rate locked until {expiresAt.toLocaleTimeString()}
@@ -3061,8 +3167,9 @@ function CustomerQuoteCard({ q, onDecide }) {
           <div className="flex gap-2 pt-2">
             <button
               onClick={() => handle("approve")}
-              disabled={submitting !== null}
-              className="flex-1 rounded-xl px-4 py-2.5 text-sm font-semibold transition disabled:opacity-50"
+              disabled={submitting !== null || !hasInvoice}
+              title={!hasInvoice ? "Upload your supplier's invoice first" : ""}
+              className="flex-1 rounded-xl px-4 py-2.5 text-sm font-semibold transition disabled:opacity-40 disabled:cursor-not-allowed"
               style={{ background: "var(--ink)", color: "var(--bone)" }}
             >
               {submitting === "approve" ? <><Loader2 size={14} className="animate-spin inline" /> Approving…</> : "Approve & lock rate"}
@@ -4743,7 +4850,7 @@ function BDCTransactions() {
     setLoading(true);
     const { data, error } = await supabase
       .from("quotes")
-      .select("id, customer_name, customer_phone, customer_id, beneficiary, destination, amount, currency, rate, ngn_total, rail, status, submitted_at, created_at, markup_pct, cost_basis_ngn, recipient_id, recipient_external_account_id, cedar_business_request_id, cedar_request_status, cedar_purpose, cedar_invoice_url, cedar_last_error, cedar_request_status_updated_at, cedar_bank_details, cedar_quote_rate, cedar_deposit_amount_minor, cedar_deposit_currency, cedar_payout_status")
+      .select("id, customer_name, customer_phone, customer_id, beneficiary, destination, amount, currency, rate, ngn_total, rail, status, submitted_at, created_at, markup_pct, cost_basis_ngn, recipient_id, recipient_external_account_id, cedar_business_request_id, cedar_request_status, cedar_purpose, cedar_invoice_url, cedar_last_error, cedar_request_status_updated_at, cedar_bank_details, cedar_quote_rate, cedar_deposit_amount_minor, cedar_deposit_currency, cedar_payout_status, invoice_url, invoice_uploaded_at, invoice_uploaded_by, customer_deposit_slip_url, customer_deposit_slip_uploaded_at")
       .order("created_at", { ascending: false })
       .limit(50);
     if (error) {
@@ -4781,6 +4888,11 @@ function BDCTransactions() {
         cedarDepositAmountMinor: q.cedar_deposit_amount_minor,
         cedarDepositCurrency: q.cedar_deposit_currency,
         cedarPayoutStatus: q.cedar_payout_status,
+        invoiceUrl: q.invoice_url,
+        invoiceUploadedAt: q.invoice_uploaded_at,
+        invoiceUploadedBy: q.invoice_uploaded_by,
+        customerDepositSlipUrl: q.customer_deposit_slip_url,
+        customerDepositSlipUploadedAt: q.customer_deposit_slip_uploaded_at,
       })));
     }
     setLoading(false);
@@ -4865,7 +4977,30 @@ function BDCTransactions() {
 
 function TxDrawer({ tx, onClose, onRefresh }) {
   const { push } = useToast();
+  const [uploadingInvoice, setUploadingInvoice] = useState(false);
   if (!tx) return null;
+  const uploadInvoiceForCustomer = async (file) => {
+    if (!file || !tx.dbId) return;
+    setUploadingInvoice(true);
+    const result = await uploadCedarFile(file, "invoices");
+    if (!result.ok) {
+      setUploadingInvoice(false);
+      push(`Upload failed: ${result.error}`, "warn");
+      return;
+    }
+    const { error } = await supabase.from("quotes").update({
+      invoice_url: result.url,
+      invoice_uploaded_at: new Date().toISOString(),
+      invoice_uploaded_by: "operator",
+    }).eq("id", tx.dbId);
+    setUploadingInvoice(false);
+    if (error) {
+      push(`Couldn't save invoice: ${error.message}`, "warn");
+      return;
+    }
+    push("Invoice uploaded on customer's behalf", "success");
+    onRefresh && onRefresh();
+  };
   return (
     <Drawer open={!!tx} onClose={onClose} title={`Transaction ${tx.id}`}>
       <div className="space-y-5">
@@ -4876,6 +5011,35 @@ function TxDrawer({ tx, onClose, onRefresh }) {
           <div className="relative font-display mt-1 text-4xl font-[500] tracking-tight" style={{ color: "var(--lime)" }}>${tx.amount.toLocaleString()}</div>
           <div className="relative mt-1 font-mono text-[11px]" style={{ color: "rgba(247,245,240,0.6)" }}>{tx.customer} → {tx.dest} · via {SHOW_TRIPLE_A ? tx.rail : "partner"}</div>
         </div>
+
+        {/* Invoice — primary uploader is the customer (via portal); operator can upload here on customer's behalf. Required before customer can approve. */}
+        {tx.dbId && (
+          <div>
+            <Label>Supplier invoice</Label>
+            {tx.invoiceUrl ? (
+              <div className="rounded-xl p-3 text-xs flex items-center justify-between" style={{ background: "rgba(15,95,63,0.06)", border: "1px solid rgba(15,95,63,0.2)" }}>
+                <div className="flex items-center gap-2" style={{ color: "var(--emerald)" }}>
+                  <CheckCircle2 size={14} />
+                  <span className="font-medium">Attached by {tx.invoiceUploadedBy || "—"}</span>
+                  {tx.invoiceUploadedAt && <span className="font-mono text-[10px]" style={{ color: "var(--muted)" }}>{relativeTime(tx.invoiceUploadedAt)}</span>}
+                </div>
+                <a href={tx.invoiceUrl} target="_blank" rel="noreferrer" className="font-medium underline" style={{ color: "var(--emerald)" }}>View</a>
+              </div>
+            ) : (
+              <div className="rounded-xl p-3 space-y-2" style={{ background: "var(--bone)", border: "1px dashed var(--line)" }}>
+                <p className="text-xs" style={{ color: "var(--muted)" }}>Customer hasn't uploaded an invoice yet. They'll be prompted in their portal — or you can upload here on their behalf.</p>
+                <input
+                  type="file"
+                  accept="image/*,application/pdf"
+                  onChange={(e) => uploadInvoiceForCustomer(e.target.files?.[0])}
+                  disabled={uploadingInvoice}
+                  className="block w-full text-xs file:mr-3 file:rounded-lg file:border-0 file:bg-[color:var(--ink)] file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-[color:var(--bone)] hover:file:opacity-90"
+                />
+                {uploadingInvoice && <div className="font-mono text-[10px]" style={{ color: "var(--muted)" }}>Uploading…</div>}
+              </div>
+            )}
+          </div>
+        )}
 
         {(tx.rate != null || tx.markupPct != null) && (
           <div>
@@ -4944,7 +5108,9 @@ function CedarSubmitPanel({ tx, onSubmitted }) {
   const [customerId, setCustomerId] = useState(tx.customerId || "");
   const [accountId, setAccountId] = useState(tx.recipientExternalAccountId || "");
   const [purpose, setPurpose] = useState("GOODS_PURCHASED");
-  const [invoiceUrl, setInvoiceUrl] = useState("");
+  // Auto-pull the invoice URL the customer (or operator) attached to the quote.
+  // Operator can override with a fresh upload if needed.
+  const [invoiceUrl, setInvoiceUrl] = useState(tx.invoiceUrl || "");
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
@@ -5043,7 +5209,20 @@ function CedarSubmitPanel({ tx, onSubmitted }) {
         </Select>
       </Field>
       <Field label="Customer invoice (PDF or image)">
-        <FileUploadField category="invoices" value={invoiceUrl} onChange={setInvoiceUrl} />
+        {tx.invoiceUrl ? (
+          <div className="rounded-lg p-2.5 text-xs flex items-center justify-between" style={{ background: "rgba(15,95,63,0.06)", border: "1px solid rgba(15,95,63,0.2)" }}>
+            <div className="flex items-center gap-2" style={{ color: "var(--emerald)" }}>
+              <CheckCircle2 size={12} />
+              <span className="font-medium">Invoice attached by {tx.invoiceUploadedBy || "—"}</span>
+            </div>
+            <a href={tx.invoiceUrl} target="_blank" rel="noreferrer" className="font-medium underline" style={{ color: "var(--emerald)" }}>View</a>
+          </div>
+        ) : (
+          <FileUploadField category="invoices" value={invoiceUrl} onChange={setInvoiceUrl} />
+        )}
+        <div className="font-mono text-[9px] mt-1" style={{ color: "var(--muted)" }}>
+          {tx.invoiceUrl ? "Pulled from the quote — your customer (or you) uploaded it before approval." : "Customer didn't upload an invoice. Upload here on their behalf to proceed."}
+        </div>
       </Field>
       <div className="flex justify-end pt-1">
         <PrimaryBtn onClick={submit} disabled={!canSubmit}>
@@ -5070,7 +5249,9 @@ function CedarApprovalSection({ tx, onChanged }) {
   const { push } = useToast();
   const [approving, setApproving] = useState(false);
   const [confirmingDeposit, setConfirmingDeposit] = useState(false);
-  const [depositSlipUrl, setDepositSlipUrl] = useState("");
+  // Pre-fill the deposit slip URL with whatever the customer uploaded (if any).
+  // Operator can override with their own upload if needed.
+  const [depositSlipUrl, setDepositSlipUrl] = useState(tx.customerDepositSlipUrl || "");
   const [cancelOpen, setCancelOpen] = useState(false);
   const [cancelReason, setCancelReason] = useState("CUSTOMER_REQUEST");
   const [cancelOther, setCancelOther] = useState("");
@@ -5230,8 +5411,18 @@ function CedarApprovalSection({ tx, onChanged }) {
 
       {isAwaitingDeposit && (
         <div className="rounded-xl p-4 space-y-2" style={{ background: "var(--bone)", border: "1px solid var(--line)" }}>
-          <p className="text-xs" style={{ color: "var(--muted)" }}>Once your customer deposits the NGN amount above, paste a public link to the bank slip (screenshot or PDF) and confirm. Cedar will then start the {tx.currency} payout to the recipient.</p>
-          <Field label="Deposit slip (PDF or image)">
+          {tx.customerDepositSlipUrl ? (
+            <div className="rounded-lg p-2.5 text-xs flex items-center justify-between" style={{ background: "rgba(15,95,63,0.06)", border: "1px solid rgba(15,95,63,0.2)" }}>
+              <div className="flex items-center gap-2" style={{ color: "var(--emerald)" }}>
+                <CheckCircle2 size={12} />
+                <span className="font-medium">Customer uploaded slip — review &amp; confirm</span>
+              </div>
+              <a href={tx.customerDepositSlipUrl} target="_blank" rel="noreferrer" className="font-medium underline" style={{ color: "var(--emerald)" }}>View</a>
+            </div>
+          ) : (
+            <p className="text-xs" style={{ color: "var(--muted)" }}>Once your customer deposits the NGN amount above, upload the bank slip below — or wait for them to upload it from their portal — and confirm. Our payment partner will then start the {tx.currency} payout to the recipient.</p>
+          )}
+          <Field label={tx.customerDepositSlipUrl ? "Deposit slip (replace if needed)" : "Deposit slip (PDF or image)"}>
             <FileUploadField category="deposits" value={depositSlipUrl} onChange={setDepositSlipUrl} />
           </Field>
           <PrimaryBtn onClick={confirmDeposit} disabled={!depositSlipUrl || confirmingDeposit} full>
