@@ -217,21 +217,39 @@ function AppShell() {
   const [session, setSession] = useState({ type: null, tier: 0, name: null, company: null });
   const auth = useAuth();
   // Reconcile real auth user → session: when a magic-link visitor lands signed-in,
-  // hydrate the local session from their user_metadata so dashboards work without onboarding.
-  // Simpler-MVP rule: every signed-in user is an operator. Route them straight to the
-  // operator dashboard if they're still on the landing page when auth resolves.
+  // Customer rows the signed-in user owns (matched by email). Customers reach
+  // XaePay through their operator — when an operator adds them, that operator
+  // captures the email; later when the customer signs in with that same email,
+  // we surface their quotes / transactions in a customer-side portal instead
+  // of the operator dashboard.
+  const [customerRows, setCustomerRows] = useState(null); // null = not checked yet, [] = none, [...] = matched
+
+  // hydrate the local session from auth metadata + check whether the signed-in
+  // user is registered as a customer with any operator.
   useEffect(() => {
-    if (!auth.user) return;
-    const meta = auth.user.user_metadata || {};
-    setSession((prev) => prev.type ? prev : ({
-      type: "bdc",
-      tier: meta.tier ?? 1,
-      name: meta.name || meta.company || auth.user.email,
-      company: meta.company || null,
-      email: auth.user.email,
-      authUserId: auth.user.id,
-    }));
-    setView((prev) => (prev === "landing" ? "bdc" : prev));
+    if (!auth.user) { setCustomerRows(null); return; }
+    let cancelled = false;
+    (async () => {
+      const email = auth.user.email;
+      const { data: rows } = await supabase
+        .from("customers")
+        .select("id, name, phone, email, type, kyc_status, kyc_tier, cedar_business_id, cedar_kyc_status, bdc_user_id, bdc_name, created_at")
+        .eq("email", email);
+      if (cancelled) return;
+      const matched = rows || [];
+      setCustomerRows(matched);
+      const meta = auth.user.user_metadata || {};
+      setSession((prev) => prev.type ? prev : ({
+        type: matched.length > 0 ? "customer-portal" : "bdc",
+        tier: meta.tier ?? 1,
+        name: matched[0]?.name || meta.name || meta.company || auth.user.email,
+        company: meta.company || matched[0]?.name || null,
+        email,
+        authUserId: auth.user.id,
+      }));
+      setView((prev) => (prev === "landing" ? (matched.length > 0 ? "customer-portal" : "bdc") : prev));
+    })();
+    return () => { cancelled = true; };
   }, [auth.user]);
   useEffect(() => {
     const onPop = () => {
@@ -264,6 +282,7 @@ function AppShell() {
       <TopBar view={view} setView={setView} mobileOpen={mobileOpen} setMobileOpen={setMobileOpen} onSignIn={() => setSignInOpen(true)} onRequestAccess={() => setBecomePartnerOpen(true)} onWaitlist={() => setWaitlistOpen(true)} session={session} authUser={auth.user} onSignOut={async () => { await auth.signOut(); setSession({ type: null, tier: 0, name: null, company: null }); setView("landing"); }} />
       {view === "landing" && <Landing setView={setView} onRequestAccess={() => setBecomePartnerOpen(true)} onWaitlist={() => setWaitlistOpen(true)} />}
       {view === "customer" && <CustomerApp session={session} />}
+      {view === "customer-portal" && <CustomerPortal session={session} customerRows={customerRows || []} />}
       {view === "bdc" && <BDCDashboard session={session} />}
       {view === "lp" && <LPDashboard session={session} />}
       {view === "diaspora" && <DiasporaApp session={session} />}
@@ -2693,6 +2712,237 @@ function CustomerApp({ session }) {
     </div>
     <HistoryDrawer open={historyOpen} onClose={() => setHistoryOpen(false)} />
     </>
+  );
+}
+
+// ─── Customer Portal ────────────────────────────────────────────────────────
+// Customer-side experience for customers their operator has registered. Same
+// Supabase Auth path as operators (magic link); we route to this view when the
+// signed-in email matches a customers row. Customer can only see quotes /
+// transactions linked to their own customers.id (per operator).
+//
+// This is the operator-mediated portal — customer doesn't self-onboard, can't
+// pick operators, can't request quotes themselves. Preserves agent-operator-
+// first positioning while giving customers a persistent self-serve surface.
+function CustomerPortal({ session, customerRows }) {
+  const { push } = useToast();
+  const auth = useAuth();
+  const [activeCustomerId, setActiveCustomerId] = useState(customerRows[0]?.id || null);
+  const [quotes, setQuotes] = useState([]);
+  const [loading, setLoading] = useState(false);
+
+  const activeCustomer = customerRows.find((c) => c.id === activeCustomerId);
+
+  const fetchQuotes = async () => {
+    if (!activeCustomerId) return;
+    setLoading(true);
+    const { data, error } = await supabase
+      .from("quotes")
+      .select("id, customer_id, amount, currency, rate, ngn_total, beneficiary, destination, status, expires_at, created_at, cedar_request_status, cedar_payout_status, cedar_business_request_id")
+      .eq("customer_id", activeCustomerId)
+      .order("created_at", { ascending: false });
+    if (error) {
+      // eslint-disable-next-line no-console
+      console.error("Fetch customer quotes failed:", error);
+      push("Couldn't load quotes — check console.", "warn");
+    } else {
+      setQuotes(data || []);
+    }
+    setLoading(false);
+  };
+
+  useEffect(() => { fetchQuotes(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [activeCustomerId]);
+
+  // Realtime updates so the customer sees their operator's actions instantly.
+  useEffect(() => {
+    if (!activeCustomerId) return;
+    const channel = supabase
+      .channel(`customer-portal-${activeCustomerId}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "quotes", filter: `customer_id=eq.${activeCustomerId}` }, () => fetchQuotes())
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+    /* eslint-disable-next-line react-hooks/exhaustive-deps */
+  }, [activeCustomerId]);
+
+  const decide = async (quoteId, action) => {
+    const rpc = action === "approve" ? "approve_quote" : "decline_quote";
+    const { error } = await supabase.rpc(rpc, { p_token: quoteId });
+    if (error) {
+      // eslint-disable-next-line no-console
+      console.error(`${rpc} failed:`, error);
+      push(error.message || "Couldn't update quote — try again.", "warn");
+      return;
+    }
+    push(action === "approve" ? "Quote approved" : "Quote declined", "success");
+    fetchQuotes();
+  };
+
+  if (!customerRows.length) {
+    return (
+      <div className="mx-auto max-w-2xl px-4 py-16 text-center">
+        <h2 className="font-display text-2xl font-semibold">No customer profile linked</h2>
+        <p className="mt-3 text-sm" style={{ color: "var(--muted)" }}>
+          We couldn't find a customer profile linked to <strong>{auth.user?.email}</strong>. If your operator added you with a different email, ask them to update it.
+        </p>
+      </div>
+    );
+  }
+
+  const openQuotes = quotes.filter((q) => q.status === "pending_approval");
+  const recentQuotes = quotes.filter((q) => q.status !== "pending_approval");
+
+  return (
+    <div className="mx-auto max-w-5xl px-4 py-10 sm:px-6 lg:px-8 lg:py-14">
+      <div className="mb-8 rise">
+        <SectionEyebrow>Customer Portal</SectionEyebrow>
+        <h1 className="font-display mt-3 text-3xl font-[450] tracking-tight sm:text-[40px]">
+          {activeCustomer?.name || session.email}
+        </h1>
+        {customerRows.length > 1 ? (
+          <div className="mt-3 flex items-center gap-2 text-sm" style={{ color: "var(--muted)" }}>
+            <span>Operator:</span>
+            <Select value={activeCustomerId} onChange={(e) => setActiveCustomerId(e.target.value)}>
+              {customerRows.map((c) => (<option key={c.id} value={c.id}>{c.bdc_name || "—"}</option>))}
+            </Select>
+          </div>
+        ) : (
+          <p className="mt-2 text-sm" style={{ color: "var(--muted)" }}>
+            Operator: <strong style={{ color: "var(--ink)" }}>{activeCustomer?.bdc_name || "your XaePay operator"}</strong>
+          </p>
+        )}
+      </div>
+
+      <section className="mb-10 rise" style={{ animationDelay: "0.05s" }}>
+        <div className="flex items-baseline justify-between mb-4">
+          <h2 className="font-display text-xl font-semibold">
+            {openQuotes.length} open quote{openQuotes.length === 1 ? "" : "s"}
+          </h2>
+          <SecondaryBtn onClick={fetchQuotes} disabled={loading}><RefreshCw size={14} className={loading ? "animate-spin" : ""} /> Refresh</SecondaryBtn>
+        </div>
+        {loading && quotes.length === 0 && <Card><div className="p-8 text-center text-sm" style={{ color: "var(--muted)" }}>Loading…</div></Card>}
+        {!loading && openQuotes.length === 0 && (
+          <Card>
+            <div className="p-10 text-center">
+              <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full" style={{ background: "var(--bone-2)" }}><Receipt size={20} style={{ color: "var(--muted)" }} /></div>
+              <h3 className="font-display text-lg font-semibold">No open quotes</h3>
+              <p className="mt-1.5 text-sm" style={{ color: "var(--muted)" }}>Your operator will send any new quotes here. You'll also get a WhatsApp notification.</p>
+            </div>
+          </Card>
+        )}
+        <div className="space-y-3">
+          {openQuotes.map((q) => <CustomerQuoteCard key={q.id} q={q} onDecide={decide} />)}
+        </div>
+      </section>
+
+      {recentQuotes.length > 0 && (
+        <section className="rise" style={{ animationDelay: "0.1s" }}>
+          <h2 className="font-display text-xl font-semibold mb-4">Recent quotes</h2>
+          <Card padding="none">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead><tr style={{ background: "var(--bone)", borderBottom: "1px solid var(--line)" }}>
+                  {["Ref", "Amount", "Rate", "NGN total", "Status", "Date"].map((h, i) => (
+                    <th key={i} className="px-4 py-3 text-left font-mono text-[10px] font-semibold uppercase tracking-wider" style={{ color: "var(--muted)" }}>{h}</th>
+                  ))}
+                </tr></thead>
+                <tbody>
+                  {recentQuotes.map((q) => {
+                    const pill = customerQuoteStatusPill(q.status, q.cedar_request_status);
+                    return (
+                      <tr key={q.id} style={{ borderBottom: "1px solid var(--line)" }}>
+                        <td className="px-4 py-3.5 font-mono text-xs font-semibold">QU-{q.id.slice(0, 4).toUpperCase()}</td>
+                        <td className="px-4 py-3.5 font-mono">${parseFloat(q.amount).toLocaleString()} {q.currency}</td>
+                        <td className="px-4 py-3.5 font-mono text-xs">₦{parseFloat(q.rate).toFixed(2)}/$</td>
+                        <td className="px-4 py-3.5 font-mono">₦{Math.round(q.ngn_total || 0).toLocaleString()}</td>
+                        <td className="px-4 py-3.5"><span className="rounded-full px-2 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-wider" style={{ background: pill.bg, color: pill.color }}>{pill.label}</span></td>
+                        <td className="px-4 py-3.5 font-mono text-xs" style={{ color: "var(--muted)" }}>{relativeTime(q.created_at)}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </Card>
+        </section>
+      )}
+    </div>
+  );
+}
+
+function customerQuoteStatusPill(status, cedarStatus) {
+  const cs = (cedarStatus || "").toUpperCase();
+  if (cs.includes("COMPLETED")) return { label: "Completed", bg: "var(--emerald)", color: "var(--lime)" };
+  if (cs.includes("IN_PROGRESS")) return { label: "Paying out", bg: "rgba(15,95,63,0.10)", color: "var(--emerald)" };
+  if (cs.includes("AWAITING_DEPOSIT")) return { label: "Awaiting deposit", bg: "#fef3c7", color: "#92400e" };
+  if (cs.includes("CANCELED") || cs.includes("CANCELLED")) return { label: "Canceled", bg: "#fee2e2", color: "#991b1b" };
+  if (status === "customer_approved") return { label: "Approved", bg: "rgba(15,95,63,0.10)", color: "var(--emerald)" };
+  if (status === "customer_declined") return { label: "Declined", bg: "#fee2e2", color: "#991b1b" };
+  if (status === "expired") return { label: "Expired", bg: "#f3f4f6", color: "#6b7280" };
+  if (status === "cancelled" || status === "canceled") return { label: "Cancelled", bg: "#fee2e2", color: "#991b1b" };
+  return { label: "Pending", bg: "#fef3c7", color: "#92400e" };
+}
+
+function CustomerQuoteCard({ q, onDecide }) {
+  const [submitting, setSubmitting] = useState(null);
+  const expiresAt = q.expires_at ? new Date(q.expires_at) : null;
+  const expired = expiresAt && expiresAt < new Date();
+  const handle = async (action) => {
+    setSubmitting(action);
+    await onDecide(q.id, action);
+    setSubmitting(null);
+  };
+  return (
+    <Card>
+      <div className="space-y-3">
+        <div className="flex items-baseline justify-between gap-3">
+          <div className="font-mono text-xs" style={{ color: "var(--muted)" }}>QU-{q.id.slice(0, 4).toUpperCase()}</div>
+          <div className="font-mono text-xs truncate" style={{ color: "var(--muted)" }}>{q.beneficiary || q.destination || "—"}</div>
+        </div>
+        <div className="font-display text-3xl font-[500]">
+          ${parseFloat(q.amount).toLocaleString()} <span className="text-base font-mono" style={{ color: "var(--muted)" }}>{q.currency}</span>
+        </div>
+        <div className="grid grid-cols-2 gap-3 text-xs font-mono pt-1">
+          <div>
+            <div style={{ color: "var(--muted)" }}>Rate</div>
+            <div className="font-semibold mt-0.5 text-sm">₦{parseFloat(q.rate).toFixed(2)}/$</div>
+          </div>
+          <div>
+            <div style={{ color: "var(--muted)" }}>You pay</div>
+            <div className="font-semibold mt-0.5 text-sm">₦{Math.round(q.ngn_total || 0).toLocaleString()}</div>
+          </div>
+        </div>
+        {expiresAt && !expired && (
+          <div className="text-xs" style={{ color: "var(--muted)" }}>
+            Rate locked until {expiresAt.toLocaleTimeString()}
+          </div>
+        )}
+        {expired && (
+          <div className="text-xs" style={{ color: "#991b1b" }}>
+            Rate window expired — ask your operator to resend.
+          </div>
+        )}
+        {!expired && (
+          <div className="flex gap-2 pt-2">
+            <button
+              onClick={() => handle("approve")}
+              disabled={submitting !== null}
+              className="flex-1 rounded-xl px-4 py-2.5 text-sm font-semibold transition disabled:opacity-50"
+              style={{ background: "var(--ink)", color: "var(--bone)" }}
+            >
+              {submitting === "approve" ? <><Loader2 size={14} className="animate-spin inline" /> Approving…</> : "Approve & lock rate"}
+            </button>
+            <button
+              onClick={() => handle("decline")}
+              disabled={submitting !== null}
+              className="rounded-xl px-4 py-2.5 text-sm font-medium transition disabled:opacity-50"
+              style={{ background: "white", color: "var(--ink)", border: "1px solid var(--line)" }}
+            >
+              {submitting === "decline" ? "…" : "Decline"}
+            </button>
+          </div>
+        )}
+      </div>
+    </Card>
   );
 }
 
@@ -5843,6 +6093,8 @@ function AddCustomerModal({ open, onClose, onAdded, onAddLocal }) {
         bdc_user_id: auth.user.id,
         name: row.name,
         phone: row.phone,
+        email: row.email || null,
+        contact_name: row.contactName || null,
         type: row.tier,
         kyc_status: row.kycStatus,
         kyc_tier: row.kycTier,
@@ -5880,7 +6132,9 @@ function AddCustomerModal({ open, onClose, onAdded, onAddLocal }) {
       const onboardUrl = `${window.location.origin}/?onboard=${onboardTokenStr}`;
 
       await persistCustomer({
-        name: data.name, phone: data.phone, tier: data.tier,
+        name: data.name, phone: data.phone,
+        email: data.email, contactName: data.contact,
+        tier: data.tier,
         kycTier: 0, kycStatus: "submitted",
         onboardedVia: "whatsapp-link",
         onboardToken: onboardTokenStr,
