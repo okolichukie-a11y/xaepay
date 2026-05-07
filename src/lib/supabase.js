@@ -245,6 +245,34 @@ export async function uploadCedarFile(file, category = "misc") {
   return { ok: true, url: data.publicUrl, path };
 }
 
+// Run the tier-aware compliance review for a quote. Edge Function persists
+// the decision (approved | flagged | rejected) + per-check details back
+// to the quote row. Caller can subscribe via realtime to see the result
+// flow in, or read the response directly. Auto-fired after invoice uploads
+// and on demand from the operator's TxDrawer.
+export async function runComplianceReview(quoteId, tier) {
+  try {
+    const body = { quoteId };
+    if (tier) body.tier = tier;
+    const res = await fetch(`${url}/functions/v1/compliance-review`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${anonKey}`,
+        "apikey": anonKey,
+      },
+      body: JSON.stringify(body),
+    });
+    let data = null;
+    try { data = await res.json(); } catch { /* non-JSON */ }
+    return { ok: res.ok, status: res.status, data };
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error("runComplianceReview failed:", err);
+    return { ok: false, status: 0, data: null };
+  }
+}
+
 // Cancel a Cedar sendf2f request. Cedar accepts cancellation from any
 // non-terminal state. Reason is required; otherReason is required when
 // reason="OTHER".

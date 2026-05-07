@@ -7,7 +7,7 @@ import {
   ArrowLeft, ArrowLeftRight, Loader2, Layers, TrendingUp, Wallet, DollarSign, Mail,
   RefreshCw,
 } from "lucide-react";
-import { supabase, sendWhatsAppText, sendWhatsAppTemplate, fetchCedarRate, submitCustomerToCedar, submitRecipientToCedar, submitReceiverAccountToCedar, submitCedarTransaction, approveCedarQuote, confirmCedarDeposit, cancelCedarTransaction, uploadCedarFile } from "./lib/supabase.js";
+import { supabase, sendWhatsAppText, sendWhatsAppTemplate, fetchCedarRate, submitCustomerToCedar, submitRecipientToCedar, submitReceiverAccountToCedar, submitCedarTransaction, approveCedarQuote, confirmCedarDeposit, cancelCedarTransaction, uploadCedarFile, runComplianceReview } from "./lib/supabase.js";
 import { useAuth } from "./lib/auth.js";
 
 // ─── Editable in one place ────────────────────────────────────────────────
@@ -2738,7 +2738,7 @@ function CustomerPortal({ session, customerRows }) {
     setLoading(true);
     const { data, error } = await supabase
       .from("quotes")
-      .select("id, customer_id, amount, currency, rate, ngn_total, beneficiary, destination, status, expires_at, created_at, cedar_request_status, cedar_payout_status, cedar_business_request_id, cedar_bank_details, cedar_quote_rate, cedar_deposit_amount_minor, cedar_deposit_currency, invoice_url, invoice_uploaded_at, invoice_uploaded_by, customer_deposit_slip_url, customer_deposit_slip_uploaded_at")
+      .select("id, customer_id, amount, currency, rate, ngn_total, beneficiary, destination, status, expires_at, created_at, cedar_request_status, cedar_payout_status, cedar_business_request_id, cedar_bank_details, cedar_quote_rate, cedar_deposit_amount_minor, cedar_deposit_currency, invoice_url, invoice_uploaded_at, invoice_uploaded_by, customer_deposit_slip_url, customer_deposit_slip_uploaded_at, review_decision, review_reason, review_tier, reviewed_at")
       .eq("customer_id", activeCustomerId)
       .order("created_at", { ascending: false });
     if (error) {
@@ -3105,7 +3105,10 @@ function CustomerQuoteCard({ q, onDecide, onInvoiceUploaded }) {
       push(`Couldn't save invoice: ${error.message}`, "warn");
       return;
     }
-    push("Invoice uploaded", "success");
+    push("Invoice uploaded — running compliance check…", "success");
+    // Fire-and-forget; the realtime subscription on the parent will pick up the
+    // review_decision update when the Edge Function finishes.
+    runComplianceReview(q.id).catch(() => {});
     onInvoiceUploaded && onInvoiceUploaded();
   };
   return (
@@ -3130,14 +3133,32 @@ function CustomerQuoteCard({ q, onDecide, onInvoiceUploaded }) {
         </div>
         {/* Invoice section — required before customer can approve */}
         {hasInvoice ? (
-          <div className="rounded-lg p-3 text-xs flex items-center justify-between" style={{ background: "rgba(15,95,63,0.06)", border: "1px solid rgba(15,95,63,0.2)" }}>
-            <div className="flex items-center gap-2" style={{ color: "var(--emerald)" }}>
-              <CheckCircle2 size={14} />
-              <span className="font-medium">Invoice attached</span>
-              <span className="font-mono text-[10px]" style={{ color: "var(--muted)" }}>by {q.invoice_uploaded_by || "—"}</span>
+          <>
+            <div className="rounded-lg p-3 text-xs flex items-center justify-between" style={{ background: "rgba(15,95,63,0.06)", border: "1px solid rgba(15,95,63,0.2)" }}>
+              <div className="flex items-center gap-2" style={{ color: "var(--emerald)" }}>
+                <CheckCircle2 size={14} />
+                <span className="font-medium">Invoice attached</span>
+                <span className="font-mono text-[10px]" style={{ color: "var(--muted)" }}>by {q.invoice_uploaded_by || "—"}</span>
+              </div>
+              <a href={q.invoice_url} target="_blank" rel="noreferrer" className="font-medium underline" style={{ color: "var(--emerald)" }}>View</a>
             </div>
-            <a href={q.invoice_url} target="_blank" rel="noreferrer" className="font-medium underline" style={{ color: "var(--emerald)" }}>View</a>
-          </div>
+            {q.review_decision && (() => {
+              const d = q.review_decision.toLowerCase();
+              const styles = d === "approved"
+                ? { bg: "rgba(15,95,63,0.06)", border: "rgba(15,95,63,0.2)", color: "var(--emerald)", label: "Compliance check passed" }
+                : d === "flagged"
+                  ? { bg: "#fef3c7", border: "rgba(146,64,14,0.2)", color: "#92400e", label: "Compliance: under operator review" }
+                  : d === "rejected"
+                    ? { bg: "#fee2e2", border: "rgba(153,27,27,0.2)", color: "#991b1b", label: "Compliance check failed — contact your operator" }
+                    : { bg: "var(--bone)", border: "var(--line)", color: "var(--muted)", label: "Compliance check pending" };
+              return (
+                <div className="rounded-lg p-2.5 text-xs flex items-center gap-2" style={{ background: styles.bg, border: `1px solid ${styles.border}`, color: styles.color }}>
+                  {d === "approved" ? <CheckCircle2 size={12} /> : d === "rejected" || d === "flagged" ? <AlertTriangle size={12} /> : <Loader2 size={12} className="animate-spin" />}
+                  <span className="font-medium">{styles.label}</span>
+                </div>
+              );
+            })()}
+          </>
         ) : (
           <div className="rounded-lg p-3 space-y-2" style={{ background: "var(--bone)", border: "1px dashed var(--line)" }}>
             <p className="text-xs font-medium">Upload your supplier's invoice to approve</p>
@@ -4850,7 +4871,7 @@ function BDCTransactions() {
     setLoading(true);
     const { data, error } = await supabase
       .from("quotes")
-      .select("id, customer_name, customer_phone, customer_id, beneficiary, destination, amount, currency, rate, ngn_total, rail, status, submitted_at, created_at, markup_pct, cost_basis_ngn, recipient_id, recipient_external_account_id, cedar_business_request_id, cedar_request_status, cedar_purpose, cedar_invoice_url, cedar_last_error, cedar_request_status_updated_at, cedar_bank_details, cedar_quote_rate, cedar_deposit_amount_minor, cedar_deposit_currency, cedar_payout_status, invoice_url, invoice_uploaded_at, invoice_uploaded_by, customer_deposit_slip_url, customer_deposit_slip_uploaded_at")
+      .select("id, customer_name, customer_phone, customer_id, beneficiary, destination, amount, currency, rate, ngn_total, rail, status, submitted_at, created_at, markup_pct, cost_basis_ngn, recipient_id, recipient_external_account_id, cedar_business_request_id, cedar_request_status, cedar_purpose, cedar_invoice_url, cedar_last_error, cedar_request_status_updated_at, cedar_bank_details, cedar_quote_rate, cedar_deposit_amount_minor, cedar_deposit_currency, cedar_payout_status, invoice_url, invoice_uploaded_at, invoice_uploaded_by, customer_deposit_slip_url, customer_deposit_slip_uploaded_at, review_decision, review_reason, review_details, review_tier, reviewed_at")
       .order("created_at", { ascending: false })
       .limit(50);
     if (error) {
@@ -4893,6 +4914,11 @@ function BDCTransactions() {
         invoiceUploadedBy: q.invoice_uploaded_by,
         customerDepositSlipUrl: q.customer_deposit_slip_url,
         customerDepositSlipUploadedAt: q.customer_deposit_slip_uploaded_at,
+        reviewDecision: q.review_decision,
+        reviewReason: q.review_reason,
+        reviewDetails: q.review_details,
+        reviewTier: q.review_tier,
+        reviewedAt: q.reviewed_at,
       })));
     }
     setLoading(false);
@@ -4998,7 +5024,8 @@ function TxDrawer({ tx, onClose, onRefresh }) {
       push(`Couldn't save invoice: ${error.message}`, "warn");
       return;
     }
-    push("Invoice uploaded on customer's behalf", "success");
+    push("Invoice uploaded — running compliance check…", "success");
+    runComplianceReview(tx.dbId).catch(() => {});
     onRefresh && onRefresh();
   };
   return (
@@ -5011,6 +5038,11 @@ function TxDrawer({ tx, onClose, onRefresh }) {
           <div className="relative font-display mt-1 text-4xl font-[500] tracking-tight" style={{ color: "var(--lime)" }}>${tx.amount.toLocaleString()}</div>
           <div className="relative mt-1 font-mono text-[11px]" style={{ color: "rgba(247,245,240,0.6)" }}>{tx.customer} → {tx.dest} · via {SHOW_TRIPLE_A ? tx.rail : "partner"}</div>
         </div>
+
+        {/* Tier-aware compliance review — auto-runs after invoice upload. */}
+        {tx.dbId && tx.invoiceUrl && (
+          <ComplianceReviewPanel tx={tx} onChanged={() => onRefresh && onRefresh()} />
+        )}
 
         {/* Invoice — primary uploader is the customer (via portal); operator can upload here on customer's behalf. Required before customer can approve. */}
         {tx.dbId && (
@@ -5224,8 +5256,54 @@ function CedarSubmitPanel({ tx, onSubmitted }) {
           {tx.invoiceUrl ? "Pulled from the quote — your customer (or you) uploaded it before approval." : "Customer didn't upload an invoice. Upload here on their behalf to proceed."}
         </div>
       </Field>
+      {(() => {
+        const decision = (tx.reviewDecision || "").toLowerCase();
+        const tier = tx.reviewTier || "";
+        const requiresReview = ["verified", "documented", "pro"].includes(tier);
+        if (decision === "rejected") {
+          return (
+            <div className="rounded-lg p-3 text-xs" style={{ background: "#fee2e2", color: "#991b1b" }}>
+              <div className="flex items-start gap-2">
+                <AlertTriangle size={14} className="mt-0.5 flex-shrink-0" />
+                <div>
+                  <div className="font-semibold">Compliance review rejected</div>
+                  <p className="mt-1">{tx.reviewReason || "Hard fail in pre-screen. Resolve flagged items before resubmitting."}</p>
+                </div>
+              </div>
+            </div>
+          );
+        }
+        if (decision === "flagged") {
+          return (
+            <div className="rounded-lg p-3 text-xs" style={{ background: "#fef3c7", color: "#92400e" }}>
+              <div className="flex items-start gap-2">
+                <AlertTriangle size={14} className="mt-0.5 flex-shrink-0" />
+                <div>
+                  <div className="font-semibold">Compliance soft-flag — operator override allowed</div>
+                  <p className="mt-1">{tx.reviewReason || "Some checks raised concerns. Review the per-check breakdown above before submitting."}</p>
+                </div>
+              </div>
+            </div>
+          );
+        }
+        if (!decision && requiresReview) {
+          return (
+            <div className="rounded-lg p-3 text-xs" style={{ background: "var(--bone)", color: "var(--muted)" }}>
+              Compliance review hasn't run yet. The {tier} tier requires it before submitting to our payment partner. Upload the invoice (above) or click Re-run on the Compliance review panel.
+            </div>
+          );
+        }
+        return null;
+      })()}
       <div className="flex justify-end pt-1">
-        <PrimaryBtn onClick={submit} disabled={!canSubmit}>
+        <PrimaryBtn
+          onClick={submit}
+          disabled={
+            !canSubmit ||
+            (tx.reviewDecision || "").toLowerCase() === "rejected" ||
+            (!tx.reviewDecision && ["verified", "documented", "pro"].includes(tx.reviewTier || ""))
+          }
+        >
           {submitting ? <><Loader2 size={12} className="animate-spin" /> Submitting…</> : <><Send size={12} /> Submit to Cedar</>}
         </PrimaryBtn>
       </div>
@@ -5456,6 +5534,80 @@ function KvLine({ k, v, highlight }) {
     <div className="flex items-baseline justify-between gap-3">
       <span className="font-mono text-[10px] flex-shrink-0" style={{ color: "rgba(247,245,240,0.5)" }}>{k}</span>
       <span className={`font-mono text-right break-all ${highlight ? "font-semibold" : ""}`} style={{ color: highlight ? "var(--lime)" : "var(--bone)" }}>{v}</span>
+    </div>
+  );
+}
+
+// Tier display label for the compliance review panel.
+const COMPLIANCE_TIER_LABELS = {
+  basic: "Basic",
+  standard: "Standard",
+  verified: "Verified",
+  documented: "Documented",
+  pro: "Compliance Pro",
+};
+
+function ComplianceReviewPanel({ tx, onChanged }) {
+  const { push } = useToast();
+  const [running, setRunning] = useState(false);
+
+  const decision = (tx.reviewDecision || "").toLowerCase();
+  const tier = tx.reviewTier || "verified";
+  const checks = (tx.reviewDetails && tx.reviewDetails.checks) || [];
+
+  const decisionPill = decision === "approved"
+    ? { label: "Approved", bg: "var(--emerald)", color: "var(--lime)" }
+    : decision === "flagged"
+      ? { label: "Flagged", bg: "#fef3c7", color: "#92400e" }
+      : decision === "rejected"
+        ? { label: "Rejected", bg: "#fee2e2", color: "#991b1b" }
+        : { label: "Pending", bg: "#f3f4f6", color: "#6b7280" };
+
+  const reRun = async () => {
+    if (!tx.dbId || running) return;
+    setRunning(true);
+    const { ok, data } = await runComplianceReview(tx.dbId);
+    setRunning(false);
+    if (ok) {
+      push(`Compliance review: ${data?.decision || "ran"}`, "success");
+      onChanged && onChanged();
+    } else {
+      push("Couldn't run compliance review", "warn");
+    }
+  };
+
+  return (
+    <div>
+      <Label>Compliance review</Label>
+      <div className="rounded-xl p-4 text-xs space-y-2" style={{ background: "var(--bone)", border: "1px solid var(--line)" }}>
+        <div className="flex items-baseline justify-between gap-2 flex-wrap">
+          <div className="flex items-baseline gap-2">
+            <span style={{ color: "var(--muted)" }}>Tier</span>
+            <span className="rounded-full px-2 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-wider" style={{ background: "var(--bone-2)", color: "var(--ink)" }}>{COMPLIANCE_TIER_LABELS[tier] || tier}</span>
+          </div>
+          <span className="rounded-full px-2 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-wider" style={{ background: decisionPill.bg, color: decisionPill.color }}>{decisionPill.label}</span>
+        </div>
+        {tx.reviewReason && (
+          <div className="text-[11px]" style={{ color: "var(--muted)" }}>{tx.reviewReason}</div>
+        )}
+        {checks.length > 0 && (
+          <ul className="space-y-1 pt-2" style={{ borderTop: "1px solid var(--line)" }}>
+            {checks.map((c) => (
+              <li key={c.id} className="flex items-baseline gap-2 font-mono text-[10px]">
+                {c.pass ? <CheckCircle2 size={11} style={{ color: "var(--emerald)" }} /> : <AlertTriangle size={11} style={{ color: c.severity === "hard" ? "#991b1b" : "#92400e" }} />}
+                <span className={c.pass ? "" : "font-semibold"} style={{ color: c.pass ? "var(--ink)" : (c.severity === "hard" ? "#991b1b" : "#92400e") }}>{c.id}</span>
+                <span style={{ color: "var(--muted)" }}>· {c.detail}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+        <div className="flex justify-between items-center pt-2" style={{ borderTop: "1px solid var(--line)" }}>
+          <span className="font-mono text-[10px]" style={{ color: "var(--muted)" }}>{tx.reviewedAt ? `Last run ${relativeTime(tx.reviewedAt)}` : "Not yet run"}</span>
+          <SecondaryBtn onClick={reRun} disabled={running}>
+            {running ? <><Loader2 size={11} className="animate-spin" /> Running…</> : <><RefreshCw size={11} /> Re-run</>}
+          </SecondaryBtn>
+        </div>
+      </div>
     </div>
   );
 }
