@@ -2738,7 +2738,7 @@ function CustomerPortal({ session, customerRows }) {
     setLoading(true);
     const { data, error } = await supabase
       .from("quotes")
-      .select("id, customer_id, amount, currency, rate, ngn_total, beneficiary, destination, status, expires_at, created_at, cedar_request_status, cedar_payout_status, cedar_business_request_id")
+      .select("id, customer_id, amount, currency, rate, ngn_total, beneficiary, destination, status, expires_at, created_at, cedar_request_status, cedar_payout_status, cedar_business_request_id, cedar_bank_details, cedar_quote_rate, cedar_deposit_amount_minor, cedar_deposit_currency")
       .eq("customer_id", activeCustomerId)
       .order("created_at", { ascending: false });
     if (error) {
@@ -2788,8 +2788,20 @@ function CustomerPortal({ session, customerRows }) {
     );
   }
 
+  // Three buckets for customer-friendly grouping:
+  //   open       = waiting for customer's approve/decline
+  //   inProgress = approved + payment-partner lifecycle active (any non-terminal cedar state, or approved without cedar yet)
+  //   past       = terminal states (completed, declined, expired, cancelled, etc.)
+  const isCedarTerminal = (cs) => {
+    const s = (cs || "").toUpperCase();
+    return s.includes("COMPLETED") || s.includes("CANCELED") || s.includes("CANCELLED") || s.includes("EXPIRED");
+  };
   const openQuotes = quotes.filter((q) => q.status === "pending_approval");
-  const recentQuotes = quotes.filter((q) => q.status !== "pending_approval");
+  const inProgressQuotes = quotes.filter((q) => q.status === "customer_approved" && !isCedarTerminal(q.cedar_request_status));
+  const pastQuotes = quotes.filter((q) =>
+    q.status !== "pending_approval" &&
+    !(q.status === "customer_approved" && !isCedarTerminal(q.cedar_request_status))
+  );
 
   return (
     <div className="mx-auto max-w-5xl px-4 py-10 sm:px-6 lg:px-8 lg:py-14">
@@ -2834,9 +2846,20 @@ function CustomerPortal({ session, customerRows }) {
         </div>
       </section>
 
-      {recentQuotes.length > 0 && (
+      {inProgressQuotes.length > 0 && (
+        <section className="mb-10 rise" style={{ animationDelay: "0.08s" }}>
+          <h2 className="font-display text-xl font-semibold mb-4">
+            {inProgressQuotes.length} in progress
+          </h2>
+          <div className="space-y-3">
+            {inProgressQuotes.map((q) => <CustomerTransactionCard key={q.id} q={q} />)}
+          </div>
+        </section>
+      )}
+
+      {pastQuotes.length > 0 && (
         <section className="rise" style={{ animationDelay: "0.1s" }}>
-          <h2 className="font-display text-xl font-semibold mb-4">Recent quotes</h2>
+          <h2 className="font-display text-xl font-semibold mb-4">Past activity</h2>
           <Card padding="none">
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
@@ -2846,7 +2869,7 @@ function CustomerPortal({ session, customerRows }) {
                   ))}
                 </tr></thead>
                 <tbody>
-                  {recentQuotes.map((q) => {
+                  {pastQuotes.map((q) => {
                     const pill = customerQuoteStatusPill(q.status, q.cedar_request_status);
                     return (
                       <tr key={q.id} style={{ borderBottom: "1px solid var(--line)" }}>
@@ -2880,6 +2903,87 @@ function customerQuoteStatusPill(status, cedarStatus) {
   if (status === "expired") return { label: "Expired", bg: "#f3f4f6", color: "#6b7280" };
   if (status === "cancelled" || status === "canceled") return { label: "Cancelled", bg: "#fee2e2", color: "#991b1b" };
   return { label: "Pending", bg: "#fef3c7", color: "#92400e" };
+}
+
+// Renders an in-progress transaction (post-approval) on the customer side.
+// Mirrors the operator's Cedar lifecycle panel but read-only and customer-
+// facing — uses generic "payment partner" language (per the project memory:
+// neither XaeccoX nor Cedar are named on customer surfaces).
+function CustomerTransactionCard({ q }) {
+  const cs = (q.cedar_request_status || "").toUpperCase();
+  const isPending = !q.cedar_business_request_id || cs.includes("PENDING") && !cs.includes("AWAITING");
+  const isAwaitingQuoteApproval = cs.includes("AWAITING_QUOTE_APPROVAL");
+  const isAwaitingDeposit = cs.includes("AWAITING_DEPOSIT");
+  const isInProgress = cs.includes("IN_PROGRESS");
+  const hasBankDetails = !!q.cedar_bank_details && Object.keys(q.cedar_bank_details || {}).length > 0;
+  const bd = q.cedar_bank_details || {};
+  const depositMajor = q.cedar_deposit_amount_minor != null ? (q.cedar_deposit_amount_minor / 100) : null;
+  const depositCcy = q.cedar_deposit_currency || "NGN";
+
+  let stage; let detail;
+  if (isAwaitingDeposit && hasBankDetails) {
+    stage = { label: "Awaiting your deposit", bg: "var(--lime)", color: "var(--ink)" };
+    detail = "Send the locked NGN amount below to the bank account shown. Once received, your payout starts automatically.";
+  } else if (isInProgress) {
+    stage = { label: "Sending your funds", bg: "rgba(15,95,63,0.10)", color: "var(--emerald)" };
+    detail = "We've received your deposit. Funds are now being sent to the recipient. This typically lands within a few hours.";
+  } else if (isAwaitingQuoteApproval || (isPending && q.cedar_business_request_id)) {
+    stage = { label: "Preparing", bg: "#fef3c7", color: "#92400e" };
+    detail = "Your operator is finalizing the quote with our payment partner. We'll show deposit instructions here once ready.";
+  } else {
+    stage = { label: "Submitted", bg: "#fef3c7", color: "#92400e" };
+    detail = "Your approved quote was sent to our payment partner. Deposit instructions will appear here shortly.";
+  }
+
+  return (
+    <Card>
+      <div className="space-y-3">
+        <div className="flex items-baseline justify-between gap-3">
+          <div className="font-mono text-xs" style={{ color: "var(--muted)" }}>QU-{q.id.slice(0, 4).toUpperCase()}</div>
+          <span className="rounded-full px-2 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-wider" style={{ background: stage.bg, color: stage.color }}>{stage.label}</span>
+        </div>
+        <div>
+          <div className="font-display text-2xl font-[500]">${parseFloat(q.amount).toLocaleString()} <span className="text-base font-mono" style={{ color: "var(--muted)" }}>{q.currency}</span> → {q.beneficiary || q.destination || "recipient"}</div>
+        </div>
+        <p className="text-sm" style={{ color: "var(--muted)" }}>{detail}</p>
+
+        {hasBankDetails && isAwaitingDeposit && (
+          <div className="rounded-xl p-4 text-xs space-y-2" style={{ background: "var(--ink)", color: "var(--bone)" }}>
+            <div className="font-mono text-[10px] uppercase tracking-wider" style={{ color: "rgba(247,245,240,0.5)" }}>Deposit instructions</div>
+            {depositMajor != null && (
+              <div>
+                <div className="font-mono text-[10px]" style={{ color: "rgba(247,245,240,0.5)" }}>Pay this amount</div>
+                <div className="font-display text-2xl font-[500]" style={{ color: "var(--lime)" }}>{depositCcy} {Math.round(depositMajor).toLocaleString()}</div>
+              </div>
+            )}
+            <div className="space-y-1 pt-2" style={{ borderTop: "1px solid rgba(247,245,240,0.15)" }}>
+              {bd.bankName && <KvLine k="Bank" v={bd.bankName} />}
+              {(bd.nameOnAccount || bd.accountHolderName) && <KvLine k="Name on account" v={bd.nameOnAccount || bd.accountHolderName} />}
+              {bd.accountNumber && <KvLine k="Account number" v={bd.accountNumber} />}
+              {bd.bankAddress && <KvLine k="Bank address" v={bd.bankAddress} />}
+              {bd.reference && <KvLine k="Reference" v={bd.reference} highlight />}
+              {bd.swiftCode && <KvLine k="SWIFT" v={bd.swiftCode} />}
+              {bd.iban && <KvLine k="IBAN" v={bd.iban} />}
+            </div>
+            {bd.reference && (
+              <p className="text-[10px] pt-2" style={{ color: "rgba(247,245,240,0.65)" }}>
+                Important: include the reference <strong style={{ color: "var(--lime)" }}>{bd.reference}</strong> in your transfer narration. Once your operator confirms receipt, your payout will start.
+              </p>
+            )}
+          </div>
+        )}
+
+        {isInProgress && (
+          <div className="rounded-xl p-3 text-xs" style={{ background: "var(--bone)", border: "1px solid var(--line)" }}>
+            <div className="flex items-baseline justify-between">
+              <span style={{ color: "var(--muted)" }}>Payout reference</span>
+              <span className="font-mono font-semibold">{q.cedar_business_request_id}</span>
+            </div>
+          </div>
+        )}
+      </div>
+    </Card>
+  );
 }
 
 function CustomerQuoteCard({ q, onDecide }) {
