@@ -2824,6 +2824,38 @@ function CustomerPortal({ session, customerRows }) {
         )}
       </div>
 
+      {/* Profile + KYC mini-card. Read-only — to update info, customer contacts their operator. */}
+      <section className="mb-8 rise" style={{ animationDelay: "0.04s" }}>
+        <Card>
+          <div className="grid gap-4 sm:grid-cols-3">
+            <div>
+              <div className="font-mono text-[10px] uppercase tracking-wider" style={{ color: "var(--muted)" }}>Account</div>
+              <div className="mt-1 text-sm font-medium">{activeCustomer?.name || "—"}</div>
+              <div className="font-mono text-[10px] mt-0.5" style={{ color: "var(--muted)" }}>{activeCustomer?.email || session.email}</div>
+              {activeCustomer?.phone && <div className="font-mono text-[10px]" style={{ color: "var(--muted)" }}>{activeCustomer.phone}</div>}
+            </div>
+            <div>
+              <div className="font-mono text-[10px] uppercase tracking-wider" style={{ color: "var(--muted)" }}>KYC status</div>
+              <div className="mt-1.5">
+                {(() => {
+                  const k = kycStatusLabel(activeCustomer?.cedar_kyc_status || activeCustomer?.kyc_status);
+                  return <span className="rounded-full px-2 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-wider" style={{ background: k.bg, color: k.color }}>{k.label}</span>;
+                })()}
+              </div>
+              <div className="font-mono text-[10px] mt-1" style={{ color: "var(--muted)" }}>Tier {activeCustomer?.kyc_tier ?? 0}</div>
+            </div>
+            <div>
+              <div className="font-mono text-[10px] uppercase tracking-wider" style={{ color: "var(--muted)" }}>Customer type</div>
+              <div className="mt-1 text-sm">{activeCustomer?.type || "—"}</div>
+              <div className="font-mono text-[10px] mt-1" style={{ color: "var(--muted)" }}>Joined {relativeTime(activeCustomer?.created_at)}</div>
+            </div>
+          </div>
+          <p className="mt-4 pt-3 text-xs" style={{ color: "var(--muted)", borderTop: "1px solid var(--line)" }}>
+            To update your info or upload additional documents, message your operator on WhatsApp or in person.
+          </p>
+        </Card>
+      </section>
+
       <section className="mb-10 rise" style={{ animationDelay: "0.05s" }}>
         <div className="flex items-baseline justify-between mb-4">
           <h2 className="font-display text-xl font-semibold">
@@ -6356,6 +6388,14 @@ function AddCustomerModal({ open, onClose, onAdded, onAddLocal }) {
               <li>5. You get notified to start quoting</li>
             </ol>
           </div>
+          {data.email && (
+            <div className="rounded-xl p-4 max-w-md mx-auto mb-6 text-left" style={{ background: "rgba(15,95,63,0.06)", border: "1px solid rgba(15,95,63,0.2)" }}>
+              <div className="text-xs font-mono uppercase tracking-wider mb-1.5" style={{ color: "var(--emerald)" }}>Customer portal access</div>
+              <p className="text-xs" style={{ color: "var(--ink)" }}>
+                Tell {data.name || "your customer"} they can sign in at <strong>xaepay.com</strong> using <span className="font-mono">{data.email}</span> to view their quotes, deposit instructions, and transaction status anytime.
+              </p>
+            </div>
+          )}
           <PrimaryBtn onClick={closeAndReset}>Done</PrimaryBtn>
         </div>
       )}
