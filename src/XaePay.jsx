@@ -761,6 +761,17 @@ function TopBar({ view, setView, mobileOpen, setMobileOpen, onSignIn, onRequestA
             {authUser ? (
               <>
                 {onLanding && <button onClick={() => setView("bdc")} className="rounded-lg px-3 py-1.5 text-sm font-medium transition" style={{ color: "var(--bone)" }}>Dashboard</button>}
+                {!onLanding && (view === "bdc" || view === "customer-portal") && (
+                  <button
+                    onClick={() => setView(view === "bdc" ? "customer-portal" : "bdc")}
+                    className="rounded-lg px-3 py-1.5 text-sm font-medium transition inline-flex items-center gap-1.5"
+                    style={{ background: "var(--bone-2)", color: "var(--ink)" }}
+                    title={view === "bdc" ? "Switch to your customer view" : "Switch back to operator dashboard"}
+                  >
+                    <ArrowLeftRight size={12} />
+                    {view === "bdc" ? "Customer view" : "Operator view"}
+                  </button>
+                )}
                 <span className="hidden lg:inline font-mono text-[10px] uppercase tracking-wider truncate max-w-[200px]" style={{ color: onLanding ? "rgba(247,245,240,0.6)" : "var(--muted)" }} title={authUser.email}>{authUser.email}</span>
                 <button onClick={onSignOut} className="rounded-lg px-3 py-1.5 text-sm font-medium transition" style={{ color: onLanding ? "var(--bone)" : "var(--ink)" }}>Sign out</button>
               </>
@@ -778,6 +789,16 @@ function TopBar({ view, setView, mobileOpen, setMobileOpen, onSignIn, onRequestA
             {authUser ? (
               <div className="flex flex-col gap-2">
                 {onLanding && <button onClick={() => { setView("bdc"); setMobileOpen(false); }} className="w-full rounded-lg px-4 py-2.5 text-sm font-medium" style={{ background: "var(--lime)", color: "var(--ink)" }}>Open dashboard</button>}
+                {!onLanding && (view === "bdc" || view === "customer-portal") && (
+                  <button
+                    onClick={() => { setView(view === "bdc" ? "customer-portal" : "bdc"); setMobileOpen(false); }}
+                    className="w-full rounded-lg px-4 py-2.5 text-sm font-medium inline-flex items-center justify-center gap-1.5"
+                    style={{ background: "var(--bone-2)", color: "var(--ink)" }}
+                  >
+                    <ArrowLeftRight size={12} />
+                    {view === "bdc" ? "Customer view" : "Operator view"}
+                  </button>
+                )}
                 <button onClick={() => { onSignOut(); setMobileOpen(false); }} className="w-full rounded-lg px-4 py-3 text-left text-sm font-medium" style={{ color: onLanding ? "var(--bone)" : "var(--ink)" }}>Sign out · {authUser.email}</button>
               </div>
             ) : (
