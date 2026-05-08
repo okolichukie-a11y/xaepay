@@ -245,6 +245,42 @@ export async function uploadCedarFile(file, category = "misc") {
   return { ok: true, url: data.publicUrl, path };
 }
 
+// Sanitize a URL before using it in <a href>. Rejects javascript:, data:,
+// vbscript: and anything that doesn't start with http(s)/mailto/relative path.
+// Operators paste URLs into invoice_url / deposit_slip_url etc. — without this
+// a malicious operator (or compromised account) could XSS another operator
+// who clicks the rendered link in TxDrawer / Compliance panel.
+export function safeUrl(value) {
+  if (!value || typeof value !== "string") return "#";
+  const trimmed = value.trim();
+  const lower = trimmed.toLowerCase();
+  if (lower.startsWith("javascript:") || lower.startsWith("data:") || lower.startsWith("vbscript:") || lower.startsWith("file:")) return "#";
+  if (lower.startsWith("http://") || lower.startsWith("https://") || lower.startsWith("mailto:") || lower.startsWith("/")) return trimmed;
+  return "#";
+}
+
+// Insert a row into audit_events. Fire-and-forget — never blocks operator
+// flow. Used on every action that touches money or compliance: submit-to-cedar,
+// approve quote, confirm deposit, cancel transaction, override compliance.
+export async function logAuditEvent(action, entityType, entityId, metadata = {}) {
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+    await supabase.from("audit_events").insert({
+      user_id: user.id,
+      user_email: user.email || null,
+      action,
+      entity_type: entityType,
+      entity_id: entityId,
+      metadata: metadata || null,
+      user_agent: typeof navigator !== "undefined" ? navigator.userAgent.slice(0, 500) : null,
+    });
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error("logAuditEvent failed (non-blocking):", err);
+  }
+}
+
 // Send an email via the send-email Edge Function (which forwards to Resend).
 // Caller passes { to, subject, html?, text?, replyTo? }. Returns { ok, status, data }.
 // Used for customer-facing quote notifications + deposit instructions, and

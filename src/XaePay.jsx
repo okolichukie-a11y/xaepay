@@ -7,7 +7,7 @@ import {
   ArrowLeft, ArrowLeftRight, Loader2, Layers, TrendingUp, Wallet, DollarSign, Mail,
   RefreshCw,
 } from "lucide-react";
-import { supabase, sendWhatsAppText, sendWhatsAppTemplate, fetchCedarRate, submitCustomerToCedar, submitRecipientToCedar, submitReceiverAccountToCedar, submitCedarTransaction, approveCedarQuote, confirmCedarDeposit, cancelCedarTransaction, uploadCedarFile, runComplianceReview, sendEmail } from "./lib/supabase.js";
+import { supabase, sendWhatsAppText, sendWhatsAppTemplate, fetchCedarRate, submitCustomerToCedar, submitRecipientToCedar, submitReceiverAccountToCedar, submitCedarTransaction, approveCedarQuote, confirmCedarDeposit, cancelCedarTransaction, uploadCedarFile, runComplianceReview, sendEmail, safeUrl, logAuditEvent } from "./lib/supabase.js";
 import { useAuth } from "./lib/auth.js";
 
 // ─── Editable in one place ────────────────────────────────────────────────
@@ -3027,7 +3027,7 @@ function CustomerTransactionCard({ q, onSlipUploaded }) {
         {q.invoice_url && (
           <div className="rounded-lg p-2.5 text-xs flex items-center justify-between" style={{ background: "var(--bone)", border: "1px solid var(--line)" }}>
             <span style={{ color: "var(--muted)" }}>Invoice on file</span>
-            <a href={q.invoice_url} target="_blank" rel="noreferrer" className="font-medium underline" style={{ color: "var(--emerald)" }}>View</a>
+            <a href={safeUrl(q.invoice_url)} target="_blank" rel="noreferrer" className="font-medium underline" style={{ color: "var(--emerald)" }}>View</a>
           </div>
         )}
 
@@ -3064,7 +3064,7 @@ function CustomerTransactionCard({ q, onSlipUploaded }) {
                 <CheckCircle2 size={14} />
                 <span className="font-medium">Slip uploaded — awaiting operator confirmation</span>
               </div>
-              <a href={q.customer_deposit_slip_url} target="_blank" rel="noreferrer" className="font-medium underline" style={{ color: "var(--emerald)" }}>View</a>
+              <a href={safeUrl(q.customer_deposit_slip_url)} target="_blank" rel="noreferrer" className="font-medium underline" style={{ color: "var(--emerald)" }}>View</a>
             </div>
           ) : (
             <div className="rounded-lg p-3 space-y-2" style={{ background: "var(--bone)", border: "1px dashed var(--line)" }}>
@@ -3161,7 +3161,7 @@ function CustomerQuoteCard({ q, onDecide, onInvoiceUploaded }) {
                 <span className="font-medium">Invoice attached</span>
                 <span className="font-mono text-[10px]" style={{ color: "var(--muted)" }}>by {q.invoice_uploaded_by || "—"}</span>
               </div>
-              <a href={q.invoice_url} target="_blank" rel="noreferrer" className="font-medium underline" style={{ color: "var(--emerald)" }}>View</a>
+              <a href={safeUrl(q.invoice_url)} target="_blank" rel="noreferrer" className="font-medium underline" style={{ color: "var(--emerald)" }}>View</a>
             </div>
             {q.review_decision && (() => {
               const d = q.review_decision.toLowerCase();
@@ -5125,7 +5125,7 @@ function TxDrawer({ tx, onClose, onRefresh }) {
                   <span className="font-medium">Attached by {tx.invoiceUploadedBy || "—"}</span>
                   {tx.invoiceUploadedAt && <span className="font-mono text-[10px]" style={{ color: "var(--muted)" }}>{relativeTime(tx.invoiceUploadedAt)}</span>}
                 </div>
-                <a href={tx.invoiceUrl} target="_blank" rel="noreferrer" className="font-medium underline" style={{ color: "var(--emerald)" }}>View</a>
+                <a href={safeUrl(tx.invoiceUrl)} target="_blank" rel="noreferrer" className="font-medium underline" style={{ color: "var(--emerald)" }}>View</a>
               </div>
             ) : (
               <div className="rounded-xl p-3 space-y-2" style={{ background: "var(--bone)", border: "1px dashed var(--line)" }}>
@@ -5176,7 +5176,7 @@ function TxDrawer({ tx, onClose, onRefresh }) {
                   </div>
                   <div className="flex items-baseline justify-between font-mono"><span style={{ color: "var(--muted)" }}>Cedar request ID</span><span className="font-semibold">{tx.cedarBusinessRequestId}</span></div>
                   <div className="flex items-baseline justify-between font-mono"><span style={{ color: "var(--muted)" }}>Purpose</span><span className="font-semibold">{tx.cedarPurpose || "—"}</span></div>
-                  {tx.cedarInvoiceUrl && <div className="font-mono break-all" style={{ color: "var(--muted)" }}>Invoice: <a href={tx.cedarInvoiceUrl} target="_blank" rel="noreferrer" className="underline" style={{ color: "var(--emerald)" }}>{tx.cedarInvoiceUrl.slice(0, 40)}…</a></div>}
+                  {tx.cedarInvoiceUrl && <div className="font-mono break-all" style={{ color: "var(--muted)" }}>Invoice: <a href={safeUrl(tx.cedarInvoiceUrl)} target="_blank" rel="noreferrer" className="underline" style={{ color: "var(--emerald)" }}>{tx.cedarInvoiceUrl.slice(0, 40)}…</a></div>}
                   {tx.cedarLastError && <div className="font-mono break-words" style={{ color: "#991b1b" }}>{tx.cedarLastError}</div>}
                 </div>
                 <CedarApprovalSection tx={tx} onChanged={() => { onRefresh && onRefresh(); }} />
@@ -5269,6 +5269,15 @@ function CedarSubmitPanel({ tx, onSubmitted }) {
     setSubmitting(false);
     if (ok && data?.cedar_business_request_id) {
       push(`Submitted to Cedar — request id ${data.cedar_business_request_id}`, "success");
+      logAuditEvent("submit_to_cedar", "quote", tx.dbId, {
+        cedarBusinessRequestId: data.cedar_business_request_id,
+        customerId,
+        recipientExternalAccountId: accountId,
+        purpose,
+        reviewDecision: decision,
+        overrideUsed: decision === "rejected" || decision === "flagged",
+        overrideReason: overrideReason || null,
+      });
       onSubmitted && onSubmitted();
     } else {
       const detail = data?.cedar?.exception?.message || data?.error || "see console";
@@ -5329,7 +5338,7 @@ function CedarSubmitPanel({ tx, onSubmitted }) {
               <CheckCircle2 size={12} />
               <span className="font-medium">Invoice attached by {tx.invoiceUploadedBy || "—"}</span>
             </div>
-            <a href={tx.invoiceUrl} target="_blank" rel="noreferrer" className="font-medium underline" style={{ color: "var(--emerald)" }}>View</a>
+            <a href={safeUrl(tx.invoiceUrl)} target="_blank" rel="noreferrer" className="font-medium underline" style={{ color: "var(--emerald)" }}>View</a>
           </div>
         ) : (
           <FileUploadField category="invoices" value={invoiceUrl} onChange={setInvoiceUrl} />
@@ -5472,6 +5481,11 @@ function CedarApprovalSection({ tx, onChanged }) {
     setCanceling(false);
     if (ok) {
       push("Transaction canceled with Cedar", "success");
+      logAuditEvent("cancel_cedar_transaction", "quote", tx.dbId, {
+        cedarBusinessRequestId: tx.cedarBusinessRequestId,
+        reason: cancelReason,
+        otherReason: cancelReason === "OTHER" ? cancelOther.trim() : null,
+      });
       setCancelOpen(false);
       setCancelOther("");
       onChanged && onChanged();
@@ -5490,6 +5504,11 @@ function CedarApprovalSection({ tx, onChanged }) {
     setApproving(false);
     if (ok && data?.cedar_bank_details) {
       push("Quote approved — deposit instructions ready", "success");
+      logAuditEvent("approve_cedar_quote", "quote", tx.dbId, {
+        cedarBusinessRequestId: tx.cedarBusinessRequestId,
+        depositCurrency: data.cedar_deposit_currency || null,
+        depositAmount: data.cedar_deposit_amount ?? null,
+      });
       // Fire deposit-instructions email to the customer (Meta-independent).
       // Look up customer email; safe to fire-and-forget.
       if (tx.customerId) {
@@ -5559,6 +5578,10 @@ function CedarApprovalSection({ tx, onChanged }) {
     setConfirmingDeposit(false);
     if (ok) {
       push("Deposit confirmed — Cedar is processing payout", "success");
+      logAuditEvent("confirm_deposit", "quote", tx.dbId, {
+        cedarBusinessRequestId: tx.cedarBusinessRequestId,
+        slipFromCustomer: !!tx.customerDepositSlipUrl,
+      });
       setDepositSlipUrl("");
       onChanged && onChanged();
     } else {
@@ -5660,7 +5683,7 @@ function CedarApprovalSection({ tx, onChanged }) {
                 <CheckCircle2 size={12} />
                 <span className="font-medium">Customer uploaded slip — review &amp; confirm</span>
               </div>
-              <a href={tx.customerDepositSlipUrl} target="_blank" rel="noreferrer" className="font-medium underline" style={{ color: "var(--emerald)" }}>View</a>
+              <a href={safeUrl(tx.customerDepositSlipUrl)} target="_blank" rel="noreferrer" className="font-medium underline" style={{ color: "var(--emerald)" }}>View</a>
             </div>
           ) : (
             <p className="text-xs" style={{ color: "var(--muted)" }}>Once your customer deposits the NGN amount above, upload the bank slip below — or wait for them to upload it from their portal — and confirm. Our payment partner will then start the {tx.currency} payout to the recipient.</p>
@@ -5822,7 +5845,7 @@ function FileUploadField({ category, value, onChange, accept = "image/*,applicat
       {uploading && <div className="font-mono text-[10px]" style={{ color: "var(--muted)" }}>Uploading…</div>}
       {value && !uploading && (
         <div className="font-mono text-[10px]" style={{ color: "var(--muted)" }}>
-          ✓ {filename || "uploaded"} · <a href={value} target="_blank" rel="noreferrer" className="underline" style={{ color: "var(--emerald)" }}>view</a>
+          ✓ {filename || "uploaded"} · <a href={safeUrl(value)} target="_blank" rel="noreferrer" className="underline" style={{ color: "var(--emerald)" }}>view</a>
         </div>
       )}
     </div>
