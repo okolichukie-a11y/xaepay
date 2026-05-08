@@ -3902,25 +3902,34 @@ function OperatorQuoteModal({ open, onClose, onCreated }) {
     const displayRef = `QU-${quoteRow.id.slice(0, 4).toUpperCase()}`;
     setCreatedRef(displayRef);
 
-    // Always open wa.me with the rich quote message — this is the actual delivery
-    // path until we have a custom Meta-approved template (e.g. quote_notification)
-    // that can carry the quote info as variables. The operator hits send manually.
-    const message = buildMessage(displayRef, quoteRow.id, false);
-    window.open(`https://wa.me/${phoneDigits}?text=${message}`, "_blank");
-
-    // In parallel, fire a `hello_world` template ping via the Cloud API. This is
-    // purely a pipeline-verification step right now — Meta's test number can ONLY
-    // send pre-approved templates, and hello_world is the default. When a custom
-    // template lands (1-3 day Meta review), swap "hello_world" for that name and
-    // add a `components` array with the quote variables, then drop the wa.me line
-    // above and Cloud API does end-to-end delivery on its own.
-    sendWhatsAppTemplate(phoneDigits, "hello_world", "en_US").then((tmplRes) => {
+    // Send via the Meta-approved `quote_notification` template through the Cloud API
+    // (sends from XaePay's brand number directly to the customer — no operator action).
+    // If Cloud API fails for any reason, fall back to opening wa.me on the operator's
+    // device so they can hand-deliver via their own WhatsApp.
+    const approvalUrlForWa = `${window.location.origin}/?quote=${quoteRow.id}`;
+    const components = [
+      {
+        type: "body",
+        parameters: [
+          { type: "text", text: data.customerName || "there" },
+          { type: "text", text: displayRef },
+          { type: "text", text: `$${amount.toLocaleString()} ${data.currency}` },
+          { type: "text", text: `₦${customerRate.toFixed(2)}/$` },
+          { type: "text", text: approvalUrlForWa },
+        ],
+      },
+    ];
+    sendWhatsAppTemplate(phoneDigits, "quote_notification", "en", components).then((tmplRes) => {
       // eslint-disable-next-line no-console
-      console.log("WhatsApp template ping:", tmplRes);
+      console.log("WhatsApp quote_notification:", tmplRes);
       if (tmplRes.ok) {
-        push(`Quote ${displayRef} sent · WhatsApp opened · pipeline verified`, "success");
+        push(`Quote ${displayRef} sent on WhatsApp`, "success");
       } else {
-        push(`Quote ${displayRef} sent · WhatsApp opened (template ping failed — see console)`, "info");
+        // Fallback: open wa.me with the rich message so operator can manually deliver.
+        const message = buildMessage(displayRef, quoteRow.id, false);
+        window.open(`https://wa.me/${phoneDigits}?text=${message}`, "_blank");
+        const reason = tmplRes.data?.error?.message || tmplRes.data?.error || `HTTP ${tmplRes.status}`;
+        push(`Quote ${displayRef} · WhatsApp opened (Cloud API failed: ${reason})`, "warn");
       }
     });
 
