@@ -7,7 +7,7 @@ import {
   ArrowLeft, ArrowLeftRight, Loader2, Layers, TrendingUp, Wallet, DollarSign, Mail,
   RefreshCw,
 } from "lucide-react";
-import { supabase, sendWhatsAppText, sendWhatsAppTemplate, fetchCedarRate, submitCustomerToCedar, submitRecipientToCedar, submitReceiverAccountToCedar, submitCedarTransaction, approveCedarQuote, confirmCedarDeposit, cancelCedarTransaction, uploadCedarFile, runComplianceReview, sendEmail, safeUrl, logAuditEvent } from "./lib/supabase.js";
+import { supabase, sendWhatsAppText, sendWhatsAppTemplate, fetchCedarRate, submitCustomerToCedar, submitRecipientToCedar, submitReceiverAccountToCedar, submitCedarTransaction, approveCedarQuote, confirmCedarDeposit, cancelCedarTransaction, uploadCedarFile, uploadFileBoth, runComplianceReview, sendEmail, safeUrl, logAuditEvent } from "./lib/supabase.js";
 import { generateQuotePdf, uploadQuotePdf, downloadQuotePdf } from "./lib/pdf.js";
 import { useAuth } from "./lib/auth.js";
 
@@ -5128,23 +5128,31 @@ function TxDrawer({ tx, onClose, onRefresh }) {
   const uploadInvoiceForCustomer = async (file) => {
     if (!file || !tx.dbId) return;
     setUploadingInvoice(true);
-    const result = await uploadCedarFile(file, "invoices");
-    if (!result.ok) {
+    const both = await uploadFileBoth(file, "invoices");
+    if (!both.supabaseUrl && !both.cedarUrl) {
       setUploadingInvoice(false);
-      push(`Upload failed: ${result.error}`, "warn");
+      push(`Upload failed: ${both.storageError || both.cedarError || "unknown"}`, "warn");
       return;
     }
-    const { error } = await supabase.from("quotes").update({
-      invoice_url: result.url,
+    const patch = {
       invoice_uploaded_at: new Date().toISOString(),
       invoice_uploaded_by: "operator",
-    }).eq("id", tx.dbId);
+    };
+    if (both.supabaseUrl) patch.invoice_url = both.supabaseUrl;
+    if (both.cedarUrl) patch.cedar_invoice_url = both.cedarUrl;
+    const { error } = await supabase.from("quotes").update(patch).eq("id", tx.dbId);
     setUploadingInvoice(false);
     if (error) {
       push(`Couldn't save invoice: ${error.message}`, "warn");
       return;
     }
-    push("Invoice uploaded — running compliance check…", "success");
+    if (both.supabaseUrl && both.cedarUrl) {
+      push("Invoice uploaded to XaePay + Cedar — running compliance check…", "success");
+    } else if (both.supabaseUrl) {
+      push(`Invoice uploaded to XaePay (Cedar copy failed: ${both.cedarError || "unknown"}) — compliance check running`, "warn");
+    } else {
+      push(`Invoice uploaded to Cedar only (XaePay copy failed: ${both.storageError || "unknown"})`, "warn");
+    }
     runComplianceReview(tx.dbId).catch(() => {});
     onRefresh && onRefresh();
   };
@@ -5888,7 +5896,7 @@ function ComplianceReviewPanel({ tx, onChanged }) {
 // Supabase Storage and emits the resulting public URL via onChange. Cedar
 // fetches the URL during compliance review, so the bucket is intentionally
 // public-read.
-function FileUploadField({ category, value, onChange, accept = "image/*,application/pdf" }) {
+function FileUploadField({ category, value, onChange, onCedarUrl, accept = "image/*,application/pdf" }) {
   const { push } = useToast();
   const [uploading, setUploading] = useState(false);
   const [filename, setFilename] = useState("");
@@ -5897,16 +5905,36 @@ function FileUploadField({ category, value, onChange, accept = "image/*,applicat
     const file = e.target.files?.[0];
     if (!file) return;
     setUploading(true);
-    const result = await uploadCedarFile(file, category);
-    setUploading(false);
-    if (result.ok) {
-      setFilename(file.name);
-      onChange(result.url);
-      push("File uploaded", "success");
+    if (onCedarUrl) {
+      const both = await uploadFileBoth(file, category);
+      setUploading(false);
+      if (both.supabaseUrl) {
+        setFilename(file.name);
+        onChange(both.supabaseUrl);
+      }
+      if (both.cedarUrl) {
+        onCedarUrl(both.cedarUrl);
+      }
+      if (both.supabaseUrl && both.cedarUrl) {
+        push("File uploaded to XaePay + Cedar", "success");
+      } else if (both.supabaseUrl) {
+        push(`Uploaded to XaePay; Cedar copy failed: ${both.cedarError || "unknown"}`, "warn");
+      } else if (both.cedarUrl) {
+        push(`Uploaded to Cedar only; XaePay copy failed: ${both.storageError || "unknown"}`, "warn");
+      } else {
+        push(`Upload failed: ${both.storageError || both.cedarError || "unknown"}`, "warn");
+      }
     } else {
-      push(`Upload failed: ${result.error}`, "warn");
+      const result = await uploadCedarFile(file, category);
+      setUploading(false);
+      if (result.ok) {
+        setFilename(file.name);
+        onChange(result.url);
+        push("File uploaded", "success");
+      } else {
+        push(`Upload failed: ${result.error}`, "warn");
+      }
     }
-    // Reset the input so picking the same file twice still triggers onChange
     e.target.value = "";
   };
 

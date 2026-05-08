@@ -220,6 +220,61 @@ export async function confirmCedarDeposit({ quoteId, depositConfirmationUrl }) {
   }
 }
 
+// Upload a file directly to Cedar Money's /v1/files/upload endpoint via the
+// cedar-upload-file Edge Function (which forwards through the Fly relay).
+// Cedar holds a server-side copy and returns a URL valid for ~7 days. Used so
+// invoice + deposit-slip references on transactions point at Cedar's hosted
+// copy, not just our Supabase Storage public URL.
+export async function uploadFileToCedar(file) {
+  if (!file) return { ok: false, error: "No file selected" };
+  if (file.size > 15 * 1024 * 1024) {
+    return { ok: false, error: "File too large (max 15 MB)" };
+  }
+  try {
+    const session = (await supabase.auth.getSession()).data.session;
+    if (!session) return { ok: false, error: "Not signed in" };
+    const fd = new FormData();
+    fd.append("file", file, file.name || "upload");
+    const res = await fetch(`${url}/functions/v1/cedar-upload-file`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${session.access_token}`,
+        apikey: anonKey,
+      },
+      body: fd,
+    });
+    let data = null;
+    try { data = await res.json(); } catch { /* non-JSON */ }
+    if (!res.ok) {
+      return { ok: false, status: res.status, error: data?.error || `HTTP ${res.status}`, cedar: data?.cedar };
+    }
+    return { ok: true, url: data?.url || null, cedar: data?.cedar || null };
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error("uploadFileToCedar failed:", err);
+    return { ok: false, error: err?.message || String(err) };
+  }
+}
+
+// Convenience: upload to BOTH Supabase Storage (our copy, public URL for the
+// operator/customer to view immediately) AND Cedar (server-side hosted by
+// Cedar for /v1/sendf2f and approveDeposit references). Returns both URLs;
+// caller decides which to persist where.
+export async function uploadFileBoth(file, category = "misc") {
+  const [storage, cedar] = await Promise.all([
+    uploadCedarFile(file, category),
+    uploadFileToCedar(file),
+  ]);
+  return {
+    ok: storage.ok || cedar.ok,
+    supabaseUrl: storage.ok ? storage.url : null,
+    supabasePath: storage.ok ? storage.path : null,
+    cedarUrl: cedar.ok ? cedar.url : null,
+    storageError: storage.ok ? null : storage.error,
+    cedarError: cedar.ok ? null : cedar.error,
+  };
+}
+
 // Upload a file (invoice, deposit slip, etc.) to the public `cedar-files`
 // Storage bucket and return its public URL. Caller passes a category so the
 // path is segmented sensibly (`invoices/`, `deposits/`, etc.). 10 MB cap.
