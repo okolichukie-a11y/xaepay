@@ -3754,6 +3754,7 @@ function OperatorQuoteModal({ open, onClose, onCreated }) {
     customerId: "",        // empty = manual entry; UUID = picked existing customer
     customerName: "",
     customerPhone: "",
+    customerEmail: "",     // only used in manual-entry path; picked customers pull email from their row
     direction: "outbound", // 'outbound' (NG → world) or 'inbound' (world → NG)
     amount: "25000",
     currency: "USD",
@@ -4007,9 +4008,9 @@ function OperatorQuoteModal({ open, onClose, onCreated }) {
                 onChange={(e) => {
                   const picked = savedCustomers.find((c) => c.id === e.target.value);
                   if (picked) {
-                    setData({ ...data, customerId: picked.id, customerName: picked.name || "", customerPhone: picked.phone || "" });
+                    setData({ ...data, customerId: picked.id, customerName: picked.name || "", customerPhone: picked.phone || "", customerEmail: "" });
                   } else {
-                    setData({ ...data, customerId: "", customerName: "", customerPhone: "" });
+                    setData({ ...data, customerId: "", customerName: "", customerPhone: "", customerEmail: "" });
                   }
                 }}
               >
@@ -4025,6 +4026,7 @@ function OperatorQuoteModal({ open, onClose, onCreated }) {
               <>
                 <Field label="Customer name"><Input value={data.customerName} onChange={(e) => setData({ ...data, customerName: e.target.value })} placeholder="Adekunle Imports Ltd" /></Field>
                 <Field label="Customer WhatsApp"><Input value={data.customerPhone} onChange={(e) => setData({ ...data, customerPhone: e.target.value })} placeholder="+234 803 123 4567" /></Field>
+                <Field label="Customer email" full><Input type="email" value={data.customerEmail} onChange={(e) => setData({ ...data, customerEmail: e.target.value })} placeholder="adekunle@imports.ng" /></Field>
               </>
             )}
             {data.customerId && (
