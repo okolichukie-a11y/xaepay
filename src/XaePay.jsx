@@ -6366,6 +6366,7 @@ function BDCRecipients() {
 
 function AddRecipientModal({ open, onClose, onAdded }) {
   const { push } = useToast();
+  const auth = useAuth();
   const empty = {
     legal_business_name: "",
     trading_name: "",
@@ -6408,6 +6409,7 @@ function AddRecipientModal({ open, onClose, onAdded }) {
         street_number: data.street_number,
         zipcode: data.zipcode,
         industry: data.industry,
+        created_by: auth.user?.id,
       })
       .select()
       .single();
