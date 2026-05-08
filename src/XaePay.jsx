@@ -3919,7 +3919,7 @@ function OperatorQuoteModal({ open, onClose, onCreated }) {
         ],
       },
     ];
-    sendWhatsAppTemplate(phoneDigits, "quote_notification", "en", components).then((tmplRes) => {
+    sendWhatsAppTemplate(phoneDigits, "quote_notification", "en_US", components).then((tmplRes) => {
       // eslint-disable-next-line no-console
       console.log("WhatsApp quote_notification:", tmplRes);
       if (tmplRes.ok) {
