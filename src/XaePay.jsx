@@ -3925,7 +3925,10 @@ function OperatorQuoteModal({ open, onClose, onCreated }) {
     // Email the customer — Meta-independent path. Picks up email from the picked
     // customer row (savedCustomers) or falls back to data.customerEmail if entered.
     const pickedCustomer = savedCustomers.find((c) => c.id === data.customerId);
-    const customerEmail = pickedCustomer?.email || null;
+    const customerEmail = pickedCustomer?.email || data.customerEmail || null;
+    if (!customerEmail) {
+      push(`Email skipped — no address on file (customerId=${data.customerId ? "set" : "none"}, pickedRow=${pickedCustomer ? "found" : "missing"})`, "warn");
+    }
     if (customerEmail) {
       const operatorName = auth.user?.user_metadata?.company || auth.user?.email || "your XaePay operator";
       const approvalUrl = `${window.location.origin}/?quote=${quoteRow.id}`;
@@ -3953,6 +3956,7 @@ function OperatorQuoteModal({ open, onClose, onCreated }) {
         </div>
       </body></html>`;
       const emailText = `Hello ${data.customerName || "there"},\n\n${operatorName} just sent you a quote on XaePay.\n\n  Amount: $${amount.toLocaleString()} ${data.currency}\n  Rate: ₦${customerRate.toFixed(2)}/$\n  You pay: ${ngnText}\n  Reference: ${displayRef}\n\nReview and approve: ${approvalUrl}\n\nOr sign in to your portal at ${portalUrl}.\n\n— XaePay`;
+      push(`Sending email to ${customerEmail}…`, "info");
       sendEmail({
         to: customerEmail,
         subject: `New trade payment quote from ${operatorName} — ${displayRef}`,
@@ -3961,7 +3965,12 @@ function OperatorQuoteModal({ open, onClose, onCreated }) {
       }).then((r) => {
         // eslint-disable-next-line no-console
         console.log("Quote-sent email:", r);
-        if (r.ok) push(`Quote also emailed to ${customerEmail}`, "info");
+        if (r.ok) {
+          push(`Email delivered to ${customerEmail}`, "success");
+        } else {
+          const reason = r.data?.error || r.data?.message || `HTTP ${r.status}`;
+          push(`Email failed: ${reason}`, "warn");
+        }
       });
     }
 
