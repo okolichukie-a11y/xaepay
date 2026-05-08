@@ -8,6 +8,7 @@ import {
   RefreshCw,
 } from "lucide-react";
 import { supabase, sendWhatsAppText, sendWhatsAppTemplate, fetchCedarRate, submitCustomerToCedar, submitRecipientToCedar, submitReceiverAccountToCedar, submitCedarTransaction, approveCedarQuote, confirmCedarDeposit, cancelCedarTransaction, uploadCedarFile, runComplianceReview, sendEmail, safeUrl, logAuditEvent } from "./lib/supabase.js";
+import { generateQuotePdf, uploadQuotePdf, downloadQuotePdf } from "./lib/pdf.js";
 import { useAuth } from "./lib/auth.js";
 
 // ─── Editable in one place ────────────────────────────────────────────────
@@ -4946,7 +4947,7 @@ function BDCTransactions() {
     setLoading(true);
     const { data, error } = await supabase
       .from("quotes")
-      .select("id, customer_name, customer_phone, customer_id, beneficiary, destination, amount, currency, rate, ngn_total, rail, status, submitted_at, created_at, markup_pct, cost_basis_ngn, recipient_id, recipient_external_account_id, cedar_business_request_id, cedar_request_status, cedar_purpose, cedar_invoice_url, cedar_last_error, cedar_request_status_updated_at, cedar_bank_details, cedar_quote_rate, cedar_deposit_amount_minor, cedar_deposit_currency, cedar_payout_status, invoice_url, invoice_uploaded_at, invoice_uploaded_by, customer_deposit_slip_url, customer_deposit_slip_uploaded_at, review_decision, review_reason, review_details, review_tier, reviewed_at, operator_review_override, operator_review_override_at, operator_review_override_reason, invoice_total_amount, invoice_total_currency, invoice_payment_label")
+      .select("id, customer_name, customer_phone, customer_id, beneficiary, destination, amount, currency, rate, ngn_total, rail, status, submitted_at, created_at, markup_pct, cost_basis_ngn, recipient_id, recipient_external_account_id, cedar_business_request_id, cedar_request_status, cedar_purpose, cedar_invoice_url, cedar_last_error, cedar_request_status_updated_at, cedar_bank_details, cedar_quote_rate, cedar_deposit_amount_minor, cedar_deposit_currency, cedar_payout_status, invoice_url, invoice_uploaded_at, invoice_uploaded_by, customer_deposit_slip_url, customer_deposit_slip_uploaded_at, review_decision, review_reason, review_details, review_tier, reviewed_at, operator_review_override, operator_review_override_at, operator_review_override_reason, invoice_total_amount, invoice_total_currency, invoice_payment_label, pdf_url, pdf_path, pdf_generated_at")
       .order("created_at", { ascending: false })
       .limit(50);
     if (error) {
@@ -4999,6 +5000,9 @@ function BDCTransactions() {
         operatorReviewOverrideReason: q.operator_review_override_reason,
         invoiceTotalAmount: q.invoice_total_amount != null ? parseFloat(q.invoice_total_amount) : null,
         invoiceTotalCurrency: q.invoice_total_currency,
+        pdfUrl: q.pdf_url,
+        pdfPath: q.pdf_path,
+        pdfGeneratedAt: q.pdf_generated_at,
         invoicePaymentLabel: q.invoice_payment_label,
       })));
     }
@@ -5085,7 +5089,42 @@ function BDCTransactions() {
 function TxDrawer({ tx, onClose, onRefresh }) {
   const { push } = useToast();
   const [uploadingInvoice, setUploadingInvoice] = useState(false);
+  const [generatingPdf, setGeneratingPdf] = useState(false);
+  const [pdfUrl, setPdfUrl] = useState(tx?.pdfUrl || null);
   if (!tx) return null;
+  const generateAndUploadPdf = async () => {
+    if (!tx.dbId || generatingPdf) return;
+    setGeneratingPdf(true);
+    const { data: q, error } = await supabase
+      .from("quotes")
+      .select("*, customer:customers(email, name)")
+      .eq("id", tx.dbId)
+      .single();
+    if (error || !q) {
+      setGeneratingPdf(false);
+      push(`Couldn't load quote for PDF: ${error?.message || "not found"}`, "warn");
+      return;
+    }
+    const quoteForPdf = { ...q, customer_email: q.customer?.email || null };
+    let doc;
+    try {
+      doc = generateQuotePdf(quoteForPdf);
+    } catch (err) {
+      setGeneratingPdf(false);
+      push(`PDF generation failed: ${err?.message || err}`, "warn");
+      return;
+    }
+    downloadQuotePdf(doc, tx.dbId);
+    const result = await uploadQuotePdf(tx.dbId, doc);
+    setGeneratingPdf(false);
+    if (!result.ok) {
+      push(`PDF saved locally but upload failed: ${result.error}`, "warn");
+      return;
+    }
+    setPdfUrl(result.url);
+    push("PDF generated and saved.", "success");
+    onRefresh && onRefresh();
+  };
   const uploadInvoiceForCustomer = async (file) => {
     if (!file || !tx.dbId) return;
     setUploadingInvoice(true);
@@ -5151,6 +5190,33 @@ function TxDrawer({ tx, onClose, onRefresh }) {
                 {uploadingInvoice && <div className="font-mono text-[10px]" style={{ color: "var(--muted)" }}>Uploading…</div>}
               </div>
             )}
+          </div>
+        )}
+
+        {tx.dbId && (
+          <div>
+            <Label>Customer documents</Label>
+            <div className="rounded-xl p-3 space-y-2" style={{ background: "var(--bone)", border: "1px solid var(--line)" }}>
+              {pdfUrl ? (
+                <div className="flex items-center justify-between text-xs">
+                  <div className="flex items-center gap-2" style={{ color: "var(--emerald)" }}>
+                    <CheckCircle2 size={14} />
+                    <span className="font-medium">Quote PDF generated</span>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <a href={safeUrl(pdfUrl)} target="_blank" rel="noreferrer" className="font-medium underline" style={{ color: "var(--emerald)" }}>View</a>
+                    <button onClick={generateAndUploadPdf} disabled={generatingPdf} className="font-mono text-[10px] uppercase tracking-wider underline" style={{ color: "var(--muted)" }}>{generatingPdf ? "Regenerating…" : "Regenerate"}</button>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <p className="text-xs" style={{ color: "var(--muted)" }}>Generate a customer-facing PDF (payment instructions + invoice). Operator gets a local download for review; the same PDF is stored and shareable to the customer.</p>
+                  <button onClick={generateAndUploadPdf} disabled={generatingPdf} className="rounded-lg px-3 py-1.5 font-mono text-[10px] font-semibold uppercase tracking-wider transition" style={{ background: "var(--ink)", color: "var(--lime)" }}>
+                    {generatingPdf ? "Generating…" : "Generate quote PDF"}
+                  </button>
+                </>
+              )}
+            </div>
           </div>
         )}
 
