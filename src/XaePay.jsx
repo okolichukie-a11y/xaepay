@@ -7,7 +7,7 @@ import {
   ArrowLeft, ArrowLeftRight, Loader2, Layers, TrendingUp, Wallet, DollarSign, Mail,
   RefreshCw, ShieldCheck,
 } from "lucide-react";
-import { supabase, sendWhatsAppText, sendWhatsAppTemplate, fetchCedarRate, submitCustomerToCedar, submitRecipientToCedar, submitReceiverAccountToCedar, submitCedarTransaction, approveCedarQuote, confirmCedarDeposit, cancelCedarTransaction, uploadCedarFile, uploadFileBoth, runComplianceReview, sendEmail, safeUrl, logAuditEvent } from "./lib/supabase.js";
+import { supabase, sendWhatsAppText, sendWhatsAppTemplate, fetchCedarRate, submitCustomerToCedar, submitRecipientToCedar, submitReceiverAccountToCedar, submitCedarTransaction, approveCedarQuote, confirmCedarDeposit, cancelCedarTransaction, uploadCedarFile, uploadFileBoth, runComplianceReview, runComplianceWatchman, sendEmail, safeUrl, logAuditEvent } from "./lib/supabase.js";
 import { generateQuotePdf, uploadQuotePdf, downloadQuotePdf } from "./lib/pdf.js";
 import { useAuth } from "./lib/auth.js";
 
@@ -4004,6 +4004,121 @@ function HistoryDrawer({ open, onClose }) {
   );
 }
 
+// Compliance reminders surface for operators. Lists open notifications from the
+// `notifications` table (created by the compliance-watchman Edge Function) and
+// offers a "Run check" button to scan all customers on demand. Real-time via
+// Supabase subscription so resolutions and new additions appear immediately.
+function ComplianceRemindersPanel() {
+  const { push } = useToast();
+  const auth = useAuth();
+  const [notifs, setNotifs] = useState([]);
+  const [running, setRunning] = useState(false);
+  const [expanded, setExpanded] = useState(true);
+
+  const fetchNotifs = async () => {
+    if (!auth.user) return;
+    const { data, error } = await supabase
+      .from("notifications")
+      .select("*")
+      .eq("status", "open")
+      .order("created_at", { ascending: false });
+    if (!error) setNotifs(data || []);
+  };
+
+  useEffect(() => { fetchNotifs(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [auth.user?.id]);
+
+  useEffect(() => {
+    if (!auth.user) return;
+    const channel = supabase
+      .channel(`notifications-realtime-${auth.user.id}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "notifications", filter: `user_id=eq.${auth.user.id}` }, () => fetchNotifs())
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+    /* eslint-disable-next-line react-hooks/exhaustive-deps */
+  }, [auth.user?.id]);
+
+  const runCheck = async () => {
+    if (running) return;
+    setRunning(true);
+    const r = await runComplianceWatchman("pro");
+    setRunning(false);
+    if (r?.ok && r.data) {
+      const { scanned, created, resolved } = r.data;
+      push(`Compliance check done · ${scanned} customers scanned · ${created} new · ${resolved} resolved`, "success");
+      fetchNotifs();
+    } else {
+      push(`Compliance check failed: ${r?.data?.error || r?.error || `HTTP ${r?.status}`}`, "warn");
+    }
+  };
+
+  const dismiss = async (id) => {
+    const { error } = await supabase
+      .from("notifications")
+      .update({ status: "dismissed", dismissed_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+      .eq("id", id);
+    if (error) push(`Couldn't dismiss: ${error.message}`, "warn");
+    else fetchNotifs();
+  };
+
+  if (!auth.user) return null;
+
+  const errorCount = notifs.filter((n) => n.severity === "error").length;
+  const warnCount = notifs.filter((n) => n.severity === "warn").length;
+
+  return (
+    <Card>
+      <div className="flex items-start justify-between gap-3 flex-wrap">
+        <div className="flex items-start gap-3">
+          <div className="flex h-9 w-9 items-center justify-center rounded-full flex-shrink-0" style={{ background: notifs.length === 0 ? "rgba(15,95,63,0.10)" : errorCount > 0 ? "#fee2e2" : "#fef3c7" }}>
+            {notifs.length === 0
+              ? <ShieldCheck size={16} style={{ color: "var(--emerald)" }} />
+              : <AlertTriangle size={16} style={{ color: errorCount > 0 ? "#991b1b" : "#92400e" }} />}
+          </div>
+          <div>
+            <div className="text-sm font-semibold">Compliance reminders</div>
+            <div className="text-xs mt-0.5" style={{ color: "var(--muted)" }}>
+              {notifs.length === 0
+                ? "No open reminders · all required customer docs look valid."
+                : `${notifs.length} open${errorCount > 0 ? ` · ${errorCount} expired` : ""}${warnCount > 0 ? ` · ${warnCount} need attention` : ""}`}
+            </div>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          {notifs.length > 0 && (
+            <button onClick={() => setExpanded((v) => !v)} className="font-mono text-[10px] uppercase tracking-wider underline" style={{ color: "var(--muted)" }}>
+              {expanded ? "Collapse" : "Expand"}
+            </button>
+          )}
+          <SecondaryBtn onClick={runCheck} disabled={running}>
+            {running ? <><Loader2 size={14} className="animate-spin" /> Scanning…</> : <><RefreshCw size={14} /> Run check</>}
+          </SecondaryBtn>
+        </div>
+      </div>
+      {expanded && notifs.length > 0 && (
+        <div className="space-y-2 mt-4 pt-3" style={{ borderTop: "1px solid var(--line)" }}>
+          {notifs.map((n) => {
+            const sev = n.severity === "error"
+              ? { color: "#991b1b", bg: "#fee2e2", border: "rgba(153,27,27,0.2)" }
+              : n.severity === "warn"
+                ? { color: "#92400e", bg: "#fef3c7", border: "rgba(146,64,14,0.2)" }
+                : { color: "var(--ink)", bg: "var(--bone)", border: "var(--line)" };
+            return (
+              <div key={n.id} className="rounded-lg p-3 flex items-start gap-3" style={{ background: sev.bg, border: `1px solid ${sev.border}` }}>
+                <AlertTriangle size={14} style={{ color: sev.color }} className="mt-0.5 flex-shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm font-medium" style={{ color: sev.color }}>{n.title}</div>
+                  {n.body && <div className="text-xs mt-0.5 leading-snug" style={{ color: sev.color, opacity: 0.85 }}>{n.body}</div>}
+                </div>
+                <button onClick={() => dismiss(n.id)} className="font-mono text-[10px] font-semibold uppercase tracking-wider underline" style={{ color: sev.color, opacity: 0.7 }}>Dismiss</button>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </Card>
+  );
+}
+
 function BDCDashboard({ session }) {
   const [tab, setTab] = useState("quote");
   const [addedCustomers, setAddedCustomers] = useState([]);
@@ -4035,6 +4150,10 @@ function BDCDashboard({ session }) {
             Production
           </div>
         </div>
+      </div>
+
+      <div className="mb-6">
+        <ComplianceRemindersPanel />
       </div>
 
       <div className="lg:flex lg:gap-8">

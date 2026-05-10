@@ -305,6 +305,32 @@ export async function uploadCedarFile(file, category = "misc") {
 // Operators paste URLs into invoice_url / deposit_slip_url etc. — without this
 // a malicious operator (or compromised account) could XSS another operator
 // who clicks the rendered link in TxDrawer / Compliance panel.
+// Trigger the compliance-watchman Edge Function to scan the operator's customers
+// for missing/expiring/expired docs against the chosen tier (default: pro).
+// Idempotent — safe to call repeatedly. Returns { ok, data: { scanned, created, resolved, tier } }.
+export async function runComplianceWatchman(tier = "pro") {
+  try {
+    const session = (await supabase.auth.getSession()).data.session;
+    if (!session) return { ok: false, error: "Not signed in" };
+    const res = await fetch(`${url}/functions/v1/compliance-watchman`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${session.access_token}`,
+        apikey: anonKey,
+      },
+      body: JSON.stringify({ tier }),
+    });
+    let data = null;
+    try { data = await res.json(); } catch { /* non-JSON */ }
+    return { ok: res.ok, status: res.status, data };
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error("runComplianceWatchman failed:", err);
+    return { ok: false, error: err?.message || String(err) };
+  }
+}
+
 export function safeUrl(value) {
   if (!value || typeof value !== "string") return "#";
   const trimmed = value.trim();
