@@ -3385,18 +3385,25 @@ function CustomerQuoteCard({ q, onDecide, onInvoiceUploaded }) {
               </div>
               <a href={safeUrl(q.invoice_url)} target="_blank" rel="noreferrer" className="font-medium underline" style={{ color: "var(--emerald)" }}>View</a>
             </div>
-            {q.review_decision && (() => {
-              const d = q.review_decision.toLowerCase();
-              const styles = d === "approved"
-                ? { bg: "rgba(15,95,63,0.06)", border: "rgba(15,95,63,0.2)", color: "var(--emerald)", label: "Compliance check passed" }
-                : d === "flagged"
-                  ? { bg: "#fef3c7", border: "rgba(146,64,14,0.2)", color: "#92400e", label: "Compliance: under operator review" }
-                  : d === "rejected"
-                    ? { bg: "#fee2e2", border: "rgba(153,27,27,0.2)", color: "#991b1b", label: "Compliance check failed — contact your operator" }
-                    : { bg: "var(--bone)", border: "var(--line)", color: "var(--muted)", label: "Compliance check pending" };
+            {(() => {
+              const d = (q.review_decision || "").toLowerCase();
+              const invUp = q.invoice_uploaded_at ? new Date(q.invoice_uploaded_at) : null;
+              const revAt = q.reviewed_at ? new Date(q.reviewed_at) : null;
+              const everReviewedThisInvoice = revAt && invUp && revAt >= invUp;
+              const inFlight = !d && !everReviewedThisInvoice;
+              if (!d && !inFlight) return null; // never reviewed and not in flight (shouldn't happen if invoice present)
+              const styles = inFlight
+                ? { bg: "#e0f2fe", border: "#bae6fd", color: "#0369a1", label: "AI compliance check running… typically 10-20 seconds" }
+                : d === "approved"
+                  ? { bg: "rgba(15,95,63,0.06)", border: "rgba(15,95,63,0.2)", color: "var(--emerald)", label: "Compliance check passed" }
+                  : d === "flagged"
+                    ? { bg: "#fef3c7", border: "rgba(146,64,14,0.2)", color: "#92400e", label: "Compliance: under operator review" }
+                    : d === "rejected"
+                      ? { bg: "#fee2e2", border: "rgba(153,27,27,0.2)", color: "#991b1b", label: "Compliance check failed — contact your operator" }
+                      : { bg: "var(--bone)", border: "var(--line)", color: "var(--muted)", label: "Compliance check pending" };
               return (
                 <div className="rounded-lg p-2.5 text-xs flex items-center gap-2" style={{ background: styles.bg, border: `1px solid ${styles.border}`, color: styles.color }}>
-                  {d === "approved" ? <CheckCircle2 size={12} /> : d === "rejected" || d === "flagged" ? <AlertTriangle size={12} /> : <Loader2 size={12} className="animate-spin" />}
+                  {inFlight ? <Loader2 size={12} className="animate-spin" /> : d === "approved" ? <CheckCircle2 size={12} /> : d === "rejected" || d === "flagged" ? <AlertTriangle size={12} /> : <Loader2 size={12} className="animate-spin" />}
                   <span className="font-medium">{styles.label}</span>
                 </div>
               );
