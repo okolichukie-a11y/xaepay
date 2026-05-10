@@ -1,20 +1,21 @@
 // compliance-watchman
 //
-// Scans the calling operator's customers for missing / expiring / expired
-// compliance documents and creates notification rows so the operator can act.
-// Idempotent — safe to re-run any number of times:
-//   - New issues become new notifications
-//   - Cleared issues resolve the corresponding open notifications
-//   - Existing open notifications aren't duplicated (uq_notifications_open partial index)
+// Two modes:
+//   USER MODE (default) — caller is a signed-in operator. Scans only their
+//     customers. Returns + emails them a summary if anything new.
+//   SYSTEM MODE — invoked by cron (GitHub Actions etc.) with the shared
+//     x-watchman-secret header matching WATCHMAN_SECRET. Scans every operator's
+//     customers and emails each operator their own summary.
 //
-// V2: triggered manually by the operator from the dashboard. V3 will move to
-// pg_cron-scheduled daily runs that also fire email + WhatsApp reminders and
-// auto-submit fresh docs to Cedar.
+// Idempotent in both modes — re-runs:
+//   - Insert notifications for newly-found issues
+//   - Resolve open notifications for issues that have since cleared
+//   - Don't duplicate (uq_notifications_open partial unique index)
 //
-// Auth: caller must be a signed-in operator. Only their customers are scanned.
-//
-// Required env vars (already configured in Supabase):
-// - SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY
+// Required env vars:
+// - SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY (auto)
+// - RESEND_API_KEY, EMAIL_SENDER_FROM (email summaries)
+// - WATCHMAN_SECRET (system mode — secret token cron passes in x-watchman-secret)
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
@@ -24,15 +25,15 @@ const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY") || "";
 const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
 const RESEND_API_KEY = Deno.env.get("RESEND_API_KEY") || "";
 const EMAIL_SENDER_FROM = Deno.env.get("EMAIL_SENDER_FROM") || "noreply@xaepay.com";
+const WATCHMAN_SECRET = Deno.env.get("WATCHMAN_SECRET") || "";
 
 const cors = {
   "Access-Control-Allow-Origin": "https://xaepay.com",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-watchman-secret",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
 // Mirror of COMPLIANCE_DOC_REQUIREMENTS in src/XaePay.jsx. Keep in sync.
-// V3 should move to a shared `compliance_doc_requirements` config table.
 const REQUIREMENTS: Record<string, Array<{ docType: string; label: string; refreshDays: number | null }>> = {
   basic: [],
   standard: [
@@ -76,64 +77,18 @@ function docStatus(doc: any, refreshDays: number | null): "missing" | "valid" | 
   return "valid";
 }
 
-serve(async (req) => {
-  if (req.method === "OPTIONS") return new Response(null, { headers: cors });
-  if (req.method !== "POST") return json(405, { error: "Method not allowed" });
-
-  if (!SUPABASE_URL || !SUPABASE_ANON_KEY || !SERVICE_ROLE_KEY) {
-    return json(500, { error: "Server not configured" });
-  }
-
-  // === RATE LIMIT ===
-  {
-    const ah = req.headers.get("Authorization") || "";
-    let rkey = "anon";
-    if (ah.startsWith("Bearer ")) {
-      try { rkey = `user:${JSON.parse(atob(ah.slice(7).split(".")[1])).sub}`; } catch {}
-    }
-    if (rkey === "anon") rkey = `ip:${(req.headers.get("x-forwarded-for") || "").split(",")[0].trim() || "unknown"}`;
-    const rRes = await fetch(`${SUPABASE_URL}/rest/v1/rpc/rate_limit_check`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "apikey": SERVICE_ROLE_KEY, "Authorization": `Bearer ${SERVICE_ROLE_KEY}` },
-      body: JSON.stringify({ p_bucket: `${rkey}:compliance-watchman`, p_max_per_min: 10 }),
-    });
-    if ((await rRes.json()) === false) {
-      return json(429, { error: "Rate limit exceeded — try again in a minute" });
-    }
-  }
-
-  // Auth
-  const authHeader = req.headers.get("Authorization") || "";
-  if (!authHeader.startsWith("Bearer ")) return json(401, { error: "Missing Bearer token" });
-  const userClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-    global: { headers: { Authorization: authHeader } },
-  });
-  const { data: userData, error: userErr } = await userClient.auth.getUser();
-  if (userErr || !userData?.user) return json(401, { error: "Invalid session" });
-  const userId = userData.user.id;
-
-  // Service role client for cross-RLS writes to notifications
-  const admin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
-
-  // Optional tier override from request body. Default = pro (most comprehensive scan).
-  let body: any = {};
-  try { body = await req.json(); } catch {}
-  const tier = (body?.tier as string) || "pro";
+async function scanOperator(admin: any, userId: string, tier: string) {
   const reqs = REQUIREMENTS[tier] || [];
+  const newReminders: Array<{ customer: string; customerId: string; docLabel: string; status: string; severity: string }> = [];
+  let created = 0;
+  let resolved = 0;
 
-  // Fetch operator's customers
   const { data: customers, error: cErr } = await admin
     .from("customers")
     .select("id, name")
     .eq("bdc_user_id", userId);
-  if (cErr) return json(500, { error: cErr.message });
-  if (!customers || customers.length === 0) {
-    return json(200, { ok: true, scanned: 0, created: 0, resolved: 0, tier });
-  }
-
-  let created = 0;
-  let resolved = 0;
-  const newReminders: Array<{ customer: string; customerId: string; docLabel: string; status: string; severity: string }> = [];
+  if (cErr) throw new Error(cErr.message);
+  if (!customers || customers.length === 0) return { scanned: 0, created: 0, resolved: 0, newReminders };
 
   for (const c of customers) {
     const { data: docs } = await admin
@@ -143,9 +98,8 @@ serve(async (req) => {
     const docsByType: Record<string, any> = {};
     for (const d of docs || []) {
       const existing = docsByType[d.doc_type];
-      if (!existing) {
-        docsByType[d.doc_type] = d;
-      } else {
+      if (!existing) docsByType[d.doc_type] = d;
+      else {
         const exp1 = existing.expires_at || existing.issued_at || "";
         const exp2 = d.expires_at || d.issued_at || "";
         if (exp2 > exp1) docsByType[d.doc_type] = d;
@@ -205,8 +159,6 @@ serve(async (req) => {
         title,
         body: bodyText,
       });
-      // Conflict on the unique partial index = an open notification already exists,
-      // which is fine. Only count fresh inserts.
       if (!error) {
         created++;
         newReminders.push({ customer: customerName, customerId: c.id, docLabel: r.label, status, severity: severityMap[status] });
@@ -214,60 +166,157 @@ serve(async (req) => {
     }
   }
 
-  // Email the operator a summary of the new reminders, if any. Uses Resend
-  // directly (RESEND_API_KEY in Supabase secrets) since the send-email function
-  // expects a user JWT and we're already server-to-server here.
-  let emailRes: any = { skipped: true };
-  if (created > 0 && RESEND_API_KEY && userData.user.email) {
-    const portalUrl = "https://xaepay.com/";
-    // Group reminders by customer for the email body, keeping the customer id
-    // so each block can deep-link straight to that customer's drawer.
-    const byCustomer: Record<string, { id: string; items: Array<{ docLabel: string; status: string; severity: string }> }> = {};
-    for (const r of newReminders) {
-      if (!byCustomer[r.customer]) byCustomer[r.customer] = { id: r.customerId, items: [] };
-      byCustomer[r.customer].items.push({ docLabel: r.docLabel, status: r.status, severity: r.severity });
-    }
-    const expiredCount = newReminders.filter((r) => r.status === "expired").length;
-    const subject = expiredCount > 0
-      ? `${expiredCount} expired compliance doc${expiredCount === 1 ? "" : "s"} — action required`
-      : `${created} new compliance reminder${created === 1 ? "" : "s"} for your customers`;
-    const customerBlocks = Object.entries(byCustomer).map(([name, { id: cid, items }]) => {
-      const rows = items.map((it) => {
-        const dot = it.status === "expired" ? "#991b1b" : it.status === "expiring_soon" ? "#92400e" : "#6b7280";
-        const label = it.status === "expired" ? "Expired" : it.status === "expiring_soon" ? "Expiring" : "Missing";
-        return `<tr><td style="padding:4px 0;font-family:monospace;font-size:11px;color:${dot};">●</td><td style="padding:4px 8px;font-size:13px;color:#0a0b0d;">${it.docLabel}</td><td style="padding:4px 0;font-family:monospace;font-size:11px;color:${dot};text-align:right;">${label}</td></tr>`;
-      }).join("");
-      const customerUrl = `${portalUrl}?customer=${encodeURIComponent(cid)}`;
-      return `<div style="margin-bottom:16px;padding:14px;background:#fcfbf7;border:1px solid #e5e7eb;border-radius:12px;"><div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px;"><div style="font-weight:600;color:#0a0b0d;">${name}</div><a href="${customerUrl}" style="font-family:monospace;font-size:10px;text-transform:uppercase;letter-spacing:0.05em;color:#0f5f3f;text-decoration:underline;">Open customer →</a></div><table style="width:100%;border-collapse:collapse;">${rows}</table></div>`;
+  return { scanned: customers.length, created, resolved, newReminders };
+}
+
+async function sendOperatorEmail(operatorEmail: string, newReminders: any[], created: number) {
+  if (!RESEND_API_KEY || !operatorEmail || created === 0) return { skipped: true };
+  const portalUrl = "https://xaepay.com/";
+  const byCustomer: Record<string, { id: string; items: Array<{ docLabel: string; status: string; severity: string }> }> = {};
+  for (const r of newReminders) {
+    if (!byCustomer[r.customer]) byCustomer[r.customer] = { id: r.customerId, items: [] };
+    byCustomer[r.customer].items.push({ docLabel: r.docLabel, status: r.status, severity: r.severity });
+  }
+  const expiredCount = newReminders.filter((r) => r.status === "expired").length;
+  const subject = expiredCount > 0
+    ? `${expiredCount} expired compliance doc${expiredCount === 1 ? "" : "s"} — action required`
+    : `${created} new compliance reminder${created === 1 ? "" : "s"} for your customers`;
+  const customerBlocks = Object.entries(byCustomer).map(([name, { id: cid, items }]) => {
+    const rows = items.map((it) => {
+      const dot = it.status === "expired" ? "#991b1b" : it.status === "expiring_soon" ? "#92400e" : "#6b7280";
+      const label = it.status === "expired" ? "Expired" : it.status === "expiring_soon" ? "Expiring" : "Missing";
+      return `<tr><td style="padding:4px 0;font-family:monospace;font-size:11px;color:${dot};">●</td><td style="padding:4px 8px;font-size:13px;color:#0a0b0d;">${it.docLabel}</td><td style="padding:4px 0;font-family:monospace;font-size:11px;color:${dot};text-align:right;">${label}</td></tr>`;
     }).join("");
-    // Bottom CTA: link straight to the FIRST customer with reminders. If there's
-    // only one customer, this is just a duplicate of the per-block link; if many,
-    // it's at least a useful starting point.
-    const firstCid = Object.values(byCustomer)[0]?.id;
-    const ctaUrl = firstCid ? `${portalUrl}?customer=${encodeURIComponent(firstCid)}` : portalUrl;
-    const html = `<!doctype html><html><body style="font-family:system-ui,-apple-system,sans-serif;color:#0a0b0d;background:#fcfbf7;margin:0;padding:24px;"><div style="max-width:560px;margin:0 auto;background:white;border:1px solid #e5e7eb;border-radius:16px;padding:32px;"><h2 style="margin:0 0 8px;font-size:22px;">Compliance reminders</h2><p style="color:#6b7280;margin:0 0 20px;font-size:14px;">XaePay's compliance agent scanned your customers and found ${created} issue${created === 1 ? "" : "s"} that need${created === 1 ? "s" : ""} your attention before they affect transactions.</p>${customerBlocks}<p style="text-align:center;margin:24px 0 8px;"><a href="${ctaUrl}" style="display:inline-block;background:#0a0b0d;color:#d4f570;padding:12px 24px;border-radius:12px;text-decoration:none;font-weight:600;font-size:14px;">Open ${Object.keys(byCustomer).length === 1 ? "customer" : "first customer"}</a></p><p style="color:#9ca3af;font-size:11px;text-align:center;margin:20px 0 0;">— XaePay compliance agent</p></div></body></html>`;
-    const text = `Compliance reminders\n\nXaePay's compliance agent found ${created} issue${created === 1 ? "" : "s"} on your customers:\n\n${Object.entries(byCustomer).map(([name, { id: cid, items }]) => `${name} (${portalUrl}?customer=${cid})\n${items.map((it) => `  - ${it.docLabel}: ${it.status}`).join("\n")}`).join("\n\n")}\n\n— XaePay compliance agent`;
-    try {
-      const r = await fetch("https://api.resend.com/emails", {
-        method: "POST",
-        headers: { Authorization: `Bearer ${RESEND_API_KEY}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ from: EMAIL_SENDER_FROM, to: [userData.user.email], subject, html, text }),
+    const customerUrl = `${portalUrl}?customer=${encodeURIComponent(cid)}`;
+    return `<div style="margin-bottom:16px;padding:14px;background:#fcfbf7;border:1px solid #e5e7eb;border-radius:12px;"><div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px;"><div style="font-weight:600;color:#0a0b0d;">${name}</div><a href="${customerUrl}" style="font-family:monospace;font-size:10px;text-transform:uppercase;letter-spacing:0.05em;color:#0f5f3f;text-decoration:underline;">Open customer →</a></div><table style="width:100%;border-collapse:collapse;">${rows}</table></div>`;
+  }).join("");
+  const firstCid = Object.values(byCustomer)[0]?.id;
+  const ctaUrl = firstCid ? `${portalUrl}?customer=${encodeURIComponent(firstCid)}` : portalUrl;
+  const html = `<!doctype html><html><body style="font-family:system-ui,-apple-system,sans-serif;color:#0a0b0d;background:#fcfbf7;margin:0;padding:24px;"><div style="max-width:560px;margin:0 auto;background:white;border:1px solid #e5e7eb;border-radius:16px;padding:32px;"><h2 style="margin:0 0 8px;font-size:22px;">Compliance reminders</h2><p style="color:#6b7280;margin:0 0 20px;font-size:14px;">XaePay's compliance agent scanned your customers and found ${created} issue${created === 1 ? "" : "s"} that need${created === 1 ? "s" : ""} your attention before they affect transactions.</p>${customerBlocks}<p style="text-align:center;margin:24px 0 8px;"><a href="${ctaUrl}" style="display:inline-block;background:#0a0b0d;color:#d4f570;padding:12px 24px;border-radius:12px;text-decoration:none;font-weight:600;font-size:14px;">Open ${Object.keys(byCustomer).length === 1 ? "customer" : "first customer"}</a></p><p style="color:#9ca3af;font-size:11px;text-align:center;margin:20px 0 0;">— XaePay compliance agent</p></div></body></html>`;
+  const text = `Compliance reminders\n\nXaePay's compliance agent found ${created} issue${created === 1 ? "" : "s"} on your customers:\n\n${Object.entries(byCustomer).map(([name, { id: cid, items }]) => `${name} (${portalUrl}?customer=${cid})\n${items.map((it) => `  - ${it.docLabel}: ${it.status}`).join("\n")}`).join("\n\n")}\n\n— XaePay compliance agent`;
+  try {
+    const r = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${RESEND_API_KEY}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ from: EMAIL_SENDER_FROM, to: [operatorEmail], subject, html, text }),
+    });
+    return { ok: r.ok, status: r.status };
+  } catch (err) {
+    return { ok: false, error: String(err) };
+  }
+}
+
+serve(async (req) => {
+  if (req.method === "OPTIONS") return new Response(null, { headers: cors });
+  if (req.method !== "POST") return json(405, { error: "Method not allowed" });
+
+  if (!SUPABASE_URL || !SUPABASE_ANON_KEY || !SERVICE_ROLE_KEY) {
+    return json(500, { error: "Server not configured" });
+  }
+
+  // === System vs user mode ============================================
+  const providedWatchmanSecret = req.headers.get("x-watchman-secret") || "";
+  const isSystemMode = !!WATCHMAN_SECRET && providedWatchmanSecret === WATCHMAN_SECRET;
+
+  const admin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
+
+  let body: any = {};
+  try { body = await req.json(); } catch {}
+  const tier = (body?.tier as string) || "pro";
+
+  if (isSystemMode) {
+    // System mode — cron-driven scan of every operator's customers.
+    // Find distinct bdc_user_ids in the customers table.
+    const { data: ops, error: opsErr } = await admin
+      .from("customers")
+      .select("bdc_user_id")
+      .not("bdc_user_id", "is", null);
+    if (opsErr) return json(500, { error: opsErr.message });
+    const distinctOps = Array.from(new Set((ops || []).map((r: any) => r.bdc_user_id)));
+
+    const perOperatorResults: any[] = [];
+    let totalCreated = 0;
+    let totalResolved = 0;
+
+    for (const opId of distinctOps) {
+      const scan = await scanOperator(admin, opId, tier);
+      totalCreated += scan.created;
+      totalResolved += scan.resolved;
+      // Look up operator email
+      const { data: userData } = await admin.auth.admin.getUserById(opId);
+      const email = userData?.user?.email || null;
+      let emailRes: any = { skipped: true };
+      if (scan.created > 0 && email) {
+        emailRes = await sendOperatorEmail(email, scan.newReminders, scan.created);
+      }
+      perOperatorResults.push({
+        operator_id: opId,
+        operator_email: email,
+        scanned: scan.scanned,
+        created: scan.created,
+        resolved: scan.resolved,
+        email: emailRes,
       });
-      emailRes = { ok: r.ok, status: r.status };
-    } catch (err) {
-      emailRes = { ok: false, error: String(err) };
     }
-  } else if (created > 0 && !RESEND_API_KEY) {
-    emailRes = { skipped: true, reason: "RESEND_API_KEY not configured" };
-  } else if (created > 0 && !userData.user.email) {
-    emailRes = { skipped: true, reason: "Operator has no email on auth.users" };
+
+    return json(200, {
+      ok: true,
+      mode: "system",
+      operators: distinctOps.length,
+      total_created: totalCreated,
+      total_resolved: totalResolved,
+      tier,
+      per_operator: perOperatorResults,
+    });
+  }
+
+  // === User mode (existing) ============================================
+
+  // Rate limit (user mode only — system mode is trusted)
+  {
+    const ah = req.headers.get("Authorization") || "";
+    let rkey = "anon";
+    if (ah.startsWith("Bearer ")) {
+      try { rkey = `user:${JSON.parse(atob(ah.slice(7).split(".")[1])).sub}`; } catch {}
+    }
+    if (rkey === "anon") rkey = `ip:${(req.headers.get("x-forwarded-for") || "").split(",")[0].trim() || "unknown"}`;
+    const rRes = await fetch(`${SUPABASE_URL}/rest/v1/rpc/rate_limit_check`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "apikey": SERVICE_ROLE_KEY, "Authorization": `Bearer ${SERVICE_ROLE_KEY}` },
+      body: JSON.stringify({ p_bucket: `${rkey}:compliance-watchman`, p_max_per_min: 10 }),
+    });
+    if ((await rRes.json()) === false) {
+      return json(429, { error: "Rate limit exceeded — try again in a minute" });
+    }
+  }
+
+  const authHeader = req.headers.get("Authorization") || "";
+  if (!authHeader.startsWith("Bearer ")) return json(401, { error: "Missing Bearer token" });
+  const userClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+    global: { headers: { Authorization: authHeader } },
+  });
+  const { data: userData, error: userErr } = await userClient.auth.getUser();
+  if (userErr || !userData?.user) return json(401, { error: "Invalid session" });
+  const userId = userData.user.id;
+
+  let scan;
+  try {
+    scan = await scanOperator(admin, userId, tier);
+  } catch (err) {
+    return json(500, { error: String(err) });
+  }
+
+  let emailRes: any = { skipped: true };
+  if (scan.created > 0 && userData.user.email) {
+    emailRes = await sendOperatorEmail(userData.user.email, scan.newReminders, scan.created);
   }
 
   return json(200, {
     ok: true,
-    scanned: customers.length,
-    created,
-    resolved,
+    mode: "user",
+    scanned: scan.scanned,
+    created: scan.created,
+    resolved: scan.resolved,
     tier,
     email: emailRes,
   });
