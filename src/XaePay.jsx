@@ -30,11 +30,11 @@ const PARTNER_DISPLAY_NAME = "Licensed payment partner";
 // leave more validation work to the operator (and pay them more), higher tiers shift work
 // (and a larger margin share) to XaePay.
 const TIERS = {
-  basic:      { id: "basic",      name: "Basic",          minMarkup: 0.50, operatorShare: 0.75, xaepayShare: 0.25, tagline: "Light send · for small / price-competitive transactions",       monthlyFloor: 10000,  monthlyCeiling: 25000 },
-  standard:   { id: "standard",   name: "Standard",       minMarkup: 1.50, operatorShare: 0.70, xaepayShare: 0.30, tagline: "You validate invoices · we execute",                          monthlyFloor: 25000,  monthlyCeiling: 50000 },
-  verified:   { id: "verified",   name: "Verified",       minMarkup: 2.50, operatorShare: 0.65, xaepayShare: 0.35, tagline: "We check invoices · reject + reason for fixes",               monthlyFloor: 50000,  monthlyCeiling: 200000 },
-  documented: { id: "documented", name: "Documented",     minMarkup: 3.50, operatorShare: 0.60, xaepayShare: 0.40, tagline: "Full validation + audit pack per transaction",                monthlyFloor: 200000, monthlyCeiling: 500000 },
-  pro:        { id: "pro",        name: "Compliance Pro", minMarkup: 4.50, operatorShare: 0.55, xaepayShare: 0.45, tagline: "Deep validation + quarterly compliance pack",                  monthlyFloor: 500000, monthlyCeiling: null },
+  basic:      { id: "basic",      name: "Basic",          minMarkup: 1.00, operatorShare: 0.75, xaepayShare: 0.25, tagline: "Light send · for small / price-competitive transactions",       monthlyFloor: 10000,  monthlyCeiling: 25000 },
+  standard:   { id: "standard",   name: "Standard",       minMarkup: 2.00, operatorShare: 0.70, xaepayShare: 0.30, tagline: "You validate invoices · we execute",                          monthlyFloor: 25000,  monthlyCeiling: 50000 },
+  verified:   { id: "verified",   name: "Verified",       minMarkup: 3.00, operatorShare: 0.65, xaepayShare: 0.35, tagline: "We check invoices · reject + reason for fixes",               monthlyFloor: 50000,  monthlyCeiling: 200000 },
+  documented: { id: "documented", name: "Documented",     minMarkup: 4.00, operatorShare: 0.60, xaepayShare: 0.40, tagline: "Full validation + audit pack per transaction",                monthlyFloor: 200000, monthlyCeiling: 500000 },
+  pro:        { id: "pro",        name: "Compliance Pro", minMarkup: 5.00, operatorShare: 0.55, xaepayShare: 0.45, tagline: "Deep validation + quarterly compliance pack",                  monthlyFloor: 500000, monthlyCeiling: null },
 };
 
 function GlobalStyles() {
@@ -2965,6 +2965,7 @@ function CustomerPortal({ session, customerRows }) {
   const [activeCustomerId, setActiveCustomerId] = useState(customerRows[0]?.id || null);
   const [quotes, setQuotes] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [requestOpen, setRequestOpen] = useState(false);
 
   const activeCustomer = customerRows.find((c) => c.id === activeCustomerId);
 
@@ -3032,9 +3033,11 @@ function CustomerPortal({ session, customerRows }) {
     return s.includes("COMPLETED") || s.includes("CANCELED") || s.includes("CANCELLED") || s.includes("EXPIRED");
   };
   const openQuotes = quotes.filter((q) => q.status === "pending_approval");
+  const requestQuotes = quotes.filter((q) => q.status === "request_pending");
   const inProgressQuotes = quotes.filter((q) => q.status === "customer_approved" && !isCedarTerminal(q.cedar_request_status));
   const pastQuotes = quotes.filter((q) =>
     q.status !== "pending_approval" &&
+    q.status !== "request_pending" &&
     !(q.status === "customer_approved" && !isCedarTerminal(q.cedar_request_status))
   );
 
@@ -3090,6 +3093,52 @@ function CustomerPortal({ session, customerRows }) {
           </p>
         </Card>
       </section>
+
+      <section className="mb-6 rise" style={{ animationDelay: "0.045s" }}>
+        <Card>
+          <div className="flex items-center justify-between gap-4 flex-wrap">
+            <div>
+              <h3 className="font-display text-lg font-semibold">Need to send a payment?</h3>
+              <p className="text-xs mt-1" style={{ color: "var(--muted)" }}>Request a quote from {activeCustomer?.bdc_name || "your operator"}. They'll set the rate and send it back.</p>
+            </div>
+            <PrimaryBtn onClick={() => setRequestOpen(true)} disabled={!activeCustomer?.bdc_user_id}><Plus size={14} /> Request a quote</PrimaryBtn>
+          </div>
+        </Card>
+      </section>
+
+      {requestQuotes.length > 0 && (
+        <section className="mb-8 rise" style={{ animationDelay: "0.05s" }}>
+          <h2 className="font-display text-xl font-semibold mb-4">
+            {requestQuotes.length} request{requestQuotes.length === 1 ? "" : "s"} pending operator
+          </h2>
+          <div className="space-y-3">
+            {requestQuotes.map((q) => (
+              <Card key={q.id}>
+                <div className="space-y-3">
+                  <div className="flex items-baseline justify-between gap-3">
+                    <div className="font-mono text-xs" style={{ color: "var(--muted)" }}>QU-{q.id.slice(0, 4).toUpperCase()}</div>
+                    <span className="rounded-full px-2 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-wider" style={{ background: "#fef3c7", color: "#92400e" }}>Awaiting your operator</span>
+                  </div>
+                  <div className="font-display text-2xl font-[500]">${parseFloat(q.amount).toLocaleString()} {q.currency}</div>
+                  <div className="text-sm" style={{ color: "var(--muted)" }}>To {q.beneficiary || "—"} · {q.destination || "—"}</div>
+                  {q.invoice_url && (
+                    <div className="rounded-lg p-2.5 text-xs flex items-center justify-between" style={{ background: "rgba(15,95,63,0.06)", border: "1px solid rgba(15,95,63,0.2)" }}>
+                      <div className="flex items-center gap-2" style={{ color: "var(--emerald)" }}>
+                        <CheckCircle2 size={12} />
+                        <span className="font-medium">Invoice attached</span>
+                      </div>
+                      <a href={safeUrl(q.invoice_url)} target="_blank" rel="noreferrer" className="font-medium underline" style={{ color: "var(--emerald)" }}>View</a>
+                    </div>
+                  )}
+                  <div className="text-[11px] pt-1" style={{ color: "var(--muted)", borderTop: "1px solid var(--line)" }}>
+                    Sent to {activeCustomer?.bdc_name || "your operator"} {relativeTime(q.created_at)}. They'll send back a priced quote you can review and approve.
+                  </div>
+                </div>
+              </Card>
+            ))}
+          </div>
+        </section>
+      )}
 
       <section className="mb-10 rise" style={{ animationDelay: "0.05s" }}>
         <div className="flex items-baseline justify-between mb-4">
@@ -3155,7 +3204,133 @@ function CustomerPortal({ session, customerRows }) {
           </Card>
         </section>
       )}
+      <CustomerRequestQuoteModal
+        open={requestOpen}
+        onClose={() => setRequestOpen(false)}
+        customer={activeCustomer}
+        onCreated={fetchQuotes}
+      />
     </div>
+  );
+}
+
+// Customer-initiated request flow. Customer fills out their request (amount,
+// supplier, country, optional invoice), submits → creates a quote row in
+// `request_pending` state for the linked operator to price + send.
+function CustomerRequestQuoteModal({ open, onClose, customer, onCreated }) {
+  const { push } = useToast();
+  const empty = {
+    direction: "outbound",
+    amount: "",
+    currency: "USD",
+    country: "China",
+    supplier: "",
+    invoiceUrl: "",
+    cedarInvoiceUrl: "",
+    note: "",
+  };
+  const [data, setData] = useState(empty);
+  const [submitting, setSubmitting] = useState(false);
+  const isInbound = data.direction === "inbound";
+  const canSubmit = !!(data.amount && parseFloat(data.amount) > 0 && data.supplier && customer?.id && customer?.bdc_user_id);
+
+  const submit = async () => {
+    if (!canSubmit || submitting) return;
+    setSubmitting(true);
+    const amount = parseFloat(data.amount);
+    const patch = {
+      bdc_user_id: customer.bdc_user_id,
+      bdc_name: customer.bdc_name || "Operator",
+      customer_id: customer.id,
+      customer_name: customer.name || null,
+      customer_phone: customer.phone || null,
+      amount,
+      currency: data.currency,
+      beneficiary: data.supplier,
+      destination: isInbound ? "Nigeria" : data.country,
+      status: "request_pending",
+      ...(data.invoiceUrl ? {
+        invoice_url: data.invoiceUrl,
+        invoice_uploaded_at: new Date().toISOString(),
+        invoice_uploaded_by: "customer",
+      } : {}),
+      ...(data.cedarInvoiceUrl ? { cedar_invoice_url: data.cedarInvoiceUrl } : {}),
+    };
+    const { data: row, error } = await supabase.from("quotes").insert(patch).select("*").single();
+    if (error) {
+      setSubmitting(false);
+      push(`Couldn't send request: ${error.message}`, "warn");
+      return;
+    }
+    if (data.invoiceUrl) {
+      runComplianceReview(row.id).catch(() => {});
+    }
+    setSubmitting(false);
+    push(`Quote request sent to ${customer.bdc_name || "your operator"}`, "success");
+    onCreated && onCreated();
+    setData(empty);
+    onClose();
+  };
+
+  return (
+    <Modal open={open} onClose={onClose} title="Request a new quote" size="xl">
+      <div className="space-y-5">
+        <div>
+          <p className="text-sm" style={{ color: "var(--muted)" }}>
+            Tell {customer?.bdc_name || "your operator"} what you need to send. They'll set the rate and send a quote back to you within a few minutes.
+          </p>
+        </div>
+        <div>
+          <Label>Direction</Label>
+          <div className="grid grid-cols-2 gap-2">
+            <button type="button" onClick={() => setData({ ...data, direction: "outbound" })} className="rounded-xl px-4 py-3 text-sm font-medium transition" style={data.direction === "outbound" ? { background: "var(--ink)", color: "var(--bone)", border: "1px solid var(--ink)" } : { background: "white", border: "1px solid var(--line)" }}>
+              <div className="font-semibold">Outbound</div>
+              <div className="font-mono text-[10px] uppercase tracking-wider mt-0.5 opacity-70">Nigeria → World</div>
+            </button>
+            <button type="button" onClick={() => setData({ ...data, direction: "inbound" })} className="rounded-xl px-4 py-3 text-sm font-medium transition" style={data.direction === "inbound" ? { background: "var(--ink)", color: "var(--bone)", border: "1px solid var(--ink)" } : { background: "white", border: "1px solid var(--line)" }}>
+              <div className="font-semibold">Inbound</div>
+              <div className="font-mono text-[10px] uppercase tracking-wider mt-0.5 opacity-70">World → Nigeria</div>
+            </button>
+          </div>
+        </div>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field label={`Amount (${data.currency})`}>
+            <div className="focus-ring flex items-center rounded-xl transition" style={{ background: "white", border: "1px solid var(--line)" }}>
+              <span className="pl-3.5 text-sm font-mono" style={{ color: "var(--muted)" }}>$</span>
+              <input type="text" value={data.amount} onChange={(e) => setData({ ...data, amount: e.target.value })} className="w-full bg-transparent px-2 py-3 text-sm outline-none font-mono" placeholder="25000" />
+            </div>
+          </Field>
+          <Field label={isInbound ? "Recipient country" : "Supplier country"}>
+            <Select value={isInbound ? "Nigeria" : data.country} onChange={(e) => setData({ ...data, country: e.target.value })} disabled={isInbound}>
+              {isInbound ? <option>Nigeria</option> : (<><option>China</option><option>USA</option><option>UK</option><option>Germany</option><option>UAE</option><option>India</option><option>Türkiye</option></>)}
+            </Select>
+          </Field>
+          <Field label={isInbound ? "Recipient (Nigerian supplier/vendor)" : "Supplier name"} full>
+            <Input value={data.supplier} onChange={(e) => setData({ ...data, supplier: e.target.value })} placeholder={isInbound ? "Lagos Trading Ltd" : "Shenzhen Electronics Co., Ltd"} />
+          </Field>
+          <Field label="Supplier invoice (PDF or image)" full>
+            <FileUploadField
+              category="invoices"
+              value={data.invoiceUrl}
+              onChange={(url) => setData((d) => ({ ...d, invoiceUrl: url }))}
+              onCedarUrl={(url) => setData((d) => ({ ...d, cedarInvoiceUrl: url }))}
+            />
+            <p className="text-[11px] mt-1" style={{ color: "var(--muted)" }}>
+              Attach the invoice your supplier issued. We'll run automatic checks against it before your operator finalizes the quote.
+            </p>
+          </Field>
+          <Field label="Anything else your operator should know? (optional)" full>
+            <textarea rows={3} value={data.note} onChange={(e) => setData({ ...data, note: e.target.value })} placeholder="Urgency, special instructions, etc." className="w-full rounded-xl px-3 py-2 text-sm" style={{ background: "white", border: "1px solid var(--line)" }} />
+          </Field>
+        </div>
+        <div className="flex justify-end gap-2 pt-2">
+          <SecondaryBtn onClick={onClose} disabled={submitting}>Cancel</SecondaryBtn>
+          <PrimaryBtn onClick={submit} disabled={!canSubmit || submitting}>
+            {submitting ? <><Loader2 size={14} className="animate-spin" /> Sending request…</> : <>Send request <ArrowRight size={14} /></>}
+          </PrimaryBtn>
+        </div>
+      </div>
+    </Modal>
   );
 }
 
@@ -5199,6 +5374,7 @@ const QUOTE_STATUS_TO_TX_STATUS = {
   filled: "completed",
   expired: "disputed",
   cancelled: "disputed",
+  request_pending: "pending", // customer-initiated request waiting on operator pricing
 };
 
 function BDCTransactions() {
@@ -5240,6 +5416,7 @@ function BDCTransactions() {
         costBasisNgn: q.cost_basis_ngn != null ? parseFloat(q.cost_basis_ngn) : null,
         rail: q.rail || "—",
         status: QUOTE_STATUS_TO_TX_STATUS[q.status] || "pending",
+        dbStatus: q.status,
         date: relativeTime(q.submitted_at || q.created_at),
         recipientId: q.recipient_id,
         recipientExternalAccountId: q.recipient_external_account_id,
@@ -5436,6 +5613,11 @@ function TxDrawer({ tx, onClose, onRefresh }) {
           <div className="relative mt-1 font-mono text-[11px]" style={{ color: "rgba(247,245,240,0.6)" }}>{tx.customer} → {tx.dest} · via {SHOW_TRIPLE_A ? tx.rail : "partner"}</div>
         </div>
 
+        {/* Customer-initiated request — operator prices + sends back from here. */}
+        {tx.dbId && tx.status === "pending" && tx.dbStatus === "request_pending" && (
+          <OperatorPriceRequestPanel tx={tx} onSent={() => onRefresh && onRefresh()} />
+        )}
+
         {/* Tier-aware compliance review — auto-runs after invoice upload. */}
         {tx.dbId && tx.invoiceUrl && (
           <ComplianceReviewPanel tx={tx} onChanged={() => onRefresh && onRefresh()} />
@@ -5555,6 +5737,129 @@ const CEDAR_PURPOSES = [
   { id: "PAYMENT_OF_SERVICES", label: "Payment for services" },
   { id: "OTHER_SERVICES", label: "Other services" },
 ];
+
+// Shows in TxDrawer when status === 'request_pending' (customer-initiated request).
+// Operator picks tier + markup, hits send. Updates the quote row to
+// pending_approval and fires WhatsApp + email so the customer sees a priced quote
+// in their portal and gets notified through the existing channels.
+function OperatorPriceRequestPanel({ tx, onSent }) {
+  const { push } = useToast();
+  const auth = useAuth();
+  const [tierId, setTierId] = useState("verified");
+  const tier = TIERS[tierId];
+  const [markupAmount, setMarkupAmount] = useState(TIERS.verified.minMarkup);
+  const [wholesaleRate, setWholesaleRate] = useState(null);
+  const [rateLoading, setRateLoading] = useState(false);
+  const [sending, setSending] = useState(false);
+  const isInbound = tx.dest === "Nigeria";
+
+  useEffect(() => { setMarkupAmount(TIERS[tierId].minMarkup); }, [tierId]);
+
+  useEffect(() => {
+    if (!tx.amount) return;
+    setRateLoading(true);
+    const fromCcy = isInbound ? tx.currency : "NGN";
+    const toCcy = isInbound ? "NGN" : tx.currency;
+    const toAmount = isInbound ? tx.amount * 1395 : tx.amount;
+    fetchCedarRate({ fromCurrencySymbol: fromCcy, toCurrencySymbol: toCcy, toAmount })
+      .then((r) => { if (r?.ok && r.data?.rate) setWholesaleRate(parseFloat(r.data.rate)); })
+      .finally(() => setRateLoading(false));
+  }, [tx.amount, tx.currency, isInbound]);
+
+  const customerRate = wholesaleRate ? (isInbound ? wholesaleRate - markupAmount : wholesaleRate + markupAmount) : null;
+  const ngnTotal = customerRate ? Math.round(tx.amount * customerRate) : null;
+  const operatorMargin = customerRate && wholesaleRate ? Math.round((customerRate - wholesaleRate) * tx.amount) : null;
+  const canSend = !!customerRate && !sending && !rateLoading;
+
+  const sendPricedQuote = async () => {
+    if (!canSend) return;
+    setSending(true);
+    const expiresAt = new Date(Date.now() + 4 * 60 * 1000).toISOString();
+    const { error } = await supabase.from("quotes").update({
+      rate: parseFloat(customerRate.toFixed(2)),
+      ngn_total: ngnTotal,
+      markup_pct: parseFloat(((markupAmount / wholesaleRate) * 100).toFixed(4)),
+      cost_basis_ngn: wholesaleRate,
+      rail: "Cedar Money",
+      settlement_text: "T+0 · same day",
+      status: "pending_approval",
+      expires_at: expiresAt,
+      review_tier: tierId,
+    }).eq("id", tx.dbId);
+    if (error) {
+      setSending(false);
+      push(`Couldn't price quote: ${error.message}`, "warn");
+      return;
+    }
+    const displayRef = `QU-${tx.dbId.slice(0, 4).toUpperCase()}`;
+    push(`Priced quote saved · ${displayRef}`, "success");
+
+    let customerEmail = null;
+    if (tx.customerId) {
+      const { data: c } = await supabase.from("customers").select("email").eq("id", tx.customerId).maybeSingle();
+      customerEmail = c?.email || null;
+    }
+    const phoneDigits = (tx.customerPhone || "").replace(/[^\d]/g, "");
+    const approvalUrl = `${window.location.origin}/?quote=${tx.dbId}`;
+    if (phoneDigits) {
+      const components = [{
+        type: "body",
+        parameters: [
+          { type: "text", text: tx.customer || "there" },
+          { type: "text", text: displayRef },
+          { type: "text", text: `$${tx.amount.toLocaleString()} ${tx.currency}` },
+          { type: "text", text: `₦${customerRate.toFixed(2)}/$` },
+          { type: "text", text: approvalUrl },
+        ],
+      }];
+      sendWhatsAppTemplate(phoneDigits, "quote_notification", "en", components).then((r) => {
+        if (r.ok) push(`WhatsApp delivered to ${tx.customer}`, "info");
+        else push(`WhatsApp failed: ${r.data?.error?.message || r.status}`, "warn");
+      });
+    }
+    if (customerEmail) {
+      const operatorName = auth.user?.user_metadata?.company || auth.user?.email || "your XaePay operator";
+      const ngnText = `₦${ngnTotal.toLocaleString()}`;
+      const emailHtml = `<!doctype html><html><body style="font-family:system-ui,sans-serif;color:#0a0b0d;background:#fcfbf7;margin:0;padding:24px;"><div style="max-width:560px;margin:0 auto;background:white;border:1px solid #e5e7eb;border-radius:16px;padding:32px;"><h2 style="margin:0 0 8px;font-size:24px;">Hello ${tx.customer || "there"},</h2><p style="color:#6b7280;margin:0 0 24px;">${operatorName} has priced your quote request.</p><div style="background:#0a0b0d;color:#d4f570;border-radius:12px;padding:24px;margin-bottom:24px;"><div style="font-size:11px;text-transform:uppercase;letter-spacing:0.05em;color:rgba(247,245,240,0.5);margin-bottom:8px;">Amount</div><div style="font-size:36px;font-weight:500;">$${tx.amount.toLocaleString()} ${tx.currency}</div></div><table style="width:100%;font-family:monospace;font-size:13px;border-collapse:collapse;margin-bottom:24px;"><tr><td style="padding:6px 0;color:#6b7280;">Reference</td><td style="padding:6px 0;text-align:right;font-weight:600;">${displayRef}</td></tr><tr><td style="padding:6px 0;color:#6b7280;">Rate</td><td style="padding:6px 0;text-align:right;font-weight:600;">₦${customerRate.toFixed(2)}/$</td></tr><tr><td style="padding:6px 0;color:#6b7280;">You pay</td><td style="padding:6px 0;text-align:right;font-weight:600;">${ngnText}</td></tr></table><p style="text-align:center;margin:0 0 8px;"><a href="${approvalUrl}" style="display:inline-block;background:#0a0b0d;color:#d4f570;padding:14px 28px;border-radius:12px;text-decoration:none;font-weight:600;">Review &amp; approve</a></p></div></body></html>`;
+      sendEmail({ to: customerEmail, subject: `Priced quote from ${operatorName} — ${displayRef}`, html: emailHtml });
+    }
+    setSending(false);
+    onSent && onSent();
+  };
+
+  return (
+    <div>
+      <Label>Price + send to customer</Label>
+      <div className="rounded-xl p-4 text-xs space-y-3" style={{ background: "var(--bone)", border: "1px solid var(--line)" }}>
+        <p className="text-[11px]" style={{ color: "var(--muted)" }}>This is a customer-initiated request. Set your tier and markup, then send a priced quote back. The customer will see it in their portal and get a WhatsApp + email notification.</p>
+        <div>
+          <div className="font-mono text-[10px] uppercase tracking-wider mb-1.5" style={{ color: "var(--muted)" }}>Service tier</div>
+          <div className="grid grid-cols-5 gap-1">
+            {Object.values(TIERS).map((t) => (
+              <button key={t.id} type="button" onClick={() => setTierId(t.id)} className="rounded-lg px-1.5 py-1.5 text-[10px] font-medium transition" style={tierId === t.id ? { background: "var(--ink)", color: "var(--bone)" } : { background: "white", border: "1px solid var(--line)" }}>
+                {t.name}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div>
+          <div className="font-mono text-[10px] uppercase tracking-wider mb-1.5" style={{ color: "var(--muted)" }}>Your markup (₦/$)</div>
+          <input type="number" step="0.10" min={tier.minMarkup} value={markupAmount} onChange={(e) => setMarkupAmount(parseFloat(e.target.value || "0"))} className="w-full rounded-lg px-2.5 py-2 font-mono text-sm" style={{ border: "1px solid var(--line)", background: "white" }} />
+          <div className="text-[10px] mt-0.5" style={{ color: "var(--muted)" }}>Tier minimum: ₦{tier.minMarkup.toFixed(2)} · Your share: {(tier.operatorShare * 100).toFixed(0)}%</div>
+        </div>
+        <div className="rounded-lg p-3 font-mono space-y-1" style={{ background: "white", border: "1px solid var(--line)" }}>
+          <div className="flex justify-between text-[11px]"><span style={{ color: "var(--muted)" }}>Wholesale (Cedar)</span><span>{rateLoading ? "loading…" : wholesaleRate ? `₦${wholesaleRate.toFixed(2)}/$` : "—"}</span></div>
+          <div className="flex justify-between text-[11px]"><span style={{ color: "var(--muted)" }}>Customer rate</span><span className="font-semibold">{customerRate ? `₦${customerRate.toFixed(2)}/$` : "—"}</span></div>
+          <div className="flex justify-between text-[11px] pt-1" style={{ borderTop: "1px solid var(--line)" }}><span style={{ color: "var(--muted)" }}>Customer pays</span><span className="font-semibold">{ngnTotal ? `₦${ngnTotal.toLocaleString()}` : "—"}</span></div>
+          <div className="flex justify-between text-[11px]"><span style={{ color: "var(--emerald)" }}>Operator margin (est.)</span><span className="font-semibold" style={{ color: "var(--emerald)" }}>{operatorMargin ? `₦${operatorMargin.toLocaleString()}` : "—"}</span></div>
+        </div>
+        <PrimaryBtn onClick={sendPricedQuote} disabled={!canSend} full>
+          {sending ? <><Loader2 size={12} className="animate-spin" /> Sending…</> : <>Send priced quote · {customerRate ? `₦${customerRate.toFixed(2)}/$` : "set rate"} <Send size={12} /></>}
+        </PrimaryBtn>
+      </div>
+    </div>
+  );
+}
 
 function CedarSubmitPanel({ tx, onSubmitted }) {
   const { push } = useToast();
