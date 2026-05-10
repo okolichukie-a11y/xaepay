@@ -185,14 +185,14 @@ function Modal({ open, onClose, title, children, size = "md" }) {
   if (!open) return null;
   const width = size === "xl" ? "max-w-5xl" : size === "lg" ? "max-w-3xl" : size === "sm" ? "max-w-md" : "max-w-lg";
   return (
-    <div className="fixed inset-0 z-[90] flex items-center justify-center p-4 font-ui fade-in">
+    <div className="fixed inset-0 z-[90] flex items-end sm:items-center justify-center p-0 sm:p-4 font-ui fade-in">
       <div className="absolute inset-0 backdrop-blur-md" style={{ background: "rgba(10,11,13,0.45)" }} onClick={onClose} />
-      <div className={`relative w-full ${width} max-h-[90vh] overflow-hidden rounded-2xl bg-white shadow-2xl flex flex-col`} style={{ animation: "rise 0.45s cubic-bezier(0.16, 1, 0.3, 1) both" }}>
-        <div className="flex items-start justify-between px-6 py-5 flex-shrink-0" style={{ borderBottom: "1px solid var(--line)" }}>
-          <h3 className="font-display text-xl font-semibold" style={{ color: "var(--ink)" }}>{title}</h3>
-          <button onClick={onClose} className="text-stone-400 transition hover:text-stone-900"><X size={18} /></button>
+      <div className={`relative w-full ${width} max-h-[100dvh] sm:max-h-[90vh] h-full sm:h-auto overflow-hidden rounded-t-2xl sm:rounded-2xl bg-white shadow-2xl flex flex-col`} style={{ animation: "rise 0.45s cubic-bezier(0.16, 1, 0.3, 1) both" }}>
+        <div className="flex items-start justify-between px-4 sm:px-6 py-4 sm:py-5 flex-shrink-0 safe-top" style={{ borderBottom: "1px solid var(--line)" }}>
+          <h3 className="font-display text-lg sm:text-xl font-semibold pr-4" style={{ color: "var(--ink)" }}>{title}</h3>
+          <button onClick={onClose} className="text-stone-400 transition hover:text-stone-900 -m-2 p-2 flex-shrink-0" aria-label="Close"><X size={20} /></button>
         </div>
-        <div className="overflow-y-auto px-6 py-5">{children}</div>
+        <div className="overflow-y-auto scroll-touch px-4 sm:px-6 py-4 sm:py-5 safe-bottom">{children}</div>
       </div>
     </div>
   );
@@ -204,11 +204,11 @@ function Drawer({ open, onClose, title, children }) {
     <div className="fixed inset-0 z-[90] flex font-ui fade-in">
       <div className="absolute inset-0 backdrop-blur-md" style={{ background: "rgba(10,11,13,0.45)" }} onClick={onClose} />
       <div className="ml-auto flex h-full w-full max-w-md flex-col bg-white shadow-2xl sm:w-[480px]" style={{ animation: "rise 0.5s cubic-bezier(0.16, 1, 0.3, 1) both" }}>
-        <div className="flex items-start justify-between px-6 py-5" style={{ borderBottom: "1px solid var(--line)" }}>
-          <h3 className="font-display text-xl font-semibold" style={{ color: "var(--ink)" }}>{title}</h3>
-          <button onClick={onClose} className="text-stone-400 transition hover:text-stone-900"><X size={18} /></button>
+        <div className="flex items-start justify-between px-4 sm:px-6 py-4 sm:py-5 safe-top" style={{ borderBottom: "1px solid var(--line)" }}>
+          <h3 className="font-display text-lg sm:text-xl font-semibold pr-4" style={{ color: "var(--ink)" }}>{title}</h3>
+          <button onClick={onClose} className="text-stone-400 transition hover:text-stone-900 -m-2 p-2 flex-shrink-0" aria-label="Close"><X size={20} /></button>
         </div>
-        <div className="flex-1 overflow-y-auto px-6 py-5">{children}</div>
+        <div className="flex-1 overflow-y-auto scroll-touch px-4 sm:px-6 py-4 sm:py-5 safe-bottom">{children}</div>
       </div>
     </div>
   );
@@ -224,6 +224,32 @@ function relativeTime(iso) {
   if (diffSec < 3600) return `${Math.floor(diffSec / 60)} min ago`;
   if (diffSec < 86400) return `${Math.floor(diffSec / 3600)} hr ago`;
   return d.toLocaleDateString(undefined, { month: "short", day: "numeric" }) + " · " + d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+}
+
+// Next bi-weekly operator payout date. Anchored on a fixed cadence start so it's
+// stable across reloads. Cycles every 14 days; we return the next cycle from now.
+function nextBiweeklyPayoutDate() {
+  const ANCHOR = new Date("2026-01-15T00:00:00Z").getTime();
+  const DAY = 24 * 60 * 60 * 1000;
+  const now = Date.now();
+  const daysSince = Math.floor((now - ANCHOR) / DAY);
+  const cyclesPassed = Math.max(0, Math.floor(daysSince / 14));
+  return new Date(ANCHOR + (cyclesPassed + 1) * 14 * DAY);
+}
+
+// Most-recent N months, latest first. Used by the earnings table when real
+// per-month aggregation isn't wired up yet.
+function recentMonthLabels(n) {
+  const out = [];
+  const now = new Date();
+  for (let i = 0; i < n; i++) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    out.push({
+      key: `${d.getFullYear()}-${d.getMonth()}`,
+      label: d.toLocaleDateString("en-US", { month: "long", year: "numeric" }),
+    });
+  }
+  return out;
 }
 
 // ─── Quote-link encoding ──────────────────────────────────────────────────
@@ -4032,22 +4058,32 @@ function BDCDashboard({ session }) {
 }
 
 function BDCEarnings() {
-  // Static demo for now; real per-month aggregation lands with the backend pass.
-  const months = [
-    { m: "April 2026", tx: 19, volume: 1200000, earned: 4280 },
-    { m: "March 2026", tx: 14, volume: 825000, earned: 2440 },
-    { m: "February 2026", tx: 8, volume: 412000, earned: 1180 },
-    { m: "January 2026", tx: 4, volume: 188000, earned: 540 },
-  ];
+  // Months are computed from the current date so the table doesn't get stuck on
+  // hardcoded labels; real per-month aggregation lands with the backend pass and
+  // will replace the placeholder counts.
+  const months = recentMonthLabels(4).map((m, i) => ({
+    m: m.label,
+    tx: 0,
+    volume: 0,
+    earned: 0,
+    _placeholder: true,
+    _i: i,
+  }));
+  const nextPayout = nextBiweeklyPayoutDate();
+  const nextPayoutShort = nextPayout.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  const nextPayoutLong = nextPayout.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
   return (
     <div className="space-y-6">
       <div className="grid gap-4 sm:grid-cols-3">
-        <StatCard label="Lifetime earnings" value="$8,440" sub="Across 4 months" />
-        <StatCard label="Avg per transaction" value="$185" sub="Trending up" positive />
-        <StatCard label="Pending payout" value="$2,140" sub="Settles April 30" />
+        <StatCard label="Lifetime earnings" value="$0" sub="Backend wire-up pending" />
+        <StatCard label="Avg per transaction" value="—" sub="Once you have transactions" />
+        <StatCard label="Pending payout" value="$0" sub={`Settles ${nextPayoutShort}`} />
       </div>
       <Card padding="none">
-        <div className="p-4" style={{ borderBottom: "1px solid var(--line)" }}><div className="text-sm font-semibold">Monthly earnings</div></div>
+        <div className="p-4 flex items-center justify-between gap-2 flex-wrap" style={{ borderBottom: "1px solid var(--line)" }}>
+          <div className="text-sm font-semibold">Monthly earnings</div>
+          <span className="rounded-full px-2 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-wider" style={{ background: "var(--bone-2)", color: "var(--muted)" }}>Placeholder data</span>
+        </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead><tr style={{ background: "var(--bone)", borderBottom: "1px solid var(--line)" }}>{["Month", "Transactions", "Volume", "You earned"].map((h, i) => (<th key={i} className={`px-4 py-3 text-left font-mono text-[10px] font-semibold uppercase tracking-wider ${["Volume", "Transactions", "You earned"].includes(h) ? "text-right" : ""}`} style={{ color: "var(--muted)" }}>{h}</th>))}</tr></thead>
@@ -4057,7 +4093,7 @@ function BDCEarnings() {
                   <td className="px-4 py-3.5 font-medium">{m.m}</td>
                   <td className="px-4 py-3.5 text-right font-mono">{m.tx}</td>
                   <td className="px-4 py-3.5 text-right font-mono">${m.volume.toLocaleString()}</td>
-                  <td className="px-4 py-3.5 text-right font-mono font-semibold" style={{ color: "var(--emerald)" }}>${m.earned.toLocaleString()}</td>
+                  <td className="px-4 py-3.5 text-right font-mono font-semibold" style={{ color: m.earned > 0 ? "var(--emerald)" : "var(--muted)" }}>${m.earned.toLocaleString()}</td>
                 </tr>
               ))}
             </tbody>
@@ -4069,7 +4105,7 @@ function BDCEarnings() {
           <DollarSign size={16} className="mt-0.5 flex-shrink-0" style={{ color: "var(--emerald)" }} />
           <div className="text-sm" style={{ color: "var(--ink)" }}>
             <div className="font-semibold mb-1">Bi-weekly payouts</div>
-            <p style={{ color: "var(--muted)" }}>Earnings are paid every two weeks to your registered Nigerian bank account. Next payout: <span className="font-semibold" style={{ color: "var(--ink)" }}>April 30, 2026</span> · ₦2,983,200 (~$2,140 USD).</p>
+            <p style={{ color: "var(--muted)" }}>Earnings are paid every two weeks to your registered Nigerian bank account. Next payout: <span className="font-semibold" style={{ color: "var(--ink)" }}>{nextPayoutLong}</span>.</p>
           </div>
         </div>
       </Card>
