@@ -4135,7 +4135,13 @@ function OperatorQuoteModal({ open, onClose, onCreated }) {
     // The Edge Function persists the decision back to the quote row; operator sees
     // it in the TxDrawer once it lands.
     if (data.invoiceUrl) {
-      runComplianceReview(quoteRow.id).catch(() => {});
+      push("Running AI compliance check on the invoice…", "info");
+      runComplianceReview(quoteRow.id).then((r) => {
+        if (r?.ok) {
+          const d = r.data?.decision || "ran";
+          push(`Compliance review: ${d}`, d === "approved" ? "success" : d === "rejected" || d === "flagged" ? "warn" : "info");
+        }
+      }).catch(() => {});
     }
 
     // Send via the Meta-approved `quote_notification` template through the Cloud API
@@ -6092,13 +6098,24 @@ function ComplianceReviewPanel({ tx, onChanged }) {
   const tier = tx.reviewTier || "verified";
   const checks = (tx.reviewDetails && tx.reviewDetails.checks) || [];
 
-  const decisionPill = decision === "approved"
-    ? { label: "Approved", bg: "var(--emerald)", color: "var(--lime)" }
-    : decision === "flagged"
-      ? { label: "Flagged", bg: "#fef3c7", color: "#92400e" }
-      : decision === "rejected"
-        ? { label: "Rejected", bg: "#fee2e2", color: "#991b1b" }
-        : { label: "Pending", bg: "#f3f4f6", color: "#6b7280" };
+  // "In flight" = invoice attached + no decision yet + never reviewed (or reviewed
+  // before this invoice was uploaded). The runComplianceReview call fires async
+  // server-side and writes back the decision via the realtime subscription, so
+  // this state is what the operator sees in the seconds between trigger and result.
+  const invoiceUploadedAt = tx.invoiceUploadedAt ? new Date(tx.invoiceUploadedAt) : null;
+  const reviewedAt = tx.reviewedAt ? new Date(tx.reviewedAt) : null;
+  const everReviewedThisInvoice = reviewedAt && invoiceUploadedAt && reviewedAt >= invoiceUploadedAt;
+  const inFlight = running || (!!tx.invoiceUrl && !decision && !everReviewedThisInvoice);
+
+  const decisionPill = inFlight
+    ? { label: "Running…", bg: "#e0f2fe", color: "#0369a1" }
+    : decision === "approved"
+      ? { label: "Approved", bg: "var(--emerald)", color: "var(--lime)" }
+      : decision === "flagged"
+        ? { label: "Flagged", bg: "#fef3c7", color: "#92400e" }
+        : decision === "rejected"
+          ? { label: "Rejected", bg: "#fee2e2", color: "#991b1b" }
+          : { label: "Pending", bg: "#f3f4f6", color: "#6b7280" };
 
   const reRun = async () => {
     if (!tx.dbId || running) return;
@@ -6122,12 +6139,24 @@ function ComplianceReviewPanel({ tx, onChanged }) {
             <span style={{ color: "var(--muted)" }}>Tier</span>
             <span className="rounded-full px-2 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-wider" style={{ background: "var(--bone-2)", color: "var(--ink)" }}>{COMPLIANCE_TIER_LABELS[tier] || tier}</span>
           </div>
-          <span className="rounded-full px-2 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-wider" style={{ background: decisionPill.bg, color: decisionPill.color }}>{decisionPill.label}</span>
+          <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-wider" style={{ background: decisionPill.bg, color: decisionPill.color }}>
+            {inFlight && <Loader2 size={10} className="animate-spin" />}
+            {decisionPill.label}
+          </span>
         </div>
-        {tx.reviewReason && (
+        {inFlight && (
+          <div className="rounded-lg p-2.5 text-[11px] flex items-start gap-2" style={{ background: "white", border: "1px solid #bae6fd", color: "#0369a1" }}>
+            <Loader2 size={11} className="animate-spin mt-0.5 flex-shrink-0" />
+            <div>
+              <div className="font-semibold">AI compliance checks running…</div>
+              <div style={{ color: "#64748b" }}>Typically completes in 10-20 seconds. Result will appear here automatically — no need to refresh.</div>
+            </div>
+          </div>
+        )}
+        {tx.reviewReason && !inFlight && (
           <div className="text-[11px]" style={{ color: "var(--muted)" }}>{tx.reviewReason}</div>
         )}
-        {checks.length > 0 && (
+        {checks.length > 0 && !inFlight && (
           <ul className="space-y-2 pt-2" style={{ borderTop: "1px solid var(--line)" }}>
             {checks.map((c) => (
               <li key={c.id} className="space-y-0.5">
