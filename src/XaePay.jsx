@@ -182,33 +182,50 @@ function Modal({ open, onClose, title, children, size = "md" }) {
     if (open) window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [open, onClose]);
+  // Browser-back / iPhone swipe-back closes the modal as if the user hit X.
+  // Pushes a phantom history entry on open so swipe-back has something to pop.
+  useEffect(() => {
+    if (!open) return;
+    window.history.pushState({ xmodal: true }, "");
+    const onPop = () => onClose();
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, [open, onClose]);
   if (!open) return null;
   const width = size === "xl" ? "max-w-5xl" : size === "lg" ? "max-w-3xl" : size === "sm" ? "max-w-md" : "max-w-lg";
   return (
-    <div className="fixed inset-0 z-[90] flex items-end sm:items-center justify-center p-0 sm:p-4 font-ui fade-in">
+    <div className="fixed inset-0 z-[90] flex items-center justify-center p-4 font-ui fade-in">
       <div className="absolute inset-0 backdrop-blur-md" style={{ background: "rgba(10,11,13,0.45)" }} onClick={onClose} />
-      <div className={`relative w-full ${width} max-h-[100dvh] sm:max-h-[90vh] h-full sm:h-auto overflow-hidden rounded-t-2xl sm:rounded-2xl bg-white shadow-2xl flex flex-col`} style={{ animation: "rise 0.45s cubic-bezier(0.16, 1, 0.3, 1) both" }}>
-        <div className="flex items-start justify-between px-4 sm:px-6 py-4 sm:py-5 flex-shrink-0 safe-top" style={{ borderBottom: "1px solid var(--line)" }}>
-          <h3 className="font-display text-lg sm:text-xl font-semibold pr-4" style={{ color: "var(--ink)" }}>{title}</h3>
-          <button onClick={onClose} className="text-stone-400 transition hover:text-stone-900 -m-2 p-2 flex-shrink-0" aria-label="Close"><X size={20} /></button>
+      <div className={`relative w-full ${width} max-h-[90vh] overflow-hidden rounded-2xl bg-white shadow-2xl flex flex-col`} style={{ animation: "rise 0.45s cubic-bezier(0.16, 1, 0.3, 1) both" }}>
+        <div className="flex items-start justify-between px-6 py-5 flex-shrink-0" style={{ borderBottom: "1px solid var(--line)" }}>
+          <h3 className="font-display text-xl font-semibold" style={{ color: "var(--ink)" }}>{title}</h3>
+          <button onClick={onClose} className="text-stone-400 transition hover:text-stone-900 -m-2 p-2" aria-label="Close"><X size={18} /></button>
         </div>
-        <div className="overflow-y-auto scroll-touch px-4 sm:px-6 py-4 sm:py-5 safe-bottom">{children}</div>
+        <div className="overflow-y-auto overscroll-contain scroll-touch px-6 py-5">{children}</div>
       </div>
     </div>
   );
 }
 
 function Drawer({ open, onClose, title, children }) {
+  // Browser-back / iPhone swipe-back closes the drawer.
+  useEffect(() => {
+    if (!open) return;
+    window.history.pushState({ xdrawer: true }, "");
+    const onPop = () => onClose();
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, [open, onClose]);
   if (!open) return null;
   return (
     <div className="fixed inset-0 z-[90] flex font-ui fade-in">
       <div className="absolute inset-0 backdrop-blur-md" style={{ background: "rgba(10,11,13,0.45)" }} onClick={onClose} />
       <div className="ml-auto flex h-full w-full max-w-md flex-col bg-white shadow-2xl sm:w-[480px]" style={{ animation: "rise 0.5s cubic-bezier(0.16, 1, 0.3, 1) both" }}>
-        <div className="flex items-start justify-between px-4 sm:px-6 py-4 sm:py-5 safe-top" style={{ borderBottom: "1px solid var(--line)" }}>
-          <h3 className="font-display text-lg sm:text-xl font-semibold pr-4" style={{ color: "var(--ink)" }}>{title}</h3>
-          <button onClick={onClose} className="text-stone-400 transition hover:text-stone-900 -m-2 p-2 flex-shrink-0" aria-label="Close"><X size={20} /></button>
+        <div className="flex items-start justify-between px-6 py-5 safe-top" style={{ borderBottom: "1px solid var(--line)" }}>
+          <h3 className="font-display text-xl font-semibold" style={{ color: "var(--ink)" }}>{title}</h3>
+          <button onClick={onClose} className="text-stone-400 transition hover:text-stone-900 -m-2 p-2" aria-label="Close"><X size={18} /></button>
         </div>
-        <div className="flex-1 overflow-y-auto scroll-touch px-4 sm:px-6 py-4 sm:py-5 safe-bottom">{children}</div>
+        <div className="flex-1 overflow-y-auto overscroll-contain scroll-touch px-6 py-5 safe-bottom">{children}</div>
       </div>
     </div>
   );
