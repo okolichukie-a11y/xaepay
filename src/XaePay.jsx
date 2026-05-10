@@ -310,6 +310,19 @@ function AppShell() {
     const t = new URLSearchParams(window.location.search).get("onboard");
     return t ? decodeQuoteToken(t) : null;
   });
+  // Deep-link from email reminders (?customer=<uuid>) — operator lands on the
+  // customers tab with that customer's drawer auto-opened. Cleared from the URL
+  // immediately after we consume it so back-nav doesn't re-trigger the open.
+  const [initialCustomerId, setInitialCustomerId] = useState(() => {
+    if (typeof window === "undefined") return null;
+    return new URLSearchParams(window.location.search).get("customer") || null;
+  });
+  useEffect(() => {
+    if (!initialCustomerId) return;
+    const u = new URL(window.location.href);
+    u.searchParams.delete("customer");
+    window.history.replaceState({}, "", u.toString());
+  }, [initialCustomerId]);
   const [view, setView] = useState("landing");
   const [mobileOpen, setMobileOpen] = useState(false);
   const [accessOpen, setAccessOpen] = useState(false); // legacy multi-role picker (kept for direct callers)
@@ -449,7 +462,7 @@ function AppShell() {
       {view === "landing" && <Landing setView={setView} onRequestAccess={() => setBecomePartnerOpen(true)} onWaitlist={() => setWaitlistOpen(true)} />}
       {view === "customer" && <CustomerApp session={session} />}
       {view === "customer-portal" && <CustomerPortal session={session} customerRows={customerRows || []} />}
-      {view === "bdc" && <BDCDashboard session={session} />}
+      {view === "bdc" && <BDCDashboard session={session} initialCustomerId={initialCustomerId} onInitialCustomerHandled={() => setInitialCustomerId(null)} />}
       {view === "lp" && <LPDashboard session={session} />}
       {view === "diaspora" && <DiasporaApp session={session} />}
       <SignInModal open={signInOpen} onClose={() => setSignInOpen(false)} />
@@ -3205,6 +3218,45 @@ function CustomerPortal({ session, customerRows }) {
         )}
       </div>
 
+      {/* Activity overview — lifetime + recent counts derived from the quotes list. */}
+      {(() => {
+        const completedQuotes = quotes.filter((q) => {
+          const cs = (q.cedar_request_status || "").toUpperCase();
+          return cs.includes("COMPLETED") || q.status === "filled";
+        });
+        const inProgressCount = inProgressQuotes.length;
+        const pendingCount = openQuotes.length + requestQuotes.length;
+        const lifetimeVolumeUsd = completedQuotes.reduce((s, q) => s + (parseFloat(q.amount) || 0), 0);
+        const totalCount = quotes.length;
+        const lastActivity = quotes[0]?.created_at;
+        return (
+          <section className="mb-6 rise" style={{ animationDelay: "0.035s" }}>
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+              <Card>
+                <div className="font-mono text-[10px] uppercase tracking-wider" style={{ color: "var(--muted)" }}>Total transactions</div>
+                <div className="font-display mt-1 text-2xl font-[500]">{totalCount}</div>
+                <div className="font-mono text-[10px] mt-0.5" style={{ color: "var(--muted)" }}>{completedQuotes.length} completed</div>
+              </Card>
+              <Card>
+                <div className="font-mono text-[10px] uppercase tracking-wider" style={{ color: "var(--muted)" }}>Lifetime volume</div>
+                <div className="font-display mt-1 text-2xl font-[500]">${lifetimeVolumeUsd.toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>
+                <div className="font-mono text-[10px] mt-0.5" style={{ color: "var(--muted)" }}>USD equivalent sent</div>
+              </Card>
+              <Card>
+                <div className="font-mono text-[10px] uppercase tracking-wider" style={{ color: "var(--muted)" }}>Pending</div>
+                <div className="font-display mt-1 text-2xl font-[500]" style={{ color: pendingCount > 0 ? "var(--emerald)" : "var(--ink)" }}>{pendingCount}</div>
+                <div className="font-mono text-[10px] mt-0.5" style={{ color: "var(--muted)" }}>{openQuotes.length} awaiting you · {requestQuotes.length} awaiting operator</div>
+              </Card>
+              <Card>
+                <div className="font-mono text-[10px] uppercase tracking-wider" style={{ color: "var(--muted)" }}>In progress</div>
+                <div className="font-display mt-1 text-2xl font-[500]">{inProgressCount}</div>
+                <div className="font-mono text-[10px] mt-0.5" style={{ color: "var(--muted)" }}>{lastActivity ? `Last activity ${relativeTime(lastActivity)}` : "No activity yet"}</div>
+              </Card>
+            </div>
+          </section>
+        );
+      })()}
+
       {/* Profile + KYC mini-card. Read-only — to update info, customer contacts their operator. */}
       <section className="mb-8 rise" style={{ animationDelay: "0.04s" }}>
         <Card>
@@ -4120,7 +4172,7 @@ function ComplianceRemindersPanel({ onReminderClick }) {
   );
 }
 
-function BDCDashboard({ session }) {
+function BDCDashboard({ session, initialCustomerId, onInitialCustomerHandled }) {
   const [tab, setTab] = useState("quote");
   const [addedCustomers, setAddedCustomers] = useState([]);
   // When a reminder is clicked, we switch to the Customers tab and tell
@@ -4132,6 +4184,14 @@ function BDCDashboard({ session }) {
     setTab("customers");
     setJumpToCustomerId(customerId);
   };
+  // If we arrived from an email/SMS deep-link with ?customer=<uuid>, jump there now.
+  useEffect(() => {
+    if (initialCustomerId) {
+      jumpToCustomer(initialCustomerId);
+      onInitialCustomerHandled && onInitialCustomerHandled();
+    }
+    /* eslint-disable-next-line react-hooks/exhaustive-deps */
+  }, [initialCustomerId]);
   const tabs = [
     { id: "quote", label: "Quote tool", icon: Plus },
     { id: "transactions", label: "Transactions", icon: Receipt },
