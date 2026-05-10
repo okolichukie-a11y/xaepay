@@ -3324,23 +3324,31 @@ function CustomerQuoteCard({ q, onDecide, onInvoiceUploaded }) {
   const uploadInvoice = async (file) => {
     if (!file) return;
     setUploading(true);
-    const result = await uploadCedarFile(file, "invoices");
-    if (!result.ok) {
+    const both = await uploadFileBoth(file, "invoices");
+    if (!both.supabaseUrl && !both.cedarUrl) {
       setUploading(false);
-      push(`Upload failed: ${result.error}`, "warn");
+      push(`Upload failed: ${both.storageError || both.cedarError || "unknown"}`, "warn");
       return;
     }
-    const { error } = await supabase.from("quotes").update({
-      invoice_url: result.url,
+    const patch = {
       invoice_uploaded_at: new Date().toISOString(),
       invoice_uploaded_by: "customer",
-    }).eq("id", q.id);
+    };
+    if (both.supabaseUrl) patch.invoice_url = both.supabaseUrl;
+    if (both.cedarUrl) patch.cedar_invoice_url = both.cedarUrl;
+    const { error } = await supabase.from("quotes").update(patch).eq("id", q.id);
     setUploading(false);
     if (error) {
       push(`Couldn't save invoice: ${error.message}`, "warn");
       return;
     }
-    push("Invoice uploaded — running compliance check…", "success");
+    if (both.supabaseUrl && both.cedarUrl) {
+      push("Invoice uploaded to XaePay + Cedar — running compliance check…", "success");
+    } else if (both.supabaseUrl) {
+      push(`Invoice uploaded (Cedar copy failed: ${both.cedarError || "unknown"}) — compliance running`, "warn");
+    } else {
+      push(`Invoice uploaded to Cedar only (XaePay copy failed: ${both.storageError || "unknown"})`, "warn");
+    }
     // Fire-and-forget; the realtime subscription on the parent will pick up the
     // review_decision update when the Edge Function finishes.
     runComplianceReview(q.id).catch(() => {});
@@ -3969,6 +3977,8 @@ function OperatorQuoteModal({ open, onClose, onCreated }) {
     customerName: "",
     customerPhone: "",
     customerEmail: "",     // only used in manual-entry path; picked customers pull email from their row
+    invoiceUrl: "",        // Supabase Storage URL — operator-uploaded supplier invoice
+    cedarInvoiceUrl: "",   // Cedar's hosted copy URL (after /v1/files/upload)
     direction: "outbound", // 'outbound' (NG → world) or 'inbound' (world → NG)
     amount: "25000",
     currency: "USD",
@@ -4102,6 +4112,12 @@ function OperatorQuoteModal({ open, onClose, onCreated }) {
         markup_pct: parseFloat(markupPctEffective.toFixed(4)),
         status: "pending_approval",
         expires_at: expiresAt,
+        ...(data.invoiceUrl ? {
+          invoice_url: data.invoiceUrl,
+          invoice_uploaded_at: new Date().toISOString(),
+          invoice_uploaded_by: "operator",
+        } : {}),
+        ...(data.cedarInvoiceUrl ? { cedar_invoice_url: data.cedarInvoiceUrl } : {}),
       })
       .select("*")
       .single();
@@ -4114,6 +4130,13 @@ function OperatorQuoteModal({ open, onClose, onCreated }) {
     }
     const displayRef = `QU-${quoteRow.id.slice(0, 4).toUpperCase()}`;
     setCreatedRef(displayRef);
+
+    // Fire compliance review in the background if an invoice was attached up-front.
+    // The Edge Function persists the decision back to the quote row; operator sees
+    // it in the TxDrawer once it lands.
+    if (data.invoiceUrl) {
+      runComplianceReview(quoteRow.id).catch(() => {});
+    }
 
     // Send via the Meta-approved `quote_notification` template through the Cloud API
     // (sends from XaePay's brand number directly to the customer — no operator action).
@@ -4270,6 +4293,17 @@ function OperatorQuoteModal({ open, onClose, onCreated }) {
             </Field>
             <Field label={isInbound ? "Recipient (Nigerian supplier/vendor)" : "Supplier name"} full>
               <Input value={data.supplier} onChange={(e) => setData({ ...data, supplier: e.target.value })} placeholder={isInbound ? "Lagos Trading Ltd" : "Shenzhen Electronics Co., Ltd"} />
+            </Field>
+            <Field label="Supplier invoice (PDF or image — optional)" full>
+              <FileUploadField
+                category="invoices"
+                value={data.invoiceUrl}
+                onChange={(url) => setData((d) => ({ ...d, invoiceUrl: url }))}
+                onCedarUrl={(url) => setData((d) => ({ ...d, cedarInvoiceUrl: url }))}
+              />
+              <p className="text-[11px] mt-1" style={{ color: "var(--muted)" }}>
+                Attach the invoice now if you have it — Verified+ tiers run AI compliance checks against it before the quote sends. You can also skip and upload later via the transaction drawer.
+              </p>
             </Field>
           </div>
           <div className="flex justify-end pt-2">
@@ -5648,7 +5682,15 @@ function CedarSubmitPanel({ tx, onSubmitted }) {
             <a href={safeUrl(tx.invoiceUrl)} target="_blank" rel="noreferrer" className="font-medium underline" style={{ color: "var(--emerald)" }}>View</a>
           </div>
         ) : (
-          <FileUploadField category="invoices" value={invoiceUrl} onChange={setInvoiceUrl} />
+          <FileUploadField
+            category="invoices"
+            value={invoiceUrl}
+            onChange={setInvoiceUrl}
+            onCedarUrl={async (url) => {
+              if (!tx.dbId) return;
+              await supabase.from("quotes").update({ cedar_invoice_url: url }).eq("id", tx.dbId);
+            }}
+          />
         )}
         <div className="font-mono text-[9px] mt-1" style={{ color: "var(--muted)" }}>
           {tx.invoiceUrl ? "Pulled from the quote — your customer (or you) uploaded it before approval." : "Customer didn't upload an invoice. Upload here on their behalf to proceed."}
