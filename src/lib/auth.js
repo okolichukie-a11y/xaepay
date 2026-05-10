@@ -39,5 +39,13 @@ export function useAuth() {
       });
     },
     signOut: () => supabase.auth.signOut(),
+    listFactors: () => supabase.auth.mfa.listFactors(),
+    enrollTotp: (friendlyName = "XaePay 2FA") =>
+      supabase.auth.mfa.enroll({ factorType: "totp", friendlyName }),
+    challengeFactor: (factorId) => supabase.auth.mfa.challenge({ factorId }),
+    verifyChallenge: (factorId, challengeId, code) =>
+      supabase.auth.mfa.verify({ factorId, challengeId, code }),
+    unenrollFactor: (factorId) => supabase.auth.mfa.unenroll({ factorId }),
+    getAal: () => supabase.auth.mfa.getAuthenticatorAssuranceLevel(),
   };
 }

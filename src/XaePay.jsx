@@ -5,7 +5,7 @@ import {
   BarChart3, Zap, Eye, Download, Send, Filter, Plus, History, LogIn,
   ExternalLink, Sparkles, User, Building2, Briefcase, Coins, Lock, Unlock,
   ArrowLeft, ArrowLeftRight, Loader2, Layers, TrendingUp, Wallet, DollarSign, Mail,
-  RefreshCw,
+  RefreshCw, ShieldCheck,
 } from "lucide-react";
 import { supabase, sendWhatsAppText, sendWhatsAppTemplate, fetchCedarRate, submitCustomerToCedar, submitRecipientToCedar, submitReceiverAccountToCedar, submitCedarTransaction, approveCedarQuote, confirmCedarDeposit, cancelCedarTransaction, uploadCedarFile, uploadFileBoth, runComplianceReview, sendEmail, safeUrl, logAuditEvent } from "./lib/supabase.js";
 import { generateQuotePdf, uploadQuotePdf, downloadQuotePdf } from "./lib/pdf.js";
@@ -216,7 +216,20 @@ function AppShell() {
   const [onboardingOpen, setOnboardingOpen] = useState(false);
   const [onboardingType, setOnboardingType] = useState(null);
   const [session, setSession] = useState({ type: null, tier: 0, name: null, company: null });
+  const [twoFactorOpen, setTwoFactorOpen] = useState(false);
+  // mfaState: "loading" | "ok" (no factor or already AAL2) | "challenge" (verified factor + AAL1)
+  const [mfaState, setMfaState] = useState("loading");
+  const [mfaEnrolled, setMfaEnrolled] = useState(false);
   const auth = useAuth();
+  const refreshMfaState = async () => {
+    if (!auth.user) { setMfaState("ok"); setMfaEnrolled(false); return; }
+    const [{ data: factors }, { data: aal }] = await Promise.all([auth.listFactors(), auth.getAal()]);
+    const verified = (factors?.totp || []).find((f) => f.status === "verified");
+    setMfaEnrolled(!!verified);
+    if (!verified) { setMfaState("ok"); return; }
+    setMfaState((aal?.currentLevel || "aal1") === "aal2" ? "ok" : "challenge");
+  };
+  useEffect(() => { refreshMfaState(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [auth.user]);
   // Reconcile real auth user → session: when a magic-link visitor lands signed-in,
   // Customer rows the signed-in user owns (matched by email). Customers reach
   // XaePay through their operator — when an operator adds them, that operator
@@ -277,10 +290,19 @@ function AppShell() {
     else if (data.type === "diaspora") setView("diaspora");
   };
 
+  if (auth.user && mfaState === "challenge") {
+    return (
+      <TwoFactorChallenge
+        onVerified={async () => { await refreshMfaState(); }}
+        onSignOut={async () => { await auth.signOut(); setSession({ type: null, tier: 0, name: null, company: null }); setView("landing"); }}
+      />
+    );
+  }
+
   return (
     <div className="min-h-screen font-ui" style={{ background: "var(--paper)", color: "var(--ink)" }}>
       <PreviewBanner onWaitlist={() => setWaitlistOpen(true)} />
-      <TopBar view={view} setView={setView} mobileOpen={mobileOpen} setMobileOpen={setMobileOpen} onSignIn={() => setSignInOpen(true)} onRequestAccess={() => setBecomePartnerOpen(true)} onWaitlist={() => setWaitlistOpen(true)} session={session} authUser={auth.user} onSignOut={async () => { await auth.signOut(); setSession({ type: null, tier: 0, name: null, company: null }); setView("landing"); }} />
+      <TopBar view={view} setView={setView} mobileOpen={mobileOpen} setMobileOpen={setMobileOpen} onSignIn={() => setSignInOpen(true)} onRequestAccess={() => setBecomePartnerOpen(true)} onWaitlist={() => setWaitlistOpen(true)} session={session} authUser={auth.user} onSignOut={async () => { await auth.signOut(); setSession({ type: null, tier: 0, name: null, company: null }); setView("landing"); }} mfaEnrolled={mfaEnrolled} onSetup2FA={auth.user ? () => setTwoFactorOpen(true) : null} />
       {view === "landing" && <Landing setView={setView} onRequestAccess={() => setBecomePartnerOpen(true)} onWaitlist={() => setWaitlistOpen(true)} />}
       {view === "customer" && <CustomerApp session={session} />}
       {view === "customer-portal" && <CustomerPortal session={session} customerRows={customerRows || []} />}
@@ -292,6 +314,7 @@ function AppShell() {
       <RequestAccessModal open={accessOpen} onClose={() => setAccessOpen(false)} onChoose={startOnboarding} onWaitlist={() => { setAccessOpen(false); setWaitlistOpen(true); }} />
       <WaitlistModal open={waitlistOpen} onClose={() => setWaitlistOpen(false)} />
       {onboardingOpen && <OnboardingFlow type={onboardingType} onClose={() => setOnboardingOpen(false)} onComplete={completeOnboarding} onSwitchType={(t) => setOnboardingType(t)} />}
+      <TwoFactorSetupModal open={twoFactorOpen} onClose={() => setTwoFactorOpen(false)} onEnrolled={async () => { await refreshMfaState(); }} />
     </div>
   );
 }
@@ -746,7 +769,7 @@ function WaitlistModal({ open, onClose }) {
   );
 }
 
-function TopBar({ view, setView, mobileOpen, setMobileOpen, onSignIn, onRequestAccess, onWaitlist, session, authUser, onSignOut }) {
+function TopBar({ view, setView, mobileOpen, setMobileOpen, onSignIn, onRequestAccess, onWaitlist, session, authUser, onSignOut, mfaEnrolled, onSetup2FA }) {
   const onLanding = view === "landing";
   return (
     <div className="sticky top-0 z-50 backdrop-blur-xl" style={{ background: onLanding ? "rgba(10,11,13,0.72)" : "rgba(252,251,247,0.85)", borderBottom: `1px solid ${onLanding ? "rgba(255,255,255,0.06)" : "var(--line)"}`, color: onLanding ? "var(--bone)" : "var(--ink)" }}>
@@ -774,6 +797,17 @@ function TopBar({ view, setView, mobileOpen, setMobileOpen, onSignIn, onRequestA
                   </button>
                 )}
                 <span className="hidden lg:inline font-mono text-[10px] uppercase tracking-wider truncate max-w-[200px]" style={{ color: onLanding ? "rgba(247,245,240,0.6)" : "var(--muted)" }} title={authUser.email}>{authUser.email}</span>
+                {onSetup2FA && (
+                  mfaEnrolled ? (
+                    <span className="inline-flex items-center gap-1 rounded-lg px-2 py-1 font-mono text-[10px] font-semibold uppercase tracking-wider" style={{ background: "rgba(15,95,63,0.10)", color: "var(--emerald)" }} title="Two-factor authentication is enabled">
+                      <ShieldCheck size={11} /> 2FA on
+                    </span>
+                  ) : (
+                    <button onClick={onSetup2FA} className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium transition" style={{ border: `1px solid ${onLanding ? "rgba(255,255,255,0.15)" : "var(--line)"}`, color: onLanding ? "var(--bone)" : "var(--ink)" }} title="Add a second factor to your account">
+                      <Shield size={12} /> Set up 2FA
+                    </button>
+                  )
+                )}
                 <button onClick={onSignOut} className="rounded-lg px-3 py-1.5 text-sm font-medium transition" style={{ color: onLanding ? "var(--bone)" : "var(--ink)" }}>Sign out</button>
               </>
             ) : (
@@ -882,6 +916,185 @@ function SignInModal({ open, onClose }) {
         <PrimaryBtn type="submit" full disabled={submitting}>{submitting ? <><Loader2 size={14} className="spin" /> Sending…</> : <><LogIn size={14} /> Send magic link</>}</PrimaryBtn>
         <p className="text-center text-[11px]" style={{ color: "var(--muted)" }}>By signing in you agree to our terms. We don't share your email.</p>
       </form>
+    </Modal>
+  );
+}
+
+function TwoFactorChallenge({ onVerified, onSignOut }) {
+  const auth = useAuth();
+  const [factorId, setFactorId] = useState(null);
+  const [code, setCode] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    auth.listFactors().then(({ data }) => {
+      const verified = data?.totp?.find((f) => f.status === "verified");
+      if (verified) setFactorId(verified.id);
+    });
+  }, []);
+
+  const handleVerify = async (e) => {
+    e?.preventDefault();
+    if (!factorId || code.length !== 6 || submitting) return;
+    setSubmitting(true);
+    setError("");
+    const { data: ch, error: chErr } = await auth.challengeFactor(factorId);
+    if (chErr) {
+      setSubmitting(false);
+      setError(chErr.message || "Couldn't start challenge");
+      return;
+    }
+    const { error: vErr } = await auth.verifyChallenge(factorId, ch.id, code);
+    setSubmitting(false);
+    if (vErr) {
+      setError(vErr.message || "Wrong code — try again");
+      setCode("");
+      return;
+    }
+    onVerified?.();
+  };
+
+  return (
+    <div className="min-h-screen flex items-center justify-center font-ui px-4" style={{ background: "var(--paper)", color: "var(--ink)" }}>
+      <div className="w-full max-w-md rounded-2xl p-8" style={{ background: "white", border: "1px solid var(--line)" }}>
+        <div className="flex h-12 w-12 items-center justify-center rounded-full mx-auto" style={{ background: "var(--lime)" }}>
+          <ShieldCheck size={24} strokeWidth={2.5} style={{ color: "var(--ink)" }} />
+        </div>
+        <h2 className="font-display mt-4 text-2xl font-semibold text-center">Two-factor verification</h2>
+        <p className="mt-2 text-sm text-center" style={{ color: "var(--muted)" }}>Open your authenticator app and enter the 6-digit code for XaePay.</p>
+        <form onSubmit={handleVerify} className="mt-6 space-y-4">
+          <input
+            autoFocus
+            inputMode="numeric"
+            value={code}
+            onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+            placeholder="000000"
+            maxLength={6}
+            className="w-full rounded-lg px-3 py-3 font-mono text-2xl text-center tracking-[0.4em]"
+            style={{ border: "1px solid var(--line)", background: "var(--bone)" }}
+          />
+          {error && <div className="rounded-lg p-3 text-xs" style={{ background: "#fee2e2", color: "#991b1b" }}>{error}</div>}
+          <PrimaryBtn type="submit" full disabled={code.length !== 6 || submitting}>
+            {submitting ? <><Loader2 size={14} className="spin" /> Verifying…</> : "Verify"}
+          </PrimaryBtn>
+        </form>
+        <button onClick={onSignOut} className="mt-4 w-full text-xs underline" style={{ color: "var(--muted)" }}>Sign out instead</button>
+      </div>
+    </div>
+  );
+}
+
+function TwoFactorSetupModal({ open, onClose, onEnrolled }) {
+  const auth = useAuth();
+  const { push } = useToast();
+  const [step, setStep] = useState(1);
+  const [factor, setFactor] = useState(null);
+  const [code, setCode] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  const reset = () => { setStep(1); setFactor(null); setCode(""); setSubmitting(false); };
+  const closeAndReset = async () => {
+    if (factor && step !== 3) {
+      // Clean up an in-progress enrollment so user can retry later
+      await auth.unenrollFactor(factor.id).catch(() => {});
+    }
+    reset(); onClose();
+  };
+
+  const startEnroll = async () => {
+    setSubmitting(true);
+    const { data, error } = await auth.enrollTotp("XaePay 2FA");
+    setSubmitting(false);
+    if (error) {
+      push(`Couldn't start 2FA setup: ${error.message}`, "warn");
+      return;
+    }
+    setFactor(data);
+    setStep(2);
+  };
+
+  const verify = async (e) => {
+    e?.preventDefault();
+    if (!factor || code.length !== 6 || submitting) return;
+    setSubmitting(true);
+    const { data: ch, error: chErr } = await auth.challengeFactor(factor.id);
+    if (chErr) {
+      setSubmitting(false);
+      push(`Couldn't verify: ${chErr.message}`, "warn");
+      return;
+    }
+    const { error: vErr } = await auth.verifyChallenge(factor.id, ch.id, code);
+    setSubmitting(false);
+    if (vErr) {
+      push(`Wrong code — try again. ${vErr.message}`, "warn");
+      setCode("");
+      return;
+    }
+    push("2FA enabled — you'll be challenged on next sign-in.", "success");
+    setStep(3);
+    onEnrolled?.();
+  };
+
+  return (
+    <Modal open={open} onClose={closeAndReset} title="Set up two-factor authentication" size="md">
+      {step === 1 && (
+        <div className="space-y-4">
+          <p className="text-sm" style={{ color: "var(--muted)" }}>Add a second layer of protection to your XaePay account. After setup, you'll be asked for a 6-digit code from your authenticator app each time you sign in.</p>
+          <div className="rounded-xl p-4 text-xs space-y-2" style={{ background: "var(--bone)", border: "1px solid var(--line)" }}>
+            <div className="font-semibold">Before you start, install one of:</div>
+            <ul className="list-disc pl-4 space-y-0.5" style={{ color: "var(--muted)" }}>
+              <li>Google Authenticator (iOS / Android)</li>
+              <li>Authy</li>
+              <li>1Password (built-in)</li>
+              <li>Any TOTP-compatible authenticator</li>
+            </ul>
+          </div>
+          <PrimaryBtn onClick={startEnroll} full disabled={submitting}>
+            {submitting ? <><Loader2 size={14} className="spin" /> Generating QR code…</> : "Continue"}
+          </PrimaryBtn>
+        </div>
+      )}
+      {step === 2 && factor && (
+        <form onSubmit={verify} className="space-y-4">
+          <p className="text-sm" style={{ color: "var(--muted)" }}>Open your authenticator app and scan this QR code, then enter the 6-digit code it shows.</p>
+          <div className="flex justify-center">
+            {factor.totp?.qr_code && (
+              <img src={factor.totp.qr_code} alt="2FA QR code" width={220} height={220} style={{ background: "white", padding: 8, borderRadius: 8 }} />
+            )}
+          </div>
+          <details className="text-xs" style={{ color: "var(--muted)" }}>
+            <summary className="cursor-pointer">Can't scan? Enter manually.</summary>
+            <div className="mt-2 font-mono break-all rounded-lg p-2" style={{ background: "var(--bone)", border: "1px solid var(--line)" }}>{factor.totp?.secret}</div>
+          </details>
+          <div>
+            <Label>6-digit code</Label>
+            <input
+              autoFocus
+              inputMode="numeric"
+              value={code}
+              onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+              placeholder="000000"
+              maxLength={6}
+              className="w-full rounded-lg px-3 py-3 font-mono text-xl text-center tracking-[0.4em]"
+              style={{ border: "1px solid var(--line)", background: "var(--bone)" }}
+            />
+          </div>
+          <PrimaryBtn type="submit" full disabled={code.length !== 6 || submitting}>
+            {submitting ? <><Loader2 size={14} className="spin" /> Verifying…</> : "Verify and enable 2FA"}
+          </PrimaryBtn>
+        </form>
+      )}
+      {step === 3 && (
+        <div className="text-center py-4 space-y-3">
+          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full" style={{ background: "var(--lime)" }}>
+            <ShieldCheck size={24} strokeWidth={2.5} style={{ color: "var(--ink)" }} />
+          </div>
+          <h3 className="font-display text-xl font-semibold">2FA enabled</h3>
+          <p className="text-sm" style={{ color: "var(--muted)" }}>Next time you sign in, you'll be asked for a code from your authenticator app.</p>
+          <PrimaryBtn onClick={closeAndReset} full>Done</PrimaryBtn>
+        </div>
+      )}
     </Modal>
   );
 }
