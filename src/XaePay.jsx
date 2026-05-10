@@ -7728,8 +7728,67 @@ const DOC_TYPES = [
   { id: "selfie", label: "Selfie with ID" },
   { id: "bvn_slip", label: "BVN slip" },
   { id: "address_proof", label: "Proof of address" },
+  { id: "bank_statement", label: "Bank statement" },
+  { id: "ubo_attestation", label: "UBO / beneficial owner attestation" },
+  { id: "sanctions_screening", label: "Sanctions screening" },
   { id: "other", label: "Other" },
 ];
+
+// Tier-aware compliance document requirements for the RFI-prevention agent.
+// Each entry says "this tier requires this doc, refreshed every N days" — the
+// operator dashboard surfaces missing/expiring docs and (V2) the watchman
+// Edge Function will auto-notify the operator + customer ahead of expiry.
+//
+// V1: hardcoded here. Move to a `compliance_doc_requirements` config table
+// when we need per-operator overrides or per-recipient flavors.
+const COMPLIANCE_DOC_REQUIREMENTS = {
+  basic: [],
+  standard: [
+    { docType: "id_front", label: "Photo ID", refreshDays: null, severity: "soft" },
+  ],
+  verified: [
+    { docType: "id_front", label: "Photo ID", refreshDays: null, severity: "hard" },
+    { docType: "address_proof", label: "Proof of address", refreshDays: 90, severity: "soft" },
+  ],
+  documented: [
+    { docType: "id_front", label: "Photo ID", refreshDays: null, severity: "hard" },
+    { docType: "address_proof", label: "Proof of address", refreshDays: 90, severity: "hard" },
+    { docType: "bank_statement", label: "Bank statement", refreshDays: 60, severity: "soft" },
+  ],
+  pro: [
+    { docType: "id_front", label: "Photo ID", refreshDays: null, severity: "hard" },
+    { docType: "address_proof", label: "Proof of address", refreshDays: 90, severity: "hard" },
+    { docType: "bank_statement", label: "Bank statement", refreshDays: 60, severity: "hard" },
+    { docType: "ubo_attestation", label: "UBO / beneficial owner attestation", refreshDays: 365, severity: "hard" },
+    { docType: "sanctions_screening", label: "Sanctions screening", refreshDays: 30, severity: "hard" },
+  ],
+};
+
+// Compute a doc's status given its issued_at + the requirement's refreshDays.
+// Returns one of: "missing" | "valid" | "expiring_soon" | "expired".
+// "Expiring soon" = within 14 days of expiry. Reqs with refreshDays=null never expire.
+function complianceDocStatus(doc, refreshDays) {
+  if (!doc) return "missing";
+  if (refreshDays == null) return "valid"; // never-expires doc, just being present is enough
+  // Prefer expires_at if set, else compute from issued_at + refreshDays
+  let expiresAt = doc.expires_at ? new Date(doc.expires_at) : null;
+  if (!expiresAt && doc.issued_at) {
+    expiresAt = new Date(new Date(doc.issued_at).getTime() + refreshDays * 24 * 60 * 60 * 1000);
+  }
+  if (!expiresAt) return "valid"; // can't compute, assume valid
+  const now = new Date();
+  const daysToExpiry = Math.floor((expiresAt - now) / (24 * 60 * 60 * 1000));
+  if (daysToExpiry < 0) return "expired";
+  if (daysToExpiry <= 14) return "expiring_soon";
+  return "valid";
+}
+
+const COMPLIANCE_STATUS_STYLES = {
+  missing: { label: "Missing", bg: "#f3f4f6", color: "#6b7280" },
+  valid: { label: "Valid", bg: "rgba(15,95,63,0.10)", color: "var(--emerald)" },
+  expiring_soon: { label: "Expiring soon", bg: "#fef3c7", color: "#92400e" },
+  expired: { label: "Expired", bg: "#fee2e2", color: "#991b1b" },
+};
 
 // Cedar's full BusinessIndustry enum (POST /v1/business/ requires one). Must match
 // Cedar's accepted values exactly — sending anything else returns REQUIRED_FIELD_MISSING.
@@ -7755,6 +7814,119 @@ const CEDAR_INDUSTRIES = [
   { id: "TELECOMMUNICATIONS", label: "Telecommunications" },
   { id: "TRANSPORTATION", label: "Transportation / Freight" },
 ];
+
+// Tier-aware compliance docs section. Reads customer_documents for this customer,
+// matches against COMPLIANCE_DOC_REQUIREMENTS for the chosen tier, shows a status
+// pill per required doc with a quick upload button for missing/expired ones.
+function CustomerComplianceSection({ customer, docs, onUploaded }) {
+  const { push } = useToast();
+  const auth = useAuth();
+  const [tier, setTier] = useState("pro"); // default to most comprehensive view
+  const [uploadingFor, setUploadingFor] = useState(null);
+
+  if (!customer?.id) return null;
+
+  const requirements = COMPLIANCE_DOC_REQUIREMENTS[tier] || [];
+  const summary = requirements.reduce((acc, req) => {
+    const doc = docs.find((d) => d.doc_type === req.docType);
+    const st = complianceDocStatus(doc, req.refreshDays);
+    acc[st] = (acc[st] || 0) + 1;
+    return acc;
+  }, {});
+
+  const handleUpload = async (req, file) => {
+    if (!file || !customer.id) return;
+    setUploadingFor(req.docType);
+    try {
+      const ext = (file.name.split(".").pop() || "bin").toLowerCase();
+      const path = `${customer.id}/${req.docType}-${Date.now()}.${ext}`;
+      const { error: upErr } = await supabase.storage.from("kyc-docs").upload(path, file, { contentType: file.type, upsert: false });
+      if (upErr) throw upErr;
+      const issuedAt = new Date().toISOString();
+      const expiresAt = req.refreshDays ? new Date(Date.now() + req.refreshDays * 24 * 60 * 60 * 1000).toISOString() : null;
+      const { error: dbErr } = await supabase.from("customer_documents").insert({
+        customer_id: customer.id,
+        doc_type: req.docType,
+        storage_path: path,
+        file_name: file.name,
+        size_bytes: file.size,
+        mime_type: file.type,
+        issued_at: issuedAt,
+        expires_at: expiresAt,
+        uploaded_by: auth.user?.id || null,
+      });
+      if (dbErr) throw dbErr;
+      push(`Uploaded · ${req.label}`, "success");
+      onUploaded && onUploaded();
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error("Compliance doc upload failed:", err);
+      push(`Upload failed: ${err?.message || err}`, "warn");
+    } finally {
+      setUploadingFor(null);
+    }
+  };
+
+  return (
+    <div>
+      <div className="flex items-baseline justify-between mb-2">
+        <Label>Compliance documents</Label>
+        <select value={tier} onChange={(e) => setTier(e.target.value)} className="rounded-lg px-2 py-1 text-xs font-mono" style={{ border: "1px solid var(--line)", background: "white" }}>
+          {Object.values(TIERS).map((t) => <option key={t.id} value={t.id}>{t.name} tier</option>)}
+        </select>
+      </div>
+      {requirements.length === 0 ? (
+        <div className="rounded-xl p-3 text-xs" style={{ background: "var(--bone)", border: "1px solid var(--line)", color: "var(--muted)" }}>
+          The {TIERS[tier].name} tier doesn't require any compliance documents. Pick a higher tier to see what's needed.
+        </div>
+      ) : (
+        <div className="rounded-xl p-3 space-y-2" style={{ background: "var(--bone)", border: "1px solid var(--line)" }}>
+          <div className="flex items-baseline gap-2 text-[10px] font-mono uppercase tracking-wider mb-1" style={{ color: "var(--muted)" }}>
+            <span>{requirements.length} required</span>
+            {summary.valid > 0 && <span style={{ color: "var(--emerald)" }}>· {summary.valid} valid</span>}
+            {summary.expiring_soon > 0 && <span style={{ color: "#92400e" }}>· {summary.expiring_soon} expiring</span>}
+            {summary.expired > 0 && <span style={{ color: "#991b1b" }}>· {summary.expired} expired</span>}
+            {summary.missing > 0 && <span style={{ color: "var(--muted)" }}>· {summary.missing} missing</span>}
+          </div>
+          {requirements.map((req) => {
+            const doc = docs.find((d) => d.doc_type === req.docType);
+            const status = complianceDocStatus(doc, req.refreshDays);
+            const styles = COMPLIANCE_STATUS_STYLES[status];
+            const expiresAt = doc?.expires_at ? new Date(doc.expires_at) : (doc?.issued_at && req.refreshDays ? new Date(new Date(doc.issued_at).getTime() + req.refreshDays * 24 * 60 * 60 * 1000) : null);
+            const inputId = `comp-up-${req.docType}`;
+            return (
+              <div key={req.docType} className="rounded-lg p-2.5 text-xs flex items-center justify-between gap-2" style={{ background: "white", border: "1px solid var(--line)" }}>
+                <div className="min-w-0 flex-1">
+                  <div className="font-medium truncate flex items-center gap-2">
+                    {req.label}
+                    {req.severity === "hard" && <span className="font-mono text-[8px] uppercase tracking-wider rounded-full px-1.5 py-0.5" style={{ background: "rgba(153,27,27,0.08)", color: "#991b1b" }}>required</span>}
+                  </div>
+                  <div className="font-mono text-[10px] mt-0.5" style={{ color: "var(--muted)" }}>
+                    {doc ? (
+                      <>
+                        {doc.file_name || "uploaded"}
+                        {expiresAt && <> · expires {expiresAt.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })}</>}
+                      </>
+                    ) : (
+                      <>{req.refreshDays ? `Refresh every ${req.refreshDays}d` : "One-time upload"}</>
+                    )}
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="rounded-full px-2 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-wider" style={{ background: styles.bg, color: styles.color }}>{styles.label}</span>
+                  <input id={inputId} type="file" accept="image/*,application/pdf" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; if (f) handleUpload(req, f); }} disabled={uploadingFor === req.docType} />
+                  <label htmlFor={inputId} className="rounded-lg px-2 py-1 font-mono text-[9px] font-semibold uppercase tracking-wider cursor-pointer transition" style={{ background: "var(--ink)", color: "var(--lime)" }}>
+                    {uploadingFor === req.docType ? "Uploading…" : (doc ? "Replace" : "Upload")}
+                  </label>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
 
 function CustomerDrawer({ customer, onClose }) {
   const { push } = useToast();
@@ -7995,6 +8167,7 @@ function CustomerDrawer({ customer, onClose }) {
 
         {isRealCustomer && (
           <>
+            <CustomerComplianceSection customer={customer} docs={docs} onUploaded={fetchDocs} />
             <div>
               <Label>KYC documents</Label>
               {loadingDocs ? (
