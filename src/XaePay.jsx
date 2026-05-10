@@ -247,6 +247,11 @@ function AppShell() {
   // mfaState: "loading" | "ok" (no factor or already AAL2) | "challenge" (verified factor + AAL1)
   const [mfaState, setMfaState] = useState("loading");
   const [mfaEnrolled, setMfaEnrolled] = useState(false);
+  // Splash min-show time so the brand moment doesn't flash by too quickly for
+  // first-time / signed-out visitors. Flips to true after 1500ms; we'll only
+  // hide the splash once it does AND auth has resolved.
+  const [splashMinDone, setSplashMinDone] = useState(false);
+  useEffect(() => { const t = setTimeout(() => setSplashMinDone(true), 1500); return () => clearTimeout(t); }, []);
   const auth = useAuth();
   const refreshMfaState = async () => {
     if (!auth.user) { setMfaState("ok"); setMfaEnrolled(false); return; }
@@ -308,10 +313,38 @@ function AppShell() {
   if (quoteRoute) return <QuoteApprovalPage quote={quoteRoute} />;
   if (onboardRoute) return <CustomerOnboardPage invite={onboardRoute} />;
 
-  // Block any render until Supabase has resolved the session — eliminates the flash
-  // of landing page on refresh when the user is actually signed in. If they're truly
-  // signed out, this just delays the landing render by ~150ms (imperceptible).
-  if (auth.loading || (auth.user && customerRows === null)) {
+  // Splash + spinner gate.
+  //
+  //   Signed-in (cached session OR resolved user): NO splash. While auth/customers
+  //     query is still resolving, show a minimal spinner so refresh feels instant.
+  //   Signed-out / first-time visitor: SHOW splash for at least 1.5s before the
+  //     landing renders, so the brand moment is actually visible.
+  //
+  // Detect "signed in" synchronously by checking Supabase's cached session in
+  // localStorage — this is set the moment the user signs in and persists across
+  // refreshes, so we know to skip the splash before the async auth check resolves.
+  let hasCachedSession = false;
+  try {
+    if (typeof window !== "undefined" && window.localStorage) {
+      for (let i = 0; i < window.localStorage.length; i++) {
+        const k = window.localStorage.key(i);
+        if (k && k.startsWith("sb-") && k.endsWith("-auth-token") && window.localStorage.getItem(k)) {
+          hasCachedSession = true;
+          break;
+        }
+      }
+    }
+  } catch { /* localStorage might be blocked */ }
+  const authResolving = auth.loading || (auth.user && customerRows === null);
+  const isSignedIn = !!auth.user || hasCachedSession;
+  if (isSignedIn && authResolving) {
+    return (
+      <div className="min-h-screen flex items-center justify-center" style={{ background: "var(--paper)" }}>
+        <Loader2 size={20} className="animate-spin" style={{ color: "var(--muted)" }} />
+      </div>
+    );
+  }
+  if (!isSignedIn && (authResolving || !splashMinDone)) {
     return <SplashScreen />;
   }
 
