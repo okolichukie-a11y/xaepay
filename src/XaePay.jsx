@@ -4008,7 +4008,7 @@ function HistoryDrawer({ open, onClose }) {
 // `notifications` table (created by the compliance-watchman Edge Function) and
 // offers a "Run check" button to scan all customers on demand. Real-time via
 // Supabase subscription so resolutions and new additions appear immediately.
-function ComplianceRemindersPanel() {
+function ComplianceRemindersPanel({ onReminderClick }) {
   const { push } = useToast();
   const auth = useAuth();
   const [notifs, setNotifs] = useState([]);
@@ -4102,14 +4102,15 @@ function ComplianceRemindersPanel() {
               : n.severity === "warn"
                 ? { color: "#92400e", bg: "#fef3c7", border: "rgba(146,64,14,0.2)" }
                 : { color: "var(--ink)", bg: "var(--bone)", border: "var(--line)" };
+            const clickable = !!onReminderClick && n.subject_type === "customer";
             return (
-              <div key={n.id} className="rounded-lg p-3 flex items-start gap-3" style={{ background: sev.bg, border: `1px solid ${sev.border}` }}>
+              <div key={n.id} className={`rounded-lg p-3 flex items-start gap-3 transition ${clickable ? "cursor-pointer hover:brightness-95" : ""}`} style={{ background: sev.bg, border: `1px solid ${sev.border}` }} onClick={clickable ? () => onReminderClick(n) : undefined}>
                 <AlertTriangle size={14} style={{ color: sev.color }} className="mt-0.5 flex-shrink-0" />
                 <div className="flex-1 min-w-0">
                   <div className="text-sm font-medium" style={{ color: sev.color }}>{n.title}</div>
                   {n.body && <div className="text-xs mt-0.5 leading-snug" style={{ color: sev.color, opacity: 0.85 }}>{n.body}</div>}
                 </div>
-                <button onClick={() => dismiss(n.id)} className="font-mono text-[10px] font-semibold uppercase tracking-wider underline" style={{ color: sev.color, opacity: 0.7 }}>Dismiss</button>
+                <button onClick={(e) => { e.stopPropagation(); dismiss(n.id); }} className="font-mono text-[10px] font-semibold uppercase tracking-wider underline flex-shrink-0" style={{ color: sev.color, opacity: 0.7 }}>Dismiss</button>
               </div>
             );
           })}
@@ -4122,7 +4123,15 @@ function ComplianceRemindersPanel() {
 function BDCDashboard({ session }) {
   const [tab, setTab] = useState("quote");
   const [addedCustomers, setAddedCustomers] = useState([]);
+  // When a reminder is clicked, we switch to the Customers tab and tell
+  // BDCCustomers to open the drawer for that customer id. BDCCustomers clears
+  // the id back through onJumpHandled once it's opened the drawer.
+  const [jumpToCustomerId, setJumpToCustomerId] = useState(null);
   const addCustomer = (c) => setAddedCustomers((prev) => [c, ...prev].slice(0, 50));
+  const jumpToCustomer = (customerId) => {
+    setTab("customers");
+    setJumpToCustomerId(customerId);
+  };
   const tabs = [
     { id: "quote", label: "Quote tool", icon: Plus },
     { id: "transactions", label: "Transactions", icon: Receipt },
@@ -4153,7 +4162,7 @@ function BDCDashboard({ session }) {
       </div>
 
       <div className="mb-6">
-        <ComplianceRemindersPanel />
+        <ComplianceRemindersPanel onReminderClick={(n) => { if (n?.subject_type === "customer" && n?.subject_id) jumpToCustomer(n.subject_id); }} />
       </div>
 
       <div className="lg:flex lg:gap-8">
@@ -4184,7 +4193,7 @@ function BDCDashboard({ session }) {
         <div className="flex-1 fade-in min-w-0">
           {tab === "quote" && <BDCRailQuotes />}
           {tab === "transactions" && <BDCTransactions />}
-          {tab === "customers" && <BDCCustomers addedCustomers={addedCustomers} onAddCustomer={addCustomer} />}
+          {tab === "customers" && <BDCCustomers addedCustomers={addedCustomers} onAddCustomer={addCustomer} jumpToCustomerId={jumpToCustomerId} onJumpHandled={() => setJumpToCustomerId(null)} />}
           {tab === "recipients" && <BDCRecipients />}
           {tab === "earnings" && <BDCEarnings />}
         </div>
@@ -6922,7 +6931,7 @@ function dbCustomerToUi(row) {
   };
 }
 
-function BDCCustomers({ addedCustomers = [], onAddCustomer }) {
+function BDCCustomers({ addedCustomers = [], onAddCustomer, jumpToCustomerId, onJumpHandled }) {
   const { push } = useToast();
   const auth = useAuth();
   const isSignedIn = !!auth.user;
@@ -6949,6 +6958,18 @@ function BDCCustomers({ addedCustomers = [], onAddCustomer }) {
   };
 
   useEffect(() => { fetchCustomers(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [auth.user?.id]);
+
+  // When the parent asks us to jump-open a specific customer (e.g. clicked from a
+  // compliance reminder), find them in the loaded list and open the drawer. Clears
+  // the parent's pending id once handled so a re-click of the same customer works.
+  useEffect(() => {
+    if (!jumpToCustomerId) return;
+    const found = realCustomers.find((c) => c.id === jumpToCustomerId);
+    if (found) {
+      setSelected(found);
+      onJumpHandled && onJumpHandled();
+    }
+  }, [jumpToCustomerId, realCustomers, onJumpHandled]);
 
   // Signed-in users see only their real DB rows. Unsigned visitors see in-memory adds + demo seed.
   const customers = isSignedIn ? realCustomers : [...addedCustomers, ...DEMO_CUSTOMERS];
