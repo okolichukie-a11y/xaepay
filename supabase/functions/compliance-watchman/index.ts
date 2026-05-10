@@ -22,6 +22,8 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || "";
 const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY") || "";
 const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
+const RESEND_API_KEY = Deno.env.get("RESEND_API_KEY") || "";
+const EMAIL_SENDER_FROM = Deno.env.get("EMAIL_SENDER_FROM") || "noreply@xaepay.com";
 
 const cors = {
   "Access-Control-Allow-Origin": "https://xaepay.com",
@@ -131,6 +133,7 @@ serve(async (req) => {
 
   let created = 0;
   let resolved = 0;
+  const newReminders: Array<{ customer: string; docLabel: string; status: string; severity: string }> = [];
 
   for (const c of customers) {
     const { data: docs } = await admin
@@ -204,8 +207,53 @@ serve(async (req) => {
       });
       // Conflict on the unique partial index = an open notification already exists,
       // which is fine. Only count fresh inserts.
-      if (!error) created++;
+      if (!error) {
+        created++;
+        newReminders.push({ customer: customerName, docLabel: r.label, status, severity: severityMap[status] });
+      }
     }
+  }
+
+  // Email the operator a summary of the new reminders, if any. Uses Resend
+  // directly (RESEND_API_KEY in Supabase secrets) since the send-email function
+  // expects a user JWT and we're already server-to-server here.
+  let emailRes: any = { skipped: true };
+  if (created > 0 && RESEND_API_KEY && userData.user.email) {
+    const portalUrl = "https://xaepay.com/";
+    // Group reminders by customer for the email body
+    const byCustomer: Record<string, Array<{ docLabel: string; status: string; severity: string }>> = {};
+    for (const r of newReminders) {
+      if (!byCustomer[r.customer]) byCustomer[r.customer] = [];
+      byCustomer[r.customer].push({ docLabel: r.docLabel, status: r.status, severity: r.severity });
+    }
+    const expiredCount = newReminders.filter((r) => r.status === "expired").length;
+    const subject = expiredCount > 0
+      ? `${expiredCount} expired compliance doc${expiredCount === 1 ? "" : "s"} — action required`
+      : `${created} new compliance reminder${created === 1 ? "" : "s"} for your customers`;
+    const customerBlocks = Object.entries(byCustomer).map(([name, items]) => {
+      const rows = items.map((it) => {
+        const dot = it.status === "expired" ? "#991b1b" : it.status === "expiring_soon" ? "#92400e" : "#6b7280";
+        const label = it.status === "expired" ? "Expired" : it.status === "expiring_soon" ? "Expiring" : "Missing";
+        return `<tr><td style="padding:4px 0;font-family:monospace;font-size:11px;color:${dot};">●</td><td style="padding:4px 8px;font-size:13px;color:#0a0b0d;">${it.docLabel}</td><td style="padding:4px 0;font-family:monospace;font-size:11px;color:${dot};text-align:right;">${label}</td></tr>`;
+      }).join("");
+      return `<div style="margin-bottom:16px;padding:14px;background:#fcfbf7;border:1px solid #e5e7eb;border-radius:12px;"><div style="font-weight:600;color:#0a0b0d;margin-bottom:6px;">${name}</div><table style="width:100%;border-collapse:collapse;">${rows}</table></div>`;
+    }).join("");
+    const html = `<!doctype html><html><body style="font-family:system-ui,-apple-system,sans-serif;color:#0a0b0d;background:#fcfbf7;margin:0;padding:24px;"><div style="max-width:560px;margin:0 auto;background:white;border:1px solid #e5e7eb;border-radius:16px;padding:32px;"><h2 style="margin:0 0 8px;font-size:22px;">Compliance reminders</h2><p style="color:#6b7280;margin:0 0 20px;font-size:14px;">XaePay's compliance agent scanned your customers and found ${created} issue${created === 1 ? "" : "s"} that need${created === 1 ? "s" : ""} your attention before they affect transactions.</p>${customerBlocks}<p style="text-align:center;margin:24px 0 8px;"><a href="${portalUrl}" style="display:inline-block;background:#0a0b0d;color:#d4f570;padding:12px 24px;border-radius:12px;text-decoration:none;font-weight:600;font-size:14px;">Open dashboard</a></p><p style="color:#9ca3af;font-size:11px;text-align:center;margin:20px 0 0;">— XaePay compliance agent</p></div></body></html>`;
+    const text = `Compliance reminders\n\nXaePay's compliance agent found ${created} issue${created === 1 ? "" : "s"} on your customers:\n\n${Object.entries(byCustomer).map(([name, items]) => `${name}\n${items.map((it) => `  - ${it.docLabel}: ${it.status}`).join("\n")}`).join("\n\n")}\n\nOpen dashboard: ${portalUrl}\n\n— XaePay compliance agent`;
+    try {
+      const r = await fetch("https://api.resend.com/emails", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${RESEND_API_KEY}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ from: EMAIL_SENDER_FROM, to: [userData.user.email], subject, html, text }),
+      });
+      emailRes = { ok: r.ok, status: r.status };
+    } catch (err) {
+      emailRes = { ok: false, error: String(err) };
+    }
+  } else if (created > 0 && !RESEND_API_KEY) {
+    emailRes = { skipped: true, reason: "RESEND_API_KEY not configured" };
+  } else if (created > 0 && !userData.user.email) {
+    emailRes = { skipped: true, reason: "Operator has no email on auth.users" };
   }
 
   return json(200, {
@@ -214,5 +262,6 @@ serve(async (req) => {
     created,
     resolved,
     tier,
+    email: emailRes,
   });
 });
