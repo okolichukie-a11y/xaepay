@@ -281,6 +281,17 @@ function AppShell() {
   if (quoteRoute) return <QuoteApprovalPage quote={quoteRoute} />;
   if (onboardRoute) return <CustomerOnboardPage invite={onboardRoute} />;
 
+  // Block any render until Supabase has resolved the session — eliminates the flash
+  // of landing page on refresh when the user is actually signed in. If they're truly
+  // signed out, this just delays the landing render by ~150ms (imperceptible).
+  if (auth.loading || (auth.user && customerRows === null)) {
+    return (
+      <div className="min-h-screen flex items-center justify-center" style={{ background: "var(--paper)" }}>
+        <Loader2 size={20} className="animate-spin" style={{ color: "var(--muted)" }} />
+      </div>
+    );
+  }
+
   const startOnboarding = (type) => { setOnboardingType(type); setOnboardingOpen(true); setAccessOpen(false); };
   const completeOnboarding = (data) => {
     setSession(data); setOnboardingOpen(false);
