@@ -37,6 +37,25 @@ const TIERS = {
   pro:        { id: "pro",        name: "Compliance Pro", minMarkup: 5.00, operatorShare: 0.55, xaepayShare: 0.45, tagline: "Deep validation + quarterly compliance pack",                  monthlyFloor: 500000, monthlyCeiling: null },
 };
 
+function SplashScreen() {
+  return (
+    <div className="min-h-screen flex flex-col items-center justify-center px-4" style={{ background: "var(--paper)", color: "var(--ink)" }}>
+      <div className="flex flex-col items-center gap-6">
+        <div className="splash-logo flex h-24 w-24 items-center justify-center rounded-2xl" style={{ background: "linear-gradient(135deg, var(--emerald), var(--emerald-deep))" }}>
+          <span className="font-display text-5xl font-semibold" style={{ color: "var(--lime)" }}>X</span>
+        </div>
+        <div className="text-center">
+          <div className="splash-wordmark font-display text-4xl sm:text-5xl font-semibold tracking-tight">XaePay</div>
+          <div className="splash-tagline font-mono text-[10px] sm:text-[11px] uppercase mt-3" style={{ color: "var(--muted)" }}>by XaeccoX</div>
+        </div>
+        <div className="mt-2 h-[2px] w-32 rounded-full overflow-hidden" style={{ background: "rgba(10,11,13,0.06)" }}>
+          <div className="splash-bar-fill h-full w-full rounded-full" style={{ background: "linear-gradient(90deg, transparent, var(--emerald), transparent)" }} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function GlobalStyles() {
   return (
     <style>{`
@@ -61,10 +80,18 @@ function GlobalStyles() {
       @keyframes pulse-dot { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
       @keyframes spin { to { transform: rotate(360deg); } }
       @keyframes scan { 0% { transform: translateX(-100%); } 100% { transform: translateX(100%); } }
+      @keyframes splash-glow { 0%, 100% { box-shadow: 0 0 0 0 rgba(197,242,74,0.0), 0 0 0 0 rgba(15,95,63,0.0); } 50% { box-shadow: 0 0 36px 8px rgba(197,242,74,0.35), 0 0 80px 16px rgba(15,95,63,0.25); } }
+      @keyframes splash-letter { 0% { opacity: 0; transform: translateY(8px) scale(0.96); filter: blur(4px); } 100% { opacity: 1; transform: translateY(0) scale(1); filter: blur(0); } }
+      @keyframes splash-tagline { 0% { opacity: 0; letter-spacing: 0.4em; } 100% { opacity: 0.55; letter-spacing: 0.32em; } }
+      @keyframes splash-bar { 0% { transform: translateX(-100%); } 100% { transform: translateX(0%); } }
       .rise { animation: rise 0.7s cubic-bezier(0.16, 1, 0.3, 1) both; }
       .fade-in { animation: fade-in 0.5s ease both; }
       .pulse-dot { animation: pulse-dot 2s ease-in-out infinite; }
       .spin { animation: spin 1s linear infinite; }
+      .splash-logo { animation: splash-glow 1.8s ease-in-out infinite; }
+      .splash-wordmark { animation: splash-letter 0.7s cubic-bezier(0.16, 1, 0.3, 1) 0.15s both; }
+      .splash-tagline { animation: splash-tagline 1s cubic-bezier(0.16, 1, 0.3, 1) 0.55s both; }
+      .splash-bar-fill { animation: splash-bar 1.4s cubic-bezier(0.4, 0, 0.2, 1) infinite; }
 
       .hero-mesh { background: radial-gradient(ellipse 80% 60% at 20% 20%, rgba(197,242,74,0.10), transparent 60%), radial-gradient(ellipse 70% 50% at 80% 30%, rgba(15,95,63,0.35), transparent 60%), radial-gradient(ellipse 100% 80% at 50% 100%, rgba(212,168,44,0.08), transparent 70%), linear-gradient(180deg, #0a0b0d 0%, #131418 100%); }
       .hero-grid { background-image: linear-gradient(rgba(255,255,255,0.025) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.025) 1px, transparent 1px); background-size: 56px 56px; mask-image: radial-gradient(ellipse 80% 60% at 50% 30%, black 30%, transparent 80%); }
@@ -285,11 +312,7 @@ function AppShell() {
   // of landing page on refresh when the user is actually signed in. If they're truly
   // signed out, this just delays the landing render by ~150ms (imperceptible).
   if (auth.loading || (auth.user && customerRows === null)) {
-    return (
-      <div className="min-h-screen flex items-center justify-center" style={{ background: "var(--paper)" }}>
-        <Loader2 size={20} className="animate-spin" style={{ color: "var(--muted)" }} />
-      </div>
-    );
+    return <SplashScreen />;
   }
 
   const startOnboarding = (type) => { setOnboardingType(type); setOnboardingOpen(true); setAccessOpen(false); };
