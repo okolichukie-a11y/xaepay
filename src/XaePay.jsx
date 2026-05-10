@@ -107,6 +107,39 @@ function GlobalStyles() {
       ::selection { background: rgba(197,242,74,0.35); color: var(--ink); }
       .scan-line { position: relative; overflow: hidden; }
       .scan-line::after { content: ''; position: absolute; inset: 0; background: linear-gradient(90deg, transparent, rgba(197,242,74,0.4), transparent); animation: scan 1.4s ease-in-out infinite; }
+
+      /* === Mobile / touch polish ============================================ */
+      /* Disable the blue tap highlight on iOS — looks dated; we have proper focus rings + active states */
+      * { -webkit-tap-highlight-color: transparent; }
+
+      /* Tappable elements default to manipulation (no double-tap-zoom delay) */
+      button, a, label, input[type="button"], input[type="submit"], [role="button"] { touch-action: manipulation; }
+
+      /* iOS Safari auto-zooms when you focus an input <16px. Force 16px on mobile inputs. */
+      @media (max-width: 640px) {
+        input[type="text"], input[type="email"], input[type="number"], input[type="tel"],
+        input[type="password"], input[type="search"], input[type="url"], input[type="date"],
+        input:not([type]), select, textarea {
+          font-size: 16px !important;
+        }
+      }
+
+      /* Prevent unintentional horizontal scroll on small screens */
+      html, body { overflow-x: hidden; }
+      body { overscroll-behavior-y: contain; }
+
+      /* Safe-area insets for PWA / iOS standalone — keeps content out from under the notch + home indicator */
+      @supports (padding: env(safe-area-inset-top)) {
+        .safe-top { padding-top: env(safe-area-inset-top); }
+        .safe-bottom { padding-bottom: env(safe-area-inset-bottom); }
+        body { padding-left: env(safe-area-inset-left); padding-right: env(safe-area-inset-right); }
+      }
+
+      /* Prevent text selection on plain UI buttons (still selectable in inputs / content) */
+      button, [role="button"] { -webkit-user-select: none; user-select: none; }
+
+      /* Smoother touch scrolling for any explicit scroll containers */
+      .scroll-touch { -webkit-overflow-scrolling: touch; }
     `}</style>
   );
 }
@@ -124,7 +157,7 @@ function ToastProvider({ children }) {
   return (
     <ToastContext.Provider value={{ push }}>
       {children}
-      <div className="pointer-events-none fixed bottom-5 right-5 z-[100] flex flex-col gap-2 font-ui">
+      <div className="pointer-events-none fixed bottom-5 right-5 z-[100] flex flex-col gap-2 font-ui safe-bottom">
         {toasts.map((t) => (
           <div key={t.id} className="pointer-events-auto flex max-w-sm items-start gap-2.5 rounded-xl border px-4 py-3 shadow-2xl"
             style={{ animation: "rise 0.4s cubic-bezier(0.16, 1, 0.3, 1) both",
@@ -839,7 +872,7 @@ function WaitlistModal({ open, onClose }) {
 function TopBar({ view, setView, mobileOpen, setMobileOpen, onSignIn, onRequestAccess, onWaitlist, session, authUser, onSignOut, mfaEnrolled, onSetup2FA }) {
   const onLanding = view === "landing";
   return (
-    <div className="sticky top-0 z-50 backdrop-blur-xl" style={{ background: onLanding ? "rgba(10,11,13,0.72)" : "rgba(252,251,247,0.85)", borderBottom: `1px solid ${onLanding ? "rgba(255,255,255,0.06)" : "var(--line)"}`, color: onLanding ? "var(--bone)" : "var(--ink)" }}>
+    <div className="sticky top-0 z-50 backdrop-blur-xl safe-top" style={{ background: onLanding ? "rgba(10,11,13,0.72)" : "rgba(252,251,247,0.85)", borderBottom: `1px solid ${onLanding ? "rgba(255,255,255,0.06)" : "var(--line)"}`, color: onLanding ? "var(--bone)" : "var(--ink)" }}>
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         <div className="flex h-16 items-center justify-between">
           <button onClick={() => setView(authUser ? "bdc" : "landing")} className="flex items-center gap-2.5">
