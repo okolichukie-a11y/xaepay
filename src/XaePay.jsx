@@ -7544,6 +7544,7 @@ function AddCustomerModal({ open, onClose, onAdded, onAddLocal }) {
       .from("customers")
       .insert({
         bdc_user_id: auth.user.id,
+        bdc_name: auth.user.user_metadata?.company || auth.user.user_metadata?.name || "Operator",
         name: row.name,
         phone: row.phone,
         email: row.email || null,
