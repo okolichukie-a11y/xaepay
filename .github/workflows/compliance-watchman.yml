@@ -1,14 +1,14 @@
-name: Compliance watchman daily                                                                                        
-  on:                                                                                                                    
-    schedule:                                                                                                            
+name: Compliance watchman daily
+  on:
+    schedule:
       - cron: "0 9 * * *"
-    workflow_dispatch:                                                                                                   
-  jobs:                                       
-    run:                                  
+    workflow_dispatch:
+  jobs:
+    run:
       runs-on: ubuntu-latest
-      steps:                                                                                                             
+      steps:
         - name: Call compliance-watchman
-          run: |                                                                                                         
+          run: |
             curl -fsS -X POST \
               https://pgsriqdnadlbahfanxrm.supabase.co/functions/v1/compliance-watchman \
               -H "Content-Type: application/json" \
