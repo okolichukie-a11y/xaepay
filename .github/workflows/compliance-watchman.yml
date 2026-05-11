@@ -1,0 +1,27 @@
+name: Compliance watchman daily                                                                                                                                                                                                               
+  
+  on:
+    schedule:                                                                                                            
+      - cron: '0 9 * * *'
+    workflow_dispatch:
+
+  jobs:
+    run:
+      runs-on: ubuntu-latest
+      steps:                                                                                                             
+        - name: Call compliance-watchman in system mode
+          run: |                                                                                                         
+            response=$(curl -sS -w "\nHTTP_STATUS:%{http_code}" -X POST \
+              https://pgsriqdnadlbahfanxrm.supabase.co/functions/v1/compliance-watchman \                                
+              -H "Content-Type: application/json" \
+              -H "x-watchman-secret: ${{ secrets.WATCHMAN_SECRET }}" \                                                   
+              -d '{"tier":"pro"}')                                                                                       
+            status=$(echo "$response" | grep "HTTP_STATUS:" | cut -d':' -f2)
+            body=$(echo "$response" | sed '/HTTP_STATUS:/d')                                                             
+            echo "Status: $status"
+            echo "Response:"                                                                                             
+            echo "$body"
+            if [ "$status" -ne 200 ]; then                                                                               
+              echo "Watchman call failed with status $status"
+              exit 1
+            fi
