@@ -26,6 +26,14 @@ const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
 const RESEND_API_KEY = Deno.env.get("RESEND_API_KEY") || "";
 const EMAIL_SENDER_FROM = Deno.env.get("EMAIL_SENDER_FROM") || "noreply@xaepay.com";
 const WATCHMAN_SECRET = Deno.env.get("WATCHMAN_SECRET") || "";
+const WHATSAPP_ACCESS_TOKEN = Deno.env.get("WHATSAPP_ACCESS_TOKEN") || "";
+const WHATSAPP_PHONE_NUMBER_ID = Deno.env.get("WHATSAPP_PHONE_NUMBER_ID") || "";
+// Feature flag — flip to "true" in Supabase Edge Function secrets once Meta
+// approves the compliance_reminder template (1-3 day review). Until then, WhatsApp
+// sends are skipped (the email summary still goes out).
+const WHATSAPP_COMPLIANCE_REMINDERS_ENABLED = (Deno.env.get("WHATSAPP_COMPLIANCE_REMINDERS_ENABLED") || "").toLowerCase() === "true";
+const WHATSAPP_COMPLIANCE_TEMPLATE_NAME = Deno.env.get("WHATSAPP_COMPLIANCE_TEMPLATE_NAME") || "compliance_reminder";
+const WHATSAPP_COMPLIANCE_TEMPLATE_LANG = Deno.env.get("WHATSAPP_COMPLIANCE_TEMPLATE_LANG") || "en";
 
 const cors = {
   "Access-Control-Allow-Origin": "https://xaepay.com",
@@ -79,16 +87,18 @@ function docStatus(doc: any, refreshDays: number | null): "missing" | "valid" | 
 
 async function scanOperator(admin: any, userId: string, tier: string) {
   const reqs = REQUIREMENTS[tier] || [];
-  const newReminders: Array<{ customer: string; customerId: string; docLabel: string; status: string; severity: string }> = [];
+  const newReminders: Array<{ customer: string; customerId: string; customerPhone: string | null; docLabel: string; status: string; severity: string }> = [];
   let created = 0;
   let resolved = 0;
+  let whatsappSent = 0;
+  let whatsappFailed = 0;
 
   const { data: customers, error: cErr } = await admin
     .from("customers")
-    .select("id, name")
+    .select("id, name, phone")
     .eq("bdc_user_id", userId);
   if (cErr) throw new Error(cErr.message);
-  if (!customers || customers.length === 0) return { scanned: 0, created: 0, resolved: 0, newReminders };
+  if (!customers || customers.length === 0) return { scanned: 0, created: 0, resolved: 0, whatsappSent, whatsappFailed, newReminders };
 
   for (const c of customers) {
     const { data: docs } = await admin
@@ -161,12 +171,61 @@ async function scanOperator(admin: any, userId: string, tier: string) {
       });
       if (!error) {
         created++;
-        newReminders.push({ customer: customerName, customerId: c.id, docLabel: r.label, status, severity: severityMap[status] });
+        newReminders.push({ customer: customerName, customerId: c.id, customerPhone: c.phone || null, docLabel: r.label, status, severity: severityMap[status] });
       }
     }
   }
 
-  return { scanned: customers.length, created, resolved, newReminders };
+  // WhatsApp reminders to customers — one summary message per customer with new
+  // reminders. Skipped until the feature flag is on AND the Meta template is
+  // approved AND the customer has a phone on file. Email summary still goes out
+  // via the operator path regardless.
+  if (WHATSAPP_COMPLIANCE_REMINDERS_ENABLED && WHATSAPP_ACCESS_TOKEN && WHATSAPP_PHONE_NUMBER_ID && newReminders.length > 0) {
+    const byCustomer: Record<string, { name: string; phone: string | null; items: Array<{ docLabel: string; status: string }> }> = {};
+    for (const r of newReminders) {
+      if (!byCustomer[r.customerId]) byCustomer[r.customerId] = { name: r.customer, phone: r.customerPhone, items: [] };
+      byCustomer[r.customerId].items.push({ docLabel: r.docLabel, status: r.status });
+    }
+    for (const c of Object.values(byCustomer)) {
+      if (!c.phone) continue;
+      const phoneDigits = c.phone.replace(/[^\d]/g, "");
+      if (!phoneDigits) continue;
+      const blurb = c.items.map((it) => {
+        const statusWord = it.status === "expired" ? "has expired" : it.status === "expiring_soon" ? "expiring soon" : "needs upload";
+        return `${it.docLabel} (${statusWord})`;
+      }).join("; ").slice(0, 380); // Meta utility templates cap variable length around 1024 chars total
+      const payload = {
+        messaging_product: "whatsapp",
+        to: phoneDigits,
+        type: "template",
+        template: {
+          name: WHATSAPP_COMPLIANCE_TEMPLATE_NAME,
+          language: { code: WHATSAPP_COMPLIANCE_TEMPLATE_LANG },
+          components: [{
+            type: "body",
+            parameters: [
+              { type: "text", text: c.name },
+              { type: "text", text: blurb },
+              { type: "text", text: "https://xaepay.com/" },
+            ],
+          }],
+        },
+      };
+      try {
+        const r = await fetch(`https://graph.facebook.com/v25.0/${WHATSAPP_PHONE_NUMBER_ID}/messages`, {
+          method: "POST",
+          headers: { Authorization: `Bearer ${WHATSAPP_ACCESS_TOKEN}`, "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        if (r.ok) whatsappSent++;
+        else whatsappFailed++;
+      } catch {
+        whatsappFailed++;
+      }
+    }
+  }
+
+  return { scanned: customers.length, created, resolved, whatsappSent, whatsappFailed, newReminders };
 }
 
 async function sendOperatorEmail(operatorEmail: string, newReminders: any[], created: number) {
@@ -255,6 +314,8 @@ serve(async (req) => {
         scanned: scan.scanned,
         created: scan.created,
         resolved: scan.resolved,
+        whatsapp_sent: scan.whatsappSent,
+        whatsapp_failed: scan.whatsappFailed,
         email: emailRes,
       });
     }
@@ -317,6 +378,8 @@ serve(async (req) => {
     scanned: scan.scanned,
     created: scan.created,
     resolved: scan.resolved,
+    whatsapp_sent: scan.whatsappSent,
+    whatsapp_failed: scan.whatsappFailed,
     tier,
     email: emailRes,
   });
