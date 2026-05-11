@@ -11,8 +11,17 @@ jobs:
     steps:
       - name: Call compliance-watchman
         run: |
-          curl -fsS -X POST \
+          set -e
+          http_code=$(curl -sS -o /tmp/resp.json -w "%{http_code}" -X POST \
             https://pgsriqdnadlbahfanxrm.supabase.co/functions/v1/compliance-watchman \
             -H "Content-Type: application/json" \
             -H "x-watchman-secret: ${{ secrets.WATCHMAN_SECRET }}" \
-            -d '{"tier":"pro"}'
+            -d '{"tier":"pro"}')
+          echo "HTTP $http_code"
+          echo "--- response body ---"
+          cat /tmp/resp.json
+          echo ""
+          echo "--- end ---"
+          if [ "$http_code" != "200" ]; then
+            exit 1
+          fi
