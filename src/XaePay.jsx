@@ -7,7 +7,7 @@ import {
   ArrowLeft, ArrowLeftRight, Loader2, Layers, TrendingUp, Wallet, DollarSign, Mail,
   RefreshCw, ShieldCheck,
 } from "lucide-react";
-import { supabase, sendWhatsAppText, sendWhatsAppTemplate, fetchCedarRate, submitCustomerToCedar, submitRecipientToCedar, submitReceiverAccountToCedar, submitCedarTransaction, approveCedarQuote, confirmCedarDeposit, cancelCedarTransaction, uploadCedarFile, uploadFileBoth, runComplianceReview, runComplianceWatchman, sendEmail, safeUrl, logAuditEvent } from "./lib/supabase.js";
+import { supabase, sendWhatsAppText, sendWhatsAppTemplate, fetchCedarRate, submitCustomerToCedar, submitRecipientToCedar, submitReceiverAccountToCedar, submitCedarTransaction, approveCedarQuote, confirmCedarDeposit, cancelCedarTransaction, uploadCedarFile, uploadFileBoth, runComplianceReview, runComplianceWatchman, submitDocumentToCedar, sendEmail, safeUrl, logAuditEvent } from "./lib/supabase.js";
 import { generateQuotePdf, uploadQuotePdf, downloadQuotePdf } from "./lib/pdf.js";
 import { useAuth } from "./lib/auth.js";
 
@@ -8130,7 +8130,7 @@ function CustomerComplianceSection({ customer, docs, onUploaded }) {
       if (upErr) throw upErr;
       const issuedAt = new Date().toISOString();
       const expiresAt = req.refreshDays ? new Date(Date.now() + req.refreshDays * 24 * 60 * 60 * 1000).toISOString() : null;
-      const { error: dbErr } = await supabase.from("customer_documents").insert({
+      const { data: inserted, error: dbErr } = await supabase.from("customer_documents").insert({
         customer_id: customer.id,
         doc_type: req.docType,
         storage_path: path,
@@ -8140,9 +8140,15 @@ function CustomerComplianceSection({ customer, docs, onUploaded }) {
         issued_at: issuedAt,
         expires_at: expiresAt,
         uploaded_by: auth.user?.id || null,
-      });
+      }).select("id").single();
       if (dbErr) throw dbErr;
       push(`Uploaded · ${req.label}`, "success");
+      // Fire-and-forget Cedar auto-submit. Currently runs in stub mode (see
+      // cedar-submit-document Edge Function). When Cedar's doc-refresh endpoint
+      // is wired, this becomes the real RFI-prevention push.
+      if (inserted?.id) {
+        submitDocumentToCedar(inserted.id).catch(() => {});
+      }
       onUploaded && onUploaded();
     } catch (err) {
       // eslint-disable-next-line no-console

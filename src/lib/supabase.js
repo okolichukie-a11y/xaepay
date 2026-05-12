@@ -305,6 +305,32 @@ export async function uploadCedarFile(file, category = "misc") {
 // Operators paste URLs into invoice_url / deposit_slip_url etc. — without this
 // a malicious operator (or compromised account) could XSS another operator
 // who clicks the rendered link in TxDrawer / Compliance panel.
+// Fire-and-forget call to cedar-submit-document after a compliance doc upload.
+// Currently runs in stub mode — see supabase/functions/cedar-submit-document for
+// the activation steps once Cedar's doc-refresh API shape is known.
+export async function submitDocumentToCedar(customerDocumentId) {
+  try {
+    const session = (await supabase.auth.getSession()).data.session;
+    if (!session) return { ok: false, error: "Not signed in" };
+    const res = await fetch(`${url}/functions/v1/cedar-submit-document`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${session.access_token}`,
+        apikey: anonKey,
+      },
+      body: JSON.stringify({ customer_document_id: customerDocumentId }),
+    });
+    let data = null;
+    try { data = await res.json(); } catch { /* non-JSON */ }
+    return { ok: res.ok, status: res.status, data };
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error("submitDocumentToCedar failed:", err);
+    return { ok: false, error: err?.message || String(err) };
+  }
+}
+
 // Trigger the compliance-watchman Edge Function to scan the operator's customers
 // for missing/expiring/expired docs against the chosen tier (default: pro).
 // Idempotent — safe to call repeatedly. Returns { ok, data: { scanned, created, resolved, tier } }.
