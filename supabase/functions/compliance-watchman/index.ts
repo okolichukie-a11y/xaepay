@@ -41,6 +41,32 @@ const cors = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
+// Mirror of TRANSACTION_DOC_REQUIREMENTS in src/XaePay.jsx. Per completed
+// transaction (NOT per customer) the bank partner expects these supporting docs
+// to prove the trade actually happened. Keep in sync.
+const TRANSACTION_REQUIREMENTS: Record<string, Array<{ docType: string; label: string; severity: string }>> = {
+  basic: [],
+  standard: [
+    { docType: "waybill", label: "Waybill", severity: "soft" },
+  ],
+  verified: [
+    { docType: "waybill", label: "Waybill", severity: "soft" },
+    { docType: "bill_of_lading", label: "Bill of Lading", severity: "hard" },
+  ],
+  documented: [
+    { docType: "bill_of_lading", label: "Bill of Lading", severity: "hard" },
+    { docType: "customs_declaration", label: "Customs declaration", severity: "hard" },
+    { docType: "packing_list", label: "Packing list", severity: "soft" },
+  ],
+  pro: [
+    { docType: "bill_of_lading", label: "Bill of Lading", severity: "hard" },
+    { docType: "customs_declaration", label: "Customs declaration", severity: "hard" },
+    { docType: "packing_list", label: "Packing list", severity: "hard" },
+    { docType: "proof_of_delivery", label: "Proof of delivery", severity: "hard" },
+    { docType: "inspection_certificate", label: "Inspection certificate", severity: "soft" },
+  ],
+};
+
 // Mirror of COMPLIANCE_DOC_REQUIREMENTS in src/XaePay.jsx. Keep in sync.
 const REQUIREMENTS: Record<string, Array<{ docType: string; label: string; refreshDays: number | null }>> = {
   basic: [],
@@ -172,6 +198,84 @@ async function scanOperator(admin: any, userId: string, tier: string) {
       if (!error) {
         created++;
         newReminders.push({ customer: customerName, customerId: c.id, customerPhone: c.phone || null, docLabel: r.label, status, severity: severityMap[status] });
+      }
+    }
+  }
+
+  // ─── Trade supporting documents scan ─────────────────────────────────────
+  // Scan COMPLETED transactions in the last 90 days for missing trade docs
+  // (BOL, waybill, customs, etc.) against each transaction's tier. These prove
+  // the trade actually happened — bank partners review them in their quarterly
+  // compliance check. Notifications created/resolved per (quote, doc) pair.
+  const ninetyDaysAgo = new Date(Date.now() - 90 * 86400000).toISOString();
+  const { data: completedQuotes } = await admin
+    .from("quotes")
+    .select("id, customer_id, customer_name, customer_phone, review_tier, status, cedar_request_status, cedar_payout_status, filled_at, created_at")
+    .eq("bdc_user_id", userId)
+    .or(`status.eq.filled,cedar_request_status.ilike.%COMPLETED%,cedar_payout_status.ilike.%ARRIVED%`)
+    .gte("created_at", ninetyDaysAgo);
+
+  if (completedQuotes && completedQuotes.length > 0) {
+    for (const q of completedQuotes) {
+      const txTier = (q.review_tier || "verified").toLowerCase();
+      const txReqs = TRANSACTION_REQUIREMENTS[txTier] || [];
+      if (txReqs.length === 0) continue;
+      const ref = `QU-${(q.id || "").slice(0, 4).toUpperCase()}`;
+
+      const { data: txDocs } = await admin
+        .from("customer_documents")
+        .select("doc_type, created_at")
+        .eq("quote_id", q.id);
+      const txByType: Record<string, any> = {};
+      for (const d of txDocs || []) {
+        if (!txByType[d.doc_type]) txByType[d.doc_type] = d;
+      }
+
+      for (const r of txReqs) {
+        const present = !!txByType[r.docType];
+        if (present) {
+          // Resolve any open notifications for this (quote, doc)
+          const { count } = await admin.from("notifications")
+            .update({
+              status: "resolved",
+              resolved_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+            }, { count: "exact" })
+            .eq("user_id", userId)
+            .eq("subject_type", "quote")
+            .eq("subject_id", q.id)
+            .eq("doc_type", r.docType)
+            .eq("status", "open");
+          if (count) resolved += count;
+          continue;
+        }
+
+        // Missing trade doc → notification
+        const severity = r.severity === "hard" ? "error" : "warn";
+        const title = `${ref} — missing ${r.label}`;
+        const bodyText = `Required by the ${txTier} tier for completed transactions. Upload via the transaction drawer to keep this transaction defensible against bank partner audits.`;
+        const { error } = await admin.from("notifications").insert({
+          user_id: userId,
+          kind: "compliance_trade_doc_missing",
+          subject_type: "quote",
+          subject_id: q.id,
+          doc_type: r.docType,
+          required_tier: txTier,
+          severity,
+          title,
+          body: bodyText,
+        });
+        if (!error) {
+          created++;
+          newReminders.push({
+            customer: q.customer_name || "Customer",
+            customerId: q.customer_id,
+            customerPhone: q.customer_phone || null,
+            docLabel: `${ref} — ${r.label}`,
+            status: "missing",
+            severity,
+          });
+        }
       }
     }
   }

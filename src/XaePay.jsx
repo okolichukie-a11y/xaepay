@@ -5965,6 +5965,11 @@ function TxDrawer({ tx, onClose, onRefresh }) {
           <ComplianceReviewPanel tx={tx} onChanged={() => onRefresh && onRefresh()} />
         )}
 
+        {/* Trade supporting docs — only for completed transactions */}
+        {tx.dbId && (
+          <TransactionSupportingDocsSection tx={tx} onChanged={() => onRefresh && onRefresh()} />
+        )}
+
         {/* Invoice — primary uploader is the customer (via portal); operator can upload here on customer's behalf. Required before customer can approve. */}
         {tx.dbId && (
           <div>
@@ -8010,6 +8015,7 @@ function AddCustomerModal({ open, onClose, onAdded, onAddLocal }) {
 
 // Doc type labels shown in the drawer's upload picker + doc list
 const DOC_TYPES = [
+  // Customer-level (KYC)
   { id: "id_front", label: "ID — front" },
   { id: "id_back", label: "ID — back" },
   { id: "selfie", label: "Selfie with ID" },
@@ -8018,8 +8024,42 @@ const DOC_TYPES = [
   { id: "bank_statement", label: "Bank statement" },
   { id: "ubo_attestation", label: "UBO / beneficial owner attestation" },
   { id: "sanctions_screening", label: "Sanctions screening" },
+  // Transaction-level (supporting docs proving the trade actually happened)
+  { id: "bill_of_lading", label: "Bill of Lading" },
+  { id: "waybill", label: "Waybill" },
+  { id: "customs_declaration", label: "Customs declaration" },
+  { id: "packing_list", label: "Packing list" },
+  { id: "proof_of_delivery", label: "Proof of delivery" },
+  { id: "inspection_certificate", label: "Inspection certificate" },
   { id: "other", label: "Other" },
 ];
+
+// Tier-aware transaction supporting documents — these prove the trade actually
+// happened, separate from customer-level KYC. Required on COMPLETED transactions
+// so bank partners (Cedar's compliance team) can verify the funds went for what
+// the original invoice declared. Quarterly audit packs bundle these per transaction.
+const TRANSACTION_DOC_REQUIREMENTS = {
+  basic: [],
+  standard: [
+    { docType: "waybill", label: "Waybill", severity: "soft" },
+  ],
+  verified: [
+    { docType: "waybill", label: "Waybill", severity: "soft" },
+    { docType: "bill_of_lading", label: "Bill of Lading", severity: "hard" },
+  ],
+  documented: [
+    { docType: "bill_of_lading", label: "Bill of Lading", severity: "hard" },
+    { docType: "customs_declaration", label: "Customs declaration", severity: "hard" },
+    { docType: "packing_list", label: "Packing list", severity: "soft" },
+  ],
+  pro: [
+    { docType: "bill_of_lading", label: "Bill of Lading", severity: "hard" },
+    { docType: "customs_declaration", label: "Customs declaration", severity: "hard" },
+    { docType: "packing_list", label: "Packing list", severity: "hard" },
+    { docType: "proof_of_delivery", label: "Proof of delivery", severity: "hard" },
+    { docType: "inspection_certificate", label: "Inspection certificate", severity: "soft" },
+  ],
+};
 
 // Tier-aware compliance document requirements for the RFI-prevention agent.
 // Each entry says "this tier requires this doc, refreshed every N days" — the
@@ -8239,6 +8279,119 @@ function CustomerComplianceSection({ customer, docs, onUploaded }) {
           })}
         </div>
       )}
+    </div>
+  );
+}
+
+// Per-transaction supporting documents (BOL, waybill, customs, etc.). Only
+// rendered in TxDrawer for completed transactions — bank partners review these
+// during the quarterly compliance check. Required set varies by the
+// transaction's tier (lower tiers want a single waybill, Pro tier wants the
+// full trade-doc set). Uploads land in customer_documents with quote_id set.
+function TransactionSupportingDocsSection({ tx, onChanged }) {
+  const { push } = useToast();
+  const auth = useAuth();
+  const [docs, setDocs] = useState([]);
+  const [uploadingFor, setUploadingFor] = useState(null);
+
+  const tier = (tx?.reviewTier || "verified").toLowerCase();
+  const requirements = TRANSACTION_DOC_REQUIREMENTS[tier] || TRANSACTION_DOC_REQUIREMENTS.verified;
+
+  const fetchDocs = async () => {
+    if (!tx?.dbId) return;
+    const { data } = await supabase
+      .from("customer_documents")
+      .select("id, doc_type, storage_path, file_name, mime_type, issued_at, created_at")
+      .eq("quote_id", tx.dbId)
+      .order("created_at", { ascending: false });
+    setDocs(data || []);
+  };
+
+  useEffect(() => { fetchDocs(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [tx?.dbId]);
+
+  const docsByType = {};
+  for (const d of docs) {
+    if (!docsByType[d.doc_type]) docsByType[d.doc_type] = d;
+  }
+
+  const handleUpload = async (req, file) => {
+    if (!file || !tx?.dbId || !tx?.customerId) return;
+    setUploadingFor(req.docType);
+    try {
+      const ext = (file.name.split(".").pop() || "bin").toLowerCase();
+      const path = `${tx.customerId}/${tx.dbId}/${req.docType}-${Date.now()}.${ext}`;
+      const { error: upErr } = await supabase.storage.from("kyc-docs").upload(path, file, { contentType: file.type, upsert: false });
+      if (upErr) throw upErr;
+      const issuedAt = new Date().toISOString();
+      const { error: dbErr } = await supabase.from("customer_documents").insert({
+        customer_id: tx.customerId,
+        quote_id: tx.dbId,
+        doc_type: req.docType,
+        storage_path: path,
+        file_name: file.name,
+        size_bytes: file.size,
+        mime_type: file.type,
+        issued_at: issuedAt,
+        uploaded_by: auth.user?.id || null,
+      });
+      if (dbErr) throw dbErr;
+      push(`Uploaded · ${req.label}`, "success");
+      onChanged && onChanged();
+      fetchDocs();
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error("Supporting doc upload failed:", err);
+      push(`Upload failed: ${err?.message || err}`, "warn");
+    } finally {
+      setUploadingFor(null);
+    }
+  };
+
+  // Only render for completed transactions — supporting docs don't make sense before delivery
+  const cedarStatus = (tx?.cedarRequestStatus || "").toUpperCase();
+  const cedarPayout = (tx?.cedarPayoutStatus || "").toUpperCase();
+  const isCompleted = tx?.dbStatus === "filled" || cedarStatus.includes("COMPLETED") || cedarPayout.includes("ARRIVED");
+  if (!isCompleted) return null;
+  if (requirements.length === 0) return null;
+
+  const missingHard = requirements.filter((r) => r.severity === "hard" && !docsByType[r.docType]).length;
+
+  return (
+    <div>
+      <Label>Trade supporting documents</Label>
+      <div className="rounded-xl p-3 space-y-2" style={{ background: "var(--bone)", border: "1px solid var(--line)" }}>
+        <p className="text-[11px]" style={{ color: "var(--muted)" }}>
+          Proof the trade actually happened — bank partners review these in their quarterly compliance check. Required set for the <strong>{tier}</strong> tier of this transaction.
+        </p>
+        <div className="flex items-baseline gap-2 text-[10px] font-mono uppercase tracking-wider" style={{ color: "var(--muted)" }}>
+          <span>{requirements.length} expected</span>
+          {missingHard > 0 && <span style={{ color: "#991b1b" }}>· {missingHard} required missing</span>}
+        </div>
+        {requirements.map((req) => {
+          const doc = docsByType[req.docType];
+          const inputId = `txdoc-${tx.dbId}-${req.docType}`;
+          const styles = doc
+            ? { color: "var(--emerald)", bg: "rgba(15,95,63,0.10)", label: "Uploaded" }
+            : { color: req.severity === "hard" ? "#991b1b" : "#92400e", bg: req.severity === "hard" ? "#fee2e2" : "#fef3c7", label: req.severity === "hard" ? "Required" : "Recommended" };
+          return (
+            <div key={req.docType} className="rounded-lg p-2.5 text-xs flex items-center justify-between gap-2" style={{ background: "white", border: "1px solid var(--line)" }}>
+              <div className="min-w-0 flex-1">
+                <div className="font-medium truncate">{req.label}</div>
+                <div className="font-mono text-[10px] mt-0.5" style={{ color: "var(--muted)" }}>
+                  {doc ? doc.file_name || "uploaded" : `${req.severity === "hard" ? "Required" : "Recommended"} for ${tier} tier`}
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="rounded-full px-2 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-wider" style={{ background: styles.bg, color: styles.color }}>{styles.label}</span>
+                <input id={inputId} type="file" accept="image/*,application/pdf" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; if (f) handleUpload(req, f); }} disabled={uploadingFor === req.docType} />
+                <label htmlFor={inputId} className="rounded-lg px-2 py-1 font-mono text-[9px] font-semibold uppercase tracking-wider cursor-pointer transition" style={{ background: "var(--ink)", color: "var(--lime)" }}>
+                  {uploadingFor === req.docType ? "Uploading…" : (doc ? "Replace" : "Upload")}
+                </label>
+              </div>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
