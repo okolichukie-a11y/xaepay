@@ -310,4 +310,169 @@ export function downloadQuotePdf(doc, quoteId) {
   doc.save(`${ref(quoteId)}-XaePay.pdf`);
 }
 
+// === Compliance pack PDF =====================================================
+// Per-customer compliance pack — issued by the operator to honor the
+// Compliance Pro tier "quarterly compliance pack" deliverable. Lists all
+// uploaded compliance documents, their status against tier requirements,
+// and an audit summary.
+
+function buildCompliancePackPage(doc, customer, docsByType, requirements, tier, operatorName) {
+  drawHeader(doc, "Compliance Pack");
+
+  let y = 38;
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(20);
+  doc.setTextColor(INK);
+  doc.text("Compliance pack", MARGIN, y);
+  y += 7;
+
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(10);
+  doc.setTextColor(MUTED);
+  const periodLabel = new Date().toLocaleDateString("en-GB", { month: "long", year: "numeric" });
+  doc.text(`${customer.name || "Customer"} · ${periodLabel}`, MARGIN, y);
+  y += 12;
+
+  // Two-column header summary: customer | operator
+  const colW = (CONTENT_W - 8) / 2;
+  drawLabelValue(doc, "Customer", customer.name || "—", MARGIN, y);
+  drawLabelValue(doc, "Issued by", operatorName || "Operator", MARGIN + colW + 8, y);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(8);
+  doc.setTextColor(MUTED);
+  doc.text([customer.phone, customer.email].filter(Boolean).join("  ·  ") || "—", MARGIN, y + 11);
+  doc.text(`Tier: ${tier.toUpperCase()}`, MARGIN + colW + 8, y + 11);
+  y += 22;
+
+  // KYC + Cedar status pills
+  doc.setDrawColor(LINE);
+  doc.line(MARGIN, y, PAGE_W - MARGIN, y);
+  y += 8;
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(11);
+  doc.setTextColor(INK);
+  doc.text("Identity & licensing", MARGIN, y);
+  y += 7;
+
+  const idRows = [
+    ["KYC status", (customer.cedar_kyc_status || customer.kyc_status || "Pending").toString().toUpperCase()],
+    ["KYC tier", String(customer.kyc_tier ?? "0")],
+    ["Cedar business ID", customer.cedar_business_id ? String(customer.cedar_business_id) : "—"],
+    ["Customer type", customer.type || "—"],
+  ];
+  idRows.forEach(([label, value]) => {
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8);
+    doc.setTextColor(MUTED);
+    doc.text(label.toUpperCase(), MARGIN, y);
+    doc.setFont("courier", "normal");
+    doc.setFontSize(10);
+    doc.setTextColor(INK);
+    doc.text(String(value), PAGE_W - MARGIN, y, { align: "right" });
+    doc.setDrawColor(LINE);
+    doc.line(MARGIN, y + 2.5, PAGE_W - MARGIN, y + 2.5);
+    y += 9;
+  });
+  y += 4;
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(11);
+  doc.setTextColor(INK);
+  doc.text("Compliance documents", MARGIN, y);
+  y += 6;
+
+  if (!requirements || requirements.length === 0) {
+    doc.setFont("helvetica", "italic");
+    doc.setFontSize(9);
+    doc.setTextColor(MUTED);
+    doc.text("No documents required by this tier.", MARGIN, y);
+    return;
+  }
+
+  // Table header
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(8);
+  doc.setTextColor(MUTED);
+  doc.text("DOCUMENT", MARGIN, y + 5);
+  doc.text("ISSUED", MARGIN + 70, y + 5);
+  doc.text("EXPIRES", MARGIN + 105, y + 5);
+  doc.text("STATUS", PAGE_W - MARGIN, y + 5, { align: "right" });
+  y += 8;
+  doc.setDrawColor(LINE);
+  doc.line(MARGIN, y, PAGE_W - MARGIN, y);
+  y += 6;
+
+  requirements.forEach((r) => {
+    const d = docsByType[r.docType];
+    const expiresAt = d?.expires_at ? new Date(d.expires_at) : (d?.issued_at && r.refreshDays ? new Date(new Date(d.issued_at).getTime() + r.refreshDays * 86400000) : null);
+    let status = "Missing";
+    let statusColor = "#6b7280";
+    if (d) {
+      if (!r.refreshDays) { status = "Valid"; statusColor = EMERALD; }
+      else if (expiresAt) {
+        const days = Math.floor((expiresAt.getTime() - Date.now()) / 86400000);
+        if (days < 0) { status = "Expired"; statusColor = "#991b1b"; }
+        else if (days <= 14) { status = "Expiring"; statusColor = "#92400e"; }
+        else { status = "Valid"; statusColor = EMERALD; }
+      }
+    }
+
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(9);
+    doc.setTextColor(INK);
+    doc.text(r.label, MARGIN, y, { maxWidth: 65 });
+
+    doc.setFont("courier", "normal");
+    doc.setFontSize(8);
+    doc.setTextColor(MUTED);
+    doc.text(d?.issued_at ? fmtDate(d.issued_at) : "—", MARGIN + 70, y);
+    doc.text(expiresAt ? fmtDate(expiresAt.toISOString()) : (r.refreshDays ? "—" : "no expiry"), MARGIN + 105, y);
+
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(9);
+    doc.setTextColor(statusColor);
+    doc.text(status, PAGE_W - MARGIN, y, { align: "right" });
+
+    doc.setDrawColor(LINE);
+    doc.line(MARGIN, y + 3, PAGE_W - MARGIN, y + 3);
+    y += 8;
+  });
+
+  // Footer note
+  const noteY = PAGE_H - 35;
+  doc.setDrawColor(LINE);
+  doc.line(MARGIN, noteY, PAGE_W - MARGIN, noteY);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(8);
+  doc.setTextColor(MUTED);
+  doc.text(`This compliance pack reflects ${customer.name || "the customer"}'s document status at ${new Date().toLocaleString("en-GB", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}.`, MARGIN, noteY + 5, { maxWidth: CONTENT_W });
+  doc.text("Generated by XaePay's compliance agent. For Cedar Money's compliance team, verify each document against Cedar's records via the customer's onboarded business ID.", MARGIN, noteY + 13, { maxWidth: CONTENT_W });
+}
+
+export function generateCompliancePackPdf({ customer, docs, requirements, tier, operatorName }) {
+  const doc = new jsPDF({ unit: "mm", format: "a4" });
+  // Group docs by doc_type, keeping the latest per type
+  const docsByType = {};
+  for (const d of docs || []) {
+    const existing = docsByType[d.doc_type];
+    if (!existing) docsByType[d.doc_type] = d;
+    else {
+      const exp1 = existing.expires_at || existing.issued_at || existing.created_at || "";
+      const exp2 = d.expires_at || d.issued_at || d.created_at || "";
+      if (exp2 > exp1) docsByType[d.doc_type] = d;
+    }
+  }
+  buildCompliancePackPage(doc, customer, docsByType, requirements, tier || "pro", operatorName);
+  drawFooter(doc, 1, 1);
+  return doc;
+}
+
+export function downloadCompliancePackPdf(doc, customer) {
+  const safeName = (customer?.name || "Customer").replace(/[^\w]+/g, "_");
+  const period = new Date().toLocaleDateString("en-GB", { month: "short", year: "numeric" }).replace(/\s+/g, "_");
+  doc.save(`${safeName}_compliance_pack_${period}.pdf`);
+}
+
 export const _refForFilename = ref;

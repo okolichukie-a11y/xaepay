@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import { supabase, sendWhatsAppText, sendWhatsAppTemplate, fetchCedarRate, submitCustomerToCedar, submitRecipientToCedar, submitReceiverAccountToCedar, submitCedarTransaction, approveCedarQuote, confirmCedarDeposit, cancelCedarTransaction, uploadCedarFile, uploadFileBoth, runComplianceReview, runComplianceWatchman, submitDocumentToCedar, sendEmail, safeUrl, logAuditEvent } from "./lib/supabase.js";
 import { generateQuotePdf, uploadQuotePdf, downloadQuotePdf } from "./lib/pdf.js";
+import { generateCompliancePackPdf, downloadCompliancePackPdf } from "./lib/pdf-doc.js";
 import { useAuth } from "./lib/auth.js";
 
 // ─── Editable in one place ────────────────────────────────────────────────
@@ -8159,13 +8160,35 @@ function CustomerComplianceSection({ customer, docs, onUploaded }) {
     }
   };
 
+  const downloadPack = () => {
+    try {
+      const operatorName = auth.user?.user_metadata?.company || auth.user?.email || "Operator";
+      const pdf = generateCompliancePackPdf({
+        customer,
+        docs,
+        requirements,
+        tier,
+        operatorName,
+      });
+      downloadCompliancePackPdf(pdf, customer);
+      push(`Compliance pack downloaded · ${TIERS[tier].name} tier`, "success");
+    } catch (err) {
+      push(`Couldn't generate pack: ${err?.message || err}`, "warn");
+    }
+  };
+
   return (
     <div>
-      <div className="flex items-baseline justify-between mb-2">
+      <div className="flex items-center justify-between gap-2 mb-2 flex-wrap">
         <Label>Compliance documents</Label>
-        <select value={tier} onChange={(e) => setTier(e.target.value)} className="rounded-lg px-2 py-1 text-xs font-mono" style={{ border: "1px solid var(--line)", background: "white" }}>
-          {Object.values(TIERS).map((t) => <option key={t.id} value={t.id}>{t.name} tier</option>)}
-        </select>
+        <div className="flex items-center gap-2">
+          <button onClick={downloadPack} className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium transition" style={{ border: "1px solid var(--line)", color: "var(--ink)" }} title="Download a PDF summary of this customer's compliance documents">
+            <Download size={12} /> Pack
+          </button>
+          <select value={tier} onChange={(e) => setTier(e.target.value)} className="rounded-lg px-2 py-1 text-xs font-mono" style={{ border: "1px solid var(--line)", background: "white" }}>
+            {Object.values(TIERS).map((t) => <option key={t.id} value={t.id}>{t.name} tier</option>)}
+          </select>
+        </div>
       </div>
       {requirements.length === 0 ? (
         <div className="rounded-xl p-3 text-xs" style={{ background: "var(--bone)", border: "1px solid var(--line)", color: "var(--muted)" }}>
