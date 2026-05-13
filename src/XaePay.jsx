@@ -910,7 +910,7 @@ function WaitlistModal({ open, onClose }) {
             <option value="business">Business paying foreign suppliers</option>
             <option value="diaspora">Diaspora sender</option>
             <option value="individual">Individual making trade payments</option>
-            <option value="bdc">CBN-licensed BDC</option>
+            <option value="bdc">Agent operator (BDC, IMTO, MSB, freight forwarder, etc.)</option>
             <option value="agent">Payment Agent (IMTO/SCUML)</option>
             <option value="lp">USDT Liquidity Provider</option>
             <option value="other">Other / just curious</option>
@@ -1289,10 +1289,10 @@ function BecomePartnerModal({ open, onClose, onComplete }) {
         <div className="space-y-5">
           <div>
             <h3 className="font-display text-lg font-semibold mb-2">Tell us about your business</h3>
-            <p className="text-sm" style={{ color: "var(--muted)" }}>Agent operators of every kind welcome — BDCs, IMTOs, freight forwarders, customs agents, trade facilitators, and consolidation aggregators.</p>
+            <p className="text-sm" style={{ color: "var(--muted)" }}>Anyone qualified can run as an agent operator — registered businesses (BDCs, IMTOs, MSBs, freight forwarders, customs agents) and independent agents with the right licensing wrapper. You facilitate the payment; XaePay's licensed payment partner executes the wire.</p>
           </div>
           <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="Business name" full><Input value={data.company} onChange={(e) => setData({ ...data, company: e.target.value })} placeholder="Corporate Exchange BDC" /></Field>
+            <Field label="Business name (or your name if individual)" full><Input value={data.company} onChange={(e) => setData({ ...data, company: e.target.value })} placeholder="Acme Trade Co · Olusegun Adeyemi" /></Field>
             <Field label="Your name"><Input value={data.contactName} onChange={(e) => setData({ ...data, contactName: e.target.value })} placeholder="Olusegun Adeyemi" /></Field>
             <Field label="Phone (WhatsApp)"><Input value={data.phone} onChange={(e) => setData({ ...data, phone: e.target.value })} placeholder="+234 803 123 4567" /></Field>
             <Field label="Email" full><Input type="email" value={data.email} onChange={(e) => setData({ ...data, email: e.target.value })} placeholder="you@operator.com" /></Field>
@@ -1328,7 +1328,7 @@ function BecomePartnerModal({ open, onClose, onComplete }) {
             ))}
           </div>
           {wrapperRequiresLicense && (
-            <Field label="Registration / license number" full><Input value={data.licenseNumber} onChange={(e) => setData({ ...data, licenseNumber: e.target.value })} placeholder="e.g. BDC/2024/T2/045" /></Field>
+            <Field label="Registration / license number" full><Input value={data.licenseNumber} onChange={(e) => setData({ ...data, licenseNumber: e.target.value })} placeholder="e.g. RC123456, BDC/2024/T2/045, FCA-9876, etc." /></Field>
           )}
           <div className="flex justify-between pt-2">
             <SecondaryBtn onClick={back}>Back</SecondaryBtn>
@@ -1400,12 +1400,12 @@ function RequestAccessModal({ open, onClose, onChoose, onWaitlist }) {
         </div>
       </div>
       <div className="grid gap-3 sm:grid-cols-2">
-        <RoleCard icon={Building2} title="I run a business" subtitle="CAC-registered company" description="Pay foreign suppliers, manage trade payments, generate compliance docs." time="~4 min" available onClick={() => onChoose("business")} />
+        <RoleCard icon={Building2} title="I run a business" subtitle="Registered entity (CAC, LLC, Ltd, etc.)" description="Pay foreign suppliers, manage trade payments, generate compliance docs." time="~4 min" available onClick={() => onChoose("business")} />
         <RoleCard icon={Send} title="I operate from overseas" subtitle="Individual or business · US / UK / EU / CA" description="Send foreign currency from abroad to settle as NGN locally — vendors, payroll, family, school, property." time="~5 min" available onClick={() => onChoose("diaspora")} />
-        <RoleCard icon={User} title="I'm an individual" subtitle="Personal trade payments" description="Pay foreign suppliers via BDC payment-agent service." time="~3 min" phase2 onClick={() => onChoose("individual")} />
-        <RoleCard icon={Briefcase} title="I operate a BDC" subtitle="CBN-licensed BDC" description="Process trade payments, access global rails, generate evidence packs." time="~10 min" available onClick={() => onChoose("bdc")} />
-        <RoleCard icon={Layers} title="I'm a Payment Agent" subtitle="IMTO / SCUML / CAC + BDC partner" description="Licensed Nigerian operators serving trade and remittance flows. Same dashboard as BDCs, different regulatory wrapper." time="~8 min" available onClick={() => onChoose("agent")} />
-        <RoleCard icon={Coins} title="I provide USDT liquidity" subtitle="Diaspora USD holders, exporters" description="Sell USDT to BDCs needing inventory. Receive naira at favorable rates." time="~7 min" phase2 onClick={() => onChoose("lp")} />
+        <RoleCard icon={User} title="I'm an individual" subtitle="Personal trade payments (waitlist)" description="Individual customer rail isn't live yet — join the waitlist and we'll let you know when it opens." time="~3 min" phase2 onClick={() => onChoose("individual")} />
+        <RoleCard icon={Briefcase} title="I want to be an operator" subtitle="Individual or business with licensing wrapper" description="Facilitate trade payments for your customers — BDC, IMTO, MSB, freight forwarder, customs agent, or any independent agent with the right wrapper." time="~10 min" available onClick={() => onChoose("bdc")} />
+        <RoleCard icon={Layers} title="I'm a Payment Agent" subtitle="IMTO / SCUML / CAC + Operator partnership" description="Licensed Nigerian operators serving trade and remittance flows. Same dashboard as other operators, different regulatory wrapper." time="~8 min" available onClick={() => onChoose("agent")} />
+        <RoleCard icon={Coins} title="I provide USDT liquidity" subtitle="Diaspora USD holders, exporters" description="Sell USDT to operators needing inventory. Receive naira at favorable rates." time="~7 min" phase2 onClick={() => onChoose("lp")} />
       </div>
     </Modal>
   );
@@ -1595,25 +1595,23 @@ function BizStep2({ data, setData, onNext, onBack }) {
         </div>
       )}
       <div className="mt-6">
-        <Label>Are you coming through a BDC?</Label>
-        <p className="text-xs mb-3" style={{ color: "var(--muted)" }}>If a CBN-licensed BDC has already verified you as a customer, they can vouch to skip director KYC.</p>
+        <Label>Are you sponsored by an operator?</Label>
+        <p className="text-xs mb-3" style={{ color: "var(--muted)" }}>If a licensed agent operator (BDC, IMTO, MSB, freight forwarder, or independent agent) has already verified you as a customer, they can vouch to skip director KYC.</p>
         <div className="grid gap-2 sm:grid-cols-2">
           <RoleBtn active={bdcChoice === "none"} onClick={() => { setBdcChoice("none"); setData({ ...data, bdcSponsor: null }); }}>No, coming directly</RoleBtn>
-          <RoleBtn active={bdcChoice === "bdc"} onClick={() => { setBdcChoice("bdc"); setData({ ...data, bdcSponsor: "Corporate Exchange BDC" }); }}>Yes, via my BDC</RoleBtn>
+          <RoleBtn active={bdcChoice === "bdc"} onClick={() => { setBdcChoice("bdc"); setData({ ...data, bdcSponsor: "" }); }}>Yes, via my operator</RoleBtn>
         </div>
         {bdcChoice === "bdc" && (
           <div className="mt-3 rise">
-            <Select value={data.bdcSponsor || ""} onChange={(e) => setData({ ...data, bdcSponsor: e.target.value })}>
-              <option>Corporate Exchange BDC</option><option>Dula Global BDC (Tier 1)</option><option>Trurate Global BDC (Tier 1)</option><option>Sevenlocks BDC</option><option>Bergpoint BDC</option><option>Brownstone BDC</option>
-            </Select>
-            <p className="mt-2 font-mono text-[10px] uppercase tracking-wider" style={{ color: "var(--emerald)" }}>✓ Your BDC will receive a one-click attestation request. You skip director KYC.</p>
+            <Input value={data.bdcSponsor || ""} onChange={(e) => setData({ ...data, bdcSponsor: e.target.value })} placeholder="Type your operator's business name" />
+            <p className="mt-2 font-mono text-[10px] uppercase tracking-wider" style={{ color: "var(--emerald)" }}>✓ Your operator will receive a one-click attestation request. You skip director KYC.</p>
           </div>
         )}
       </div>
       <TierUnlockNote tier={1} description="business identity verified, you can transact up to $5,000" />
       <div className="mt-6 flex flex-col justify-between gap-3 sm:flex-row">
         <SecondaryBtn onClick={onBack}>Back</SecondaryBtn>
-        <PrimaryBtn onClick={onNext}>Continue to {bdcChoice === "bdc" ? "BDC attestation" : "director KYC"} <ArrowRight size={14} /></PrimaryBtn>
+        <PrimaryBtn onClick={onNext}>Continue to {bdcChoice === "bdc" ? "operator attestation" : "director KYC"} <ArrowRight size={14} /></PrimaryBtn>
       </div>
     </Card>
   );
@@ -1631,7 +1629,7 @@ function BizStep3({ data, setData, onNext, onBack, onComplete }) {
   if (isBDC) {
     return (
       <Card>
-        <h2 className="font-display text-xl font-semibold">BDC attestation</h2>
+        <h2 className="font-display text-xl font-semibold">Operator attestation</h2>
         <p className="mt-1 text-sm" style={{ color: "var(--muted)" }}>{data.bdcSponsor} has been notified. Once they click-attest, you're at Tier 2.</p>
         <div className="mt-6 rounded-xl p-5" style={{ background: "var(--ink)", color: "var(--bone)" }}>
           <div className="flex items-start gap-3">
@@ -1643,7 +1641,7 @@ function BizStep3({ data, setData, onNext, onBack, onComplete }) {
             </div>
           </div>
         </div>
-        <TierUnlockNote tier={2} description="BDC attestation grants Tier 2. $5K – $50K corridor unlocked." />
+        <TierUnlockNote tier={2} description="Operator attestation grants Tier 2. $5K – $50K corridor unlocked." />
         <div className="mt-6 flex flex-col justify-between gap-3 sm:flex-row">
           <SecondaryBtn onClick={onBack}>Back</SecondaryBtn>
           <div className="flex gap-2">
@@ -1730,8 +1728,8 @@ function IndividualOnboarding({ onComplete }) {
         <SectionEyebrow>Individual onboarding</SectionEyebrow>
         <span className="rounded-full px-2 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-wider" style={{ background: "var(--bone-2)", color: "var(--emerald)" }}>Phase 2</span>
       </div>
-      <h1 className="font-display mt-3 text-3xl font-[450] tracking-tight sm:text-4xl">Trade payments via BDC payment-agent.</h1>
-      <p className="mt-2 text-sm" style={{ color: "var(--muted)" }}>Your BDC pays the supplier in their name on your behalf — fully disclosed, fully documented. Per-transaction $2K, monthly $10K limits per CBN rules.</p>
+      <h1 className="font-display mt-3 text-3xl font-[450] tracking-tight sm:text-4xl">Trade payments via licensed operator-agent.</h1>
+      <p className="mt-2 text-sm" style={{ color: "var(--muted)" }}>Your operator pays the supplier in their name on your behalf — fully disclosed, fully documented. Per-transaction $2K, monthly $10K limits per CBN rules.</p>
       <div className="mt-6 rounded-xl p-4" style={{ background: "rgba(212,168,44,0.08)", border: "1px solid rgba(212,168,44,0.3)" }}>
         <div className="flex items-start gap-2">
           <Sparkles size={14} className="mt-0.5 flex-shrink-0" style={{ color: "var(--amber)" }} />
@@ -1740,7 +1738,7 @@ function IndividualOnboarding({ onComplete }) {
           </div>
         </div>
       </div>
-      <div className="mt-8"><OnboardingStepper step={step} steps={["Identity", "BDC", "Authorize", "Done"]} /></div>
+      <div className="mt-8"><OnboardingStepper step={step} steps={["Identity", "Operator", "Authorize", "Done"]} /></div>
       <div className="mt-6">
         {step === 1 && (
           <Card>
@@ -4226,11 +4224,13 @@ function BDCDashboard({ session, initialCustomerId, onInitialCustomerHandled }) 
     { id: "earnings", label: "Earnings", icon: TrendingUp },
   ];
   // Operator name + role line. Demo session passes a single string; real auth-backed
-  // sessions may carry user_metadata.company. Fall back gracefully.
-  const operatorName = session?.name || "Corporate Exchange BDC";
-  const operatorRoleLine = session?.type === "agent"
-    ? "IMTO / SCUML / CAC-registered · Payment Agent"
-    : "CBN-licensed BDC · Partner active";
+  // sessions may carry user_metadata.company. Fall back gracefully. Operator can be
+  // a BDC, IMTO, MSB, freight forwarder, customs agent, or independent agent — the
+  // common surface is the operator role, not a specific license type.
+  const operatorName = session?.name || "Operator";
+  const operatorRoleLine = session?.wrapper
+    ? `Agent operator · ${session.wrapper}`
+    : "Agent operator · Account active";
   return (
     <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8 lg:py-10">
       <div className="mb-6 flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-end">
