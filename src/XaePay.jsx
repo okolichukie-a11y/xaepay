@@ -3213,7 +3213,7 @@ function CustomerPortal({ session, customerRows }) {
           </div>
         ) : (
           <p className="mt-2 text-sm" style={{ color: "var(--muted)" }}>
-            Operator: <strong style={{ color: "var(--ink)" }}>{activeCustomer?.bdc_name || "your XaePay operator"}</strong>
+            Operator: <strong style={{ color: "var(--ink)" }}>{activeCustomer?.bdc_name || "XaeccoX"}</strong>
           </p>
         )}
       </div>
@@ -3294,7 +3294,7 @@ function CustomerPortal({ session, customerRows }) {
           <div className="flex items-center justify-between gap-4 flex-wrap">
             <div>
               <h3 className="font-display text-lg font-semibold">Need to send a payment?</h3>
-              <p className="text-xs mt-1" style={{ color: "var(--muted)" }}>Request a quote from {activeCustomer?.bdc_name || "your operator"}. They'll set the rate and send it back.</p>
+              <p className="text-xs mt-1" style={{ color: "var(--muted)" }}>Request a quote from {activeCustomer?.bdc_name || "XaeccoX"}. They'll set the rate and send it back.</p>
             </div>
             <PrimaryBtn onClick={() => setRequestOpen(true)} disabled={!activeCustomer?.bdc_user_id}><Plus size={14} /> Request a quote</PrimaryBtn>
           </div>
@@ -3326,7 +3326,7 @@ function CustomerPortal({ session, customerRows }) {
                     </div>
                   )}
                   <div className="text-[11px] pt-1" style={{ color: "var(--muted)", borderTop: "1px solid var(--line)" }}>
-                    Sent to {activeCustomer?.bdc_name || "your operator"} {relativeTime(q.created_at)}. They'll send back a priced quote you can review and approve.
+                    Sent to {activeCustomer?.bdc_name || "XaeccoX"} {relativeTime(q.created_at)}. They'll send back a priced quote you can review and approve.
                   </div>
                 </div>
               </Card>
@@ -3459,7 +3459,7 @@ function CustomerRequestQuoteModal({ open, onClose, customer, onCreated }) {
     const amount = parseFloat(data.amount);
     const patch = {
       bdc_user_id: customer.bdc_user_id,
-      bdc_name: customer.bdc_name || "Operator",
+      bdc_name: customer.bdc_name || "XaeccoX",
       customer_id: customer.id,
       customer_name: customer.name || null,
       customer_phone: customer.phone || null,
@@ -3496,7 +3496,7 @@ function CustomerRequestQuoteModal({ open, onClose, customer, onCreated }) {
       <div className="space-y-5">
         <div>
           <p className="text-sm" style={{ color: "var(--muted)" }}>
-            Tell {customer?.bdc_name || "your operator"} what you need to send. They'll set the rate and send a quote back to you within a few minutes.
+            Tell {customer?.bdc_name || "XaeccoX"} what you need to send. They'll set the rate and send a quote back to you within a few minutes.
           </p>
         </div>
         <div>
@@ -4227,7 +4227,9 @@ function BDCDashboard({ session, initialCustomerId, onInitialCustomerHandled }) 
   // sessions may carry user_metadata.company. Fall back gracefully. Operator can be
   // a BDC, IMTO, MSB, freight forwarder, customs agent, or independent agent — the
   // common surface is the operator role, not a specific license type.
-  const operatorName = session?.name || "Operator";
+  // Default operator umbrella is XaeccoX (the parent co) — operators who haven't
+  // set their own brand name yet are effectively operating under XaeccoX.
+  const operatorName = session?.name || session?.company || "XaeccoX";
   const operatorRoleLine = session?.wrapper
     ? `Agent operator · ${session.wrapper}`
     : "Agent operator · Account active";
@@ -4645,7 +4647,7 @@ function OperatorQuoteModal({ open, onClose, onCreated }) {
       .from("quotes")
       .insert({
         bdc_user_id: auth.user.id,
-        bdc_name: auth.user.user_metadata?.company || "Operator",
+        bdc_name: auth.user.user_metadata?.company || "XaeccoX",
         customer_id: data.customerId || null,
         customer_name: data.customerName,
         customer_phone: data.customerPhone,
@@ -4732,7 +4734,7 @@ function OperatorQuoteModal({ open, onClose, onCreated }) {
       push(`Email skipped — no address on file (customerId=${data.customerId ? "set" : "none"}, pickedRow=${pickedCustomer ? "found" : "missing"})`, "warn");
     }
     if (customerEmail) {
-      const operatorName = auth.user?.user_metadata?.company || auth.user?.email || "your XaePay operator";
+      const operatorName = auth.user?.user_metadata?.company || "XaeccoX";
       const approvalUrl = `${window.location.origin}/?quote=${quoteRow.id}`;
       const portalUrl = `${window.location.origin}/`;
       const ngnText = `₦${Math.round(ngnTotal).toLocaleString()}`;
@@ -6195,7 +6197,7 @@ function OperatorPriceRequestPanel({ tx, onSent }) {
       });
     }
     if (customerEmail) {
-      const operatorName = auth.user?.user_metadata?.company || auth.user?.email || "your XaePay operator";
+      const operatorName = auth.user?.user_metadata?.company || "XaeccoX";
       const ngnText = `₦${ngnTotal.toLocaleString()}`;
       const emailHtml = `<!doctype html><html><body style="font-family:system-ui,sans-serif;color:#0a0b0d;background:#fcfbf7;margin:0;padding:24px;"><div style="max-width:560px;margin:0 auto;background:white;border:1px solid #e5e7eb;border-radius:16px;padding:32px;"><h2 style="margin:0 0 8px;font-size:24px;">Hello ${tx.customer || "there"},</h2><p style="color:#6b7280;margin:0 0 24px;">${operatorName} has priced your quote request.</p><div style="background:#0a0b0d;color:#d4f570;border-radius:12px;padding:24px;margin-bottom:24px;"><div style="font-size:11px;text-transform:uppercase;letter-spacing:0.05em;color:rgba(247,245,240,0.5);margin-bottom:8px;">Amount</div><div style="font-size:36px;font-weight:500;">$${tx.amount.toLocaleString()} ${tx.currency}</div></div><table style="width:100%;font-family:monospace;font-size:13px;border-collapse:collapse;margin-bottom:24px;"><tr><td style="padding:6px 0;color:#6b7280;">Reference</td><td style="padding:6px 0;text-align:right;font-weight:600;">${displayRef}</td></tr><tr><td style="padding:6px 0;color:#6b7280;">Rate</td><td style="padding:6px 0;text-align:right;font-weight:600;">₦${customerRate.toFixed(2)}/$</td></tr><tr><td style="padding:6px 0;color:#6b7280;">You pay</td><td style="padding:6px 0;text-align:right;font-weight:600;">${ngnText}</td></tr></table><p style="text-align:center;margin:0 0 8px;"><a href="${approvalUrl}" style="display:inline-block;background:#0a0b0d;color:#d4f570;padding:14px 28px;border-radius:12px;text-decoration:none;font-weight:600;">Review &amp; approve</a></p></div></body></html>`;
       sendEmail({ to: customerEmail, subject: `Priced quote from ${operatorName} — ${displayRef}`, html: emailHtml });
@@ -7866,7 +7868,7 @@ function AddCustomerModal({ open, onClose, onAdded, onAddLocal }) {
       .from("customers")
       .insert({
         bdc_user_id: auth.user.id,
-        bdc_name: auth.user.user_metadata?.company || auth.user.user_metadata?.name || "Operator",
+        bdc_name: auth.user.user_metadata?.company || auth.user.user_metadata?.name || "XaeccoX",
         name: row.name,
         phone: row.phone,
         email: row.email || null,
@@ -8237,7 +8239,7 @@ function CustomerComplianceSection({ customer, docs, onUploaded }) {
 
   const downloadPack = () => {
     try {
-      const operatorName = auth.user?.user_metadata?.company || auth.user?.email || "Operator";
+      const operatorName = auth.user?.user_metadata?.company || "XaeccoX";
       const pdf = generateCompliancePackPdf({
         customer,
         docs,
@@ -8365,7 +8367,7 @@ function TransactionConfirmationSection({ tx, onChanged, readOnly = false }) {
         push("Couldn't load transaction for confirmation PDF", "warn");
         return;
       }
-      const operatorName = readOnly ? (q.bdc_name || "Your operator") : (auth.user?.user_metadata?.company || auth.user?.email || q.bdc_name || "Operator");
+      const operatorName = readOnly ? (q.bdc_name || "XaeccoX") : (auth.user?.user_metadata?.company || q.bdc_name || "XaeccoX");
       const pdf = generateTransactionConfirmationPdf({ quote: q, operatorName });
       downloadTransactionConfirmationPdf(pdf, q);
       push("Confirmation downloaded.", "success");
