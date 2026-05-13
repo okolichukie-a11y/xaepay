@@ -8438,7 +8438,7 @@ function TransactionConfirmationSection({ tx, onChanged, readOnly = false }) {
               <div className="min-w-0 flex-1">
                 <div className="text-sm font-medium truncate">{req.label}</div>
                 <div className="font-mono text-[10px] mt-0.5" style={{ color: "var(--muted)" }}>
-                  {doc ? doc.file_name || "uploaded" : (readOnly ? "Not yet available from your operator" : "From the licensed payment partner · arrives within 24h of settlement")}
+                  {doc ? doc.file_name || "uploaded" : (readOnly ? "Not yet available from your operator" : "Upload after receiving from bank partner")}
                 </div>
               </div>
               <div className="flex items-center gap-2">
