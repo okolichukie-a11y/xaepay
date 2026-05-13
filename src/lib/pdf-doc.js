@@ -469,6 +469,160 @@ export function generateCompliancePackPdf({ customer, docs, requirements, tier, 
   return doc;
 }
 
+// === Transaction confirmation PDF ============================================
+// Auto-generated receipt for a completed transaction. Available to both
+// operator and customer the moment the transaction's status flips to filled
+// (or Cedar reports COMPLETED / payout ARRIVED). Independent of Cedar's MT103 —
+// the MT103 is a separate bank-confirmation doc that gets uploaded into the
+// transaction's supporting documents once the operator has it.
+
+function buildTransactionConfirmationPage(doc, q, operatorName) {
+  drawHeader(doc, "Transaction Confirmation");
+
+  let y = 38;
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(22);
+  doc.setTextColor(INK);
+  doc.text("Confirmation", MARGIN, y);
+
+  doc.setFont("courier", "normal");
+  doc.setFontSize(11);
+  doc.setTextColor(MUTED);
+  doc.text(ref(q.id), PAGE_W - MARGIN, y, { align: "right" });
+  y += 7;
+
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(9);
+  doc.setTextColor(MUTED);
+  doc.text(`Status: COMPLETED · Issued ${fmtDateTime(q.filled_at || q.cedar_request_status_updated_at || q.created_at)}`, MARGIN, y);
+  y += 12;
+
+  // Big amount card
+  doc.setFillColor(INK);
+  doc.roundedRect(MARGIN, y, CONTENT_W, 38, 3, 3, "F");
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(8);
+  doc.setTextColor(LIME);
+  doc.text("AMOUNT PROCESSED", MARGIN + 8, y + 9);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(26);
+  doc.setTextColor(PAPER);
+  doc.text(fmtMoney(q.amount, q.currency || "USD"), MARGIN + 8, y + 24);
+  doc.setFont("courier", "normal");
+  doc.setFontSize(9);
+  doc.setTextColor(LIME);
+  doc.text(`Customer paid  ${fmtNgn(q.ngn_total)}  @  ₦${parseFloat(q.rate || 0).toFixed(2)}/$`, MARGIN + 8, y + 33);
+  y += 48;
+
+  // Parties
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(11);
+  doc.setTextColor(INK);
+  doc.text("Parties", MARGIN, y);
+  y += 6;
+
+  const colW = (CONTENT_W - 8) / 2;
+  drawLabelValue(doc, "Customer", q.customer_name || "—", MARGIN, y);
+  drawLabelValue(doc, "Recipient / supplier", q.beneficiary || "—", MARGIN + colW + 8, y);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(8);
+  doc.setTextColor(MUTED);
+  doc.text([q.customer_phone, q.customer?.email].filter(Boolean).join("  ·  ") || "—", MARGIN, y + 11);
+  doc.text(q.destination || "—", MARGIN + colW + 8, y + 11);
+  y += 20;
+
+  drawLabelValue(doc, "Issued by", operatorName || q.bdc_name || "Operator", MARGIN, y);
+  drawLabelValue(doc, "Settled via", "Licensed payment partner", MARGIN + colW + 8, y);
+  y += 16;
+
+  // Transaction details table
+  doc.setDrawColor(LINE);
+  doc.line(MARGIN, y, PAGE_W - MARGIN, y);
+  y += 6;
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(11);
+  doc.setTextColor(INK);
+  doc.text("Transaction details", MARGIN, y);
+  y += 7;
+
+  const rows = [
+    ["Reference", ref(q.id)],
+    ["Amount", `${fmtMoney(q.amount, q.currency || "USD")}`],
+    ["Customer rate", `₦${parseFloat(q.rate || 0).toFixed(2)} / $`],
+    ["Customer paid (NGN)", fmtNgn(q.ngn_total)],
+    ["Purpose", q.cedar_purpose || "GOODS_PURCHASED"],
+    ["Status", "COMPLETED"],
+    ["Completed at", fmtDateTime(q.filled_at || q.cedar_request_status_updated_at)],
+  ];
+  rows.forEach(([label, value]) => {
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8);
+    doc.setTextColor(MUTED);
+    doc.text(label.toUpperCase(), MARGIN, y);
+    doc.setFont("courier", "normal");
+    doc.setFontSize(10);
+    doc.setTextColor(INK);
+    doc.text(String(value), PAGE_W - MARGIN, y, { align: "right" });
+    doc.setDrawColor(LINE);
+    doc.line(MARGIN, y + 2.5, PAGE_W - MARGIN, y + 2.5);
+    y += 9;
+  });
+
+  // Bank details (if present from Cedar response)
+  const bank = q.cedar_bank_details || {};
+  const bankName = bank.bank_name || bank.bankName;
+  if (bankName) {
+    y += 4;
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(11);
+    doc.setTextColor(INK);
+    doc.text("Settlement route", MARGIN, y);
+    y += 7;
+    const bankRows = [
+      ["Bank", bankName],
+      ["Account name", bank.account_name || bank.accountName || "—"],
+      ["Account number", bank.account_number || bank.accountNumber || "—"],
+      ["Reference", ref(q.id)],
+    ];
+    bankRows.forEach(([label, value]) => {
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(8);
+      doc.setTextColor(MUTED);
+      doc.text(label.toUpperCase(), MARGIN, y);
+      doc.setFont("courier", "normal");
+      doc.setFontSize(10);
+      doc.setTextColor(INK);
+      doc.text(String(value), PAGE_W - MARGIN, y, { align: "right" });
+      doc.setDrawColor(LINE);
+      doc.line(MARGIN, y + 2.5, PAGE_W - MARGIN, y + 2.5);
+      y += 9;
+    });
+  }
+
+  // Footer note
+  const noteY = PAGE_H - 35;
+  doc.setDrawColor(LINE);
+  doc.line(MARGIN, noteY, PAGE_W - MARGIN, noteY);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(8);
+  doc.setTextColor(MUTED);
+  doc.text("This confirmation is generated automatically by XaePay when a cross-border trade payment completes. The MT103 / SWIFT wire confirmation is a separate document issued by the licensed payment partner; once available it will be attached to this transaction.", MARGIN, noteY + 5, { maxWidth: CONTENT_W });
+  doc.text("Powered by XaePay · Software/compliance layer · Funds custody by licensed payment partner.", MARGIN, noteY + 17, { maxWidth: CONTENT_W });
+}
+
+export function generateTransactionConfirmationPdf({ quote, operatorName }) {
+  const doc = new jsPDF({ unit: "mm", format: "a4" });
+  buildTransactionConfirmationPage(doc, quote, operatorName);
+  drawFooter(doc, 1, 1);
+  return doc;
+}
+
+export function downloadTransactionConfirmationPdf(doc, quote) {
+  doc.save(`${ref(quote.id)}-confirmation-XaePay.pdf`);
+}
+
 export function downloadCompliancePackPdf(doc, customer) {
   const safeName = (customer?.name || "Customer").replace(/[^\w]+/g, "_");
   const period = new Date().toLocaleDateString("en-GB", { month: "short", year: "numeric" }).replace(/\s+/g, "_");

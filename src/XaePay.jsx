@@ -9,7 +9,7 @@ import {
 } from "lucide-react";
 import { supabase, sendWhatsAppText, sendWhatsAppTemplate, fetchCedarRate, submitCustomerToCedar, submitRecipientToCedar, submitReceiverAccountToCedar, submitCedarTransaction, approveCedarQuote, confirmCedarDeposit, cancelCedarTransaction, uploadCedarFile, uploadFileBoth, runComplianceReview, runComplianceWatchman, submitDocumentToCedar, sendEmail, safeUrl, logAuditEvent } from "./lib/supabase.js";
 import { generateQuotePdf, uploadQuotePdf, downloadQuotePdf } from "./lib/pdf.js";
-import { generateCompliancePackPdf, downloadCompliancePackPdf } from "./lib/pdf-doc.js";
+import { generateCompliancePackPdf, downloadCompliancePackPdf, generateTransactionConfirmationPdf, downloadTransactionConfirmationPdf } from "./lib/pdf-doc.js";
 import { useAuth } from "./lib/auth.js";
 
 // ─── Editable in one place ────────────────────────────────────────────────
@@ -3123,6 +3123,7 @@ function CustomerPortal({ session, customerRows }) {
   const [quotes, setQuotes] = useState([]);
   const [loading, setLoading] = useState(false);
   const [requestOpen, setRequestOpen] = useState(false);
+  const [pastDetailQuote, setPastDetailQuote] = useState(null);
 
   const activeCustomer = customerRows.find((c) => c.id === activeCustomerId);
 
@@ -3383,8 +3384,11 @@ function CustomerPortal({ session, customerRows }) {
                 <tbody>
                   {pastQuotes.map((q) => {
                     const pill = customerQuoteStatusPill(q.status, q.cedar_request_status);
+                    const cs = (q.cedar_request_status || "").toUpperCase();
+                    const cp = (q.cedar_payout_status || "").toUpperCase();
+                    const isCompleted = q.status === "filled" || cs.includes("COMPLETED") || cp.includes("ARRIVED");
                     return (
-                      <tr key={q.id} style={{ borderBottom: "1px solid var(--line)" }}>
+                      <tr key={q.id} onClick={() => isCompleted && setPastDetailQuote(q)} className={isCompleted ? "cursor-pointer hover:bg-[color:var(--bone)]" : ""} style={{ borderBottom: "1px solid var(--line)" }}>
                         <td className="px-4 py-3.5 font-mono text-xs font-semibold">QU-{q.id.slice(0, 4).toUpperCase()}</td>
                         <td className="px-4 py-3.5 font-mono">${parseFloat(q.amount).toLocaleString()} {q.currency}</td>
                         <td className="px-4 py-3.5 font-mono text-xs">₦{parseFloat(q.rate).toFixed(2)}/$</td>
@@ -3406,6 +3410,27 @@ function CustomerPortal({ session, customerRows }) {
         customer={activeCustomer}
         onCreated={fetchQuotes}
       />
+      <Drawer open={!!pastDetailQuote} onClose={() => setPastDetailQuote(null)} title={pastDetailQuote ? `Transaction QU-${pastDetailQuote.id.slice(0, 4).toUpperCase()}` : ""}>
+        {pastDetailQuote && (
+          <div className="space-y-4">
+            <div className="rounded-xl p-4" style={{ background: "var(--ink)", color: "var(--bone)" }}>
+              <div className="font-mono text-[10px] uppercase tracking-wider" style={{ color: "rgba(247,245,240,0.5)" }}>Amount sent</div>
+              <div className="font-display mt-1 text-3xl font-[500]" style={{ color: "var(--lime)" }}>${parseFloat(pastDetailQuote.amount).toLocaleString()} {pastDetailQuote.currency}</div>
+              <div className="mt-1 font-mono text-[11px]" style={{ color: "rgba(247,245,240,0.7)" }}>To {pastDetailQuote.beneficiary || pastDetailQuote.destination || "—"} · {relativeTime(pastDetailQuote.created_at)}</div>
+            </div>
+            <TransactionConfirmationSection
+              tx={{
+                dbId: pastDetailQuote.id,
+                customerId: pastDetailQuote.customer_id,
+                dbStatus: pastDetailQuote.status,
+                cedarRequestStatus: pastDetailQuote.cedar_request_status,
+                cedarPayoutStatus: pastDetailQuote.cedar_payout_status,
+              }}
+              readOnly
+            />
+          </div>
+        )}
+      </Drawer>
     </div>
   );
 }
@@ -5970,6 +5995,11 @@ function TxDrawer({ tx, onClose, onRefresh }) {
           <TransactionSupportingDocsSection tx={tx} onChanged={() => onRefresh && onRefresh()} />
         )}
 
+        {/* Confirmation + bank docs (MT103, debit advice) — only completed */}
+        {tx.dbId && (
+          <TransactionConfirmationSection tx={tx} onChanged={() => onRefresh && onRefresh()} />
+        )}
+
         {/* Invoice — primary uploader is the customer (via portal); operator can upload here on customer's behalf. Required before customer can approve. */}
         {tx.dbId && (
           <div>
@@ -8031,6 +8061,11 @@ const DOC_TYPES = [
   { id: "packing_list", label: "Packing list" },
   { id: "proof_of_delivery", label: "Proof of delivery" },
   { id: "inspection_certificate", label: "Inspection certificate" },
+  // Bank confirmation docs (today: operator-uploaded after fetching from Cedar's
+  // app/email within 24h of settlement. Future: auto-pulled from Cedar webhook
+  // when their API exposes the download URL.)
+  { id: "mt103", label: "MT103 / SWIFT wire confirmation" },
+  { id: "debit_advice", label: "Debit advice" },
   { id: "other", label: "Other" },
 ];
 
@@ -8279,6 +8314,153 @@ function CustomerComplianceSection({ customer, docs, onUploaded }) {
           })}
         </div>
       )}
+    </div>
+  );
+}
+
+// Transaction confirmation surface — only for completed transactions. Two
+// things:
+//   1. Auto-generated XaePay confirmation PDF (downloadable any time)
+//   2. Bank confirmation docs (MT103 / debit advice) — uploaded by the operator
+//      once they receive them from the licensed payment partner (today ~24h via
+//      email; future: auto-pulled from Cedar's webhook once their API exposes it)
+function TransactionConfirmationSection({ tx, onChanged, readOnly = false }) {
+  const { push } = useToast();
+  const auth = useAuth();
+  const [docs, setDocs] = useState([]);
+  const [uploadingFor, setUploadingFor] = useState(null);
+
+  const BANK_DOC_TYPES = [
+    { id: "mt103", label: "MT103 / SWIFT wire confirmation" },
+    { id: "debit_advice", label: "Debit advice" },
+  ];
+
+  const fetchDocs = async () => {
+    if (!tx?.dbId) return;
+    const { data } = await supabase
+      .from("customer_documents")
+      .select("id, doc_type, storage_path, file_name, mime_type, issued_at, created_at")
+      .eq("quote_id", tx.dbId)
+      .in("doc_type", BANK_DOC_TYPES.map((t) => t.id))
+      .order("created_at", { ascending: false });
+    setDocs(data || []);
+  };
+
+  useEffect(() => { fetchDocs(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [tx?.dbId]);
+
+  const docsByType = {};
+  for (const d of docs) {
+    if (!docsByType[d.doc_type]) docsByType[d.doc_type] = d;
+  }
+
+  const cedarStatus = (tx?.cedarRequestStatus || "").toUpperCase();
+  const cedarPayout = (tx?.cedarPayoutStatus || "").toUpperCase();
+  const isCompleted = tx?.dbStatus === "filled" || cedarStatus.includes("COMPLETED") || cedarPayout.includes("ARRIVED");
+  if (!isCompleted) return null;
+
+  const downloadConfirmation = async () => {
+    try {
+      const { data: q } = await supabase.from("quotes").select("*, customer:customers(email, name)").eq("id", tx.dbId).single();
+      if (!q) {
+        push("Couldn't load transaction for confirmation PDF", "warn");
+        return;
+      }
+      const operatorName = readOnly ? (q.bdc_name || "Your operator") : (auth.user?.user_metadata?.company || auth.user?.email || q.bdc_name || "Operator");
+      const pdf = generateTransactionConfirmationPdf({ quote: q, operatorName });
+      downloadTransactionConfirmationPdf(pdf, q);
+      push("Confirmation downloaded.", "success");
+    } catch (err) {
+      push(`Couldn't generate confirmation: ${err?.message || err}`, "warn");
+    }
+  };
+
+  const downloadBankDoc = async (doc) => {
+    const { data, error } = await supabase.storage.from("kyc-docs").createSignedUrl(doc.storage_path, 60 * 5);
+    if (error || !data?.signedUrl) {
+      push("Couldn't generate download link.", "warn");
+      return;
+    }
+    window.open(data.signedUrl, "_blank");
+  };
+
+  const handleUpload = async (req, file) => {
+    if (readOnly || !file || !tx?.dbId || !tx?.customerId) return;
+    setUploadingFor(req.id);
+    try {
+      const ext = (file.name.split(".").pop() || "bin").toLowerCase();
+      const path = `${tx.customerId}/${tx.dbId}/${req.id}-${Date.now()}.${ext}`;
+      const { error: upErr } = await supabase.storage.from("kyc-docs").upload(path, file, { contentType: file.type, upsert: false });
+      if (upErr) throw upErr;
+      const { error: dbErr } = await supabase.from("customer_documents").insert({
+        customer_id: tx.customerId,
+        quote_id: tx.dbId,
+        doc_type: req.id,
+        storage_path: path,
+        file_name: file.name,
+        size_bytes: file.size,
+        mime_type: file.type,
+        issued_at: new Date().toISOString(),
+        uploaded_by: auth.user?.id || null,
+      });
+      if (dbErr) throw dbErr;
+      push(`Uploaded · ${req.label}`, "success");
+      onChanged && onChanged();
+      fetchDocs();
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error("Bank doc upload failed:", err);
+      push(`Upload failed: ${err?.message || err}`, "warn");
+    } finally {
+      setUploadingFor(null);
+    }
+  };
+
+  return (
+    <div>
+      <Label>Transaction confirmation</Label>
+      <div className="rounded-xl p-3 space-y-3" style={{ background: "var(--bone)", border: "1px solid var(--line)" }}>
+        {/* Auto-generated PDF — always available */}
+        <div className="rounded-lg p-3 flex items-center justify-between gap-2" style={{ background: "white", border: "1px solid var(--line)" }}>
+          <div className="min-w-0 flex-1">
+            <div className="text-sm font-medium">XaePay confirmation receipt</div>
+            <div className="font-mono text-[10px] mt-0.5" style={{ color: "var(--muted)" }}>Auto-generated · all amounts, parties, route</div>
+          </div>
+          <button onClick={downloadConfirmation} className="rounded-lg px-3 py-1.5 font-mono text-[10px] font-semibold uppercase tracking-wider transition inline-flex items-center gap-1" style={{ background: "var(--ink)", color: "var(--lime)" }}>
+            <Download size={11} /> Download
+          </button>
+        </div>
+        {/* Bank docs (MT103, debit advice) */}
+        {BANK_DOC_TYPES.map((req) => {
+          const doc = docsByType[req.id];
+          const inputId = `bankdoc-${tx.dbId}-${req.id}`;
+          return (
+            <div key={req.id} className="rounded-lg p-3 flex items-center justify-between gap-2" style={{ background: "white", border: "1px solid var(--line)" }}>
+              <div className="min-w-0 flex-1">
+                <div className="text-sm font-medium truncate">{req.label}</div>
+                <div className="font-mono text-[10px] mt-0.5" style={{ color: "var(--muted)" }}>
+                  {doc ? doc.file_name || "uploaded" : (readOnly ? "Not yet available from your operator" : "From the licensed payment partner · arrives within 24h of settlement")}
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                {doc ? (
+                  <button onClick={() => downloadBankDoc(doc)} className="rounded-lg px-3 py-1.5 font-mono text-[10px] font-semibold uppercase tracking-wider transition inline-flex items-center gap-1" style={{ background: "var(--ink)", color: "var(--lime)" }}>
+                    <Download size={11} /> Download
+                  </button>
+                ) : readOnly ? (
+                  <span className="rounded-full px-2 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-wider" style={{ background: "#f3f4f6", color: "#6b7280" }}>Pending</span>
+                ) : (
+                  <>
+                    <input id={inputId} type="file" accept="image/*,application/pdf" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; if (f) handleUpload(req, f); }} disabled={uploadingFor === req.id} />
+                    <label htmlFor={inputId} className="rounded-lg px-3 py-1.5 font-mono text-[10px] font-semibold uppercase tracking-wider cursor-pointer transition" style={{ background: "var(--ink)", color: "var(--lime)" }}>
+                      {uploadingFor === req.id ? "Uploading…" : "Upload"}
+                    </label>
+                  </>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
