@@ -3409,25 +3409,27 @@ function CustomerPortal({ session, customerRows }) {
         onCreated={fetchQuotes}
       />
       <Drawer open={!!pastDetailQuote} onClose={() => setPastDetailQuote(null)} title={pastDetailQuote ? `Transaction QU-${pastDetailQuote.id.slice(0, 4).toUpperCase()}` : ""}>
-        {pastDetailQuote && (
-          <div className="space-y-4">
-            <div className="rounded-xl p-4" style={{ background: "var(--ink)", color: "var(--bone)" }}>
-              <div className="font-mono text-[10px] uppercase tracking-wider" style={{ color: "rgba(247,245,240,0.5)" }}>Amount sent</div>
-              <div className="font-display mt-1 text-3xl font-[500]" style={{ color: "var(--lime)" }}>${parseFloat(pastDetailQuote.amount).toLocaleString()} {pastDetailQuote.currency}</div>
-              <div className="mt-1 font-mono text-[11px]" style={{ color: "rgba(247,245,240,0.7)" }}>To {pastDetailQuote.beneficiary || pastDetailQuote.destination || "—"} · {relativeTime(pastDetailQuote.created_at)}</div>
+        {pastDetailQuote && (() => {
+          const txShape = {
+            dbId: pastDetailQuote.id,
+            customerId: pastDetailQuote.customer_id,
+            dbStatus: pastDetailQuote.status,
+            cedarRequestStatus: pastDetailQuote.cedar_request_status,
+            cedarPayoutStatus: pastDetailQuote.cedar_payout_status,
+            reviewTier: pastDetailQuote.review_tier,
+          };
+          return (
+            <div className="space-y-4">
+              <div className="rounded-xl p-4" style={{ background: "var(--ink)", color: "var(--bone)" }}>
+                <div className="font-mono text-[10px] uppercase tracking-wider" style={{ color: "rgba(247,245,240,0.5)" }}>Amount sent</div>
+                <div className="font-display mt-1 text-3xl font-[500]" style={{ color: "var(--lime)" }}>${parseFloat(pastDetailQuote.amount).toLocaleString()} {pastDetailQuote.currency}</div>
+                <div className="mt-1 font-mono text-[11px]" style={{ color: "rgba(247,245,240,0.7)" }}>To {pastDetailQuote.beneficiary || pastDetailQuote.destination || "—"} · {relativeTime(pastDetailQuote.created_at)}</div>
+              </div>
+              <TransactionSupportingDocsSection tx={txShape} onChanged={fetchQuotes} />
+              <TransactionConfirmationSection tx={txShape} readOnly />
             </div>
-            <TransactionConfirmationSection
-              tx={{
-                dbId: pastDetailQuote.id,
-                customerId: pastDetailQuote.customer_id,
-                dbStatus: pastDetailQuote.status,
-                cedarRequestStatus: pastDetailQuote.cedar_request_status,
-                cedarPayoutStatus: pastDetailQuote.cedar_payout_status,
-              }}
-              readOnly
-            />
-          </div>
-        )}
+          );
+        })()}
       </Drawer>
     </div>
   );
@@ -4178,7 +4180,7 @@ function ComplianceRemindersPanel({ onReminderClick }) {
               : n.severity === "warn"
                 ? { color: "#92400e", bg: "#fef3c7", border: "rgba(146,64,14,0.2)" }
                 : { color: "var(--ink)", bg: "var(--bone)", border: "var(--line)" };
-            const clickable = !!onReminderClick && n.subject_type === "customer";
+            const clickable = !!onReminderClick && (n.subject_type === "customer" || n.subject_type === "quote");
             return (
               <div key={n.id} className={`rounded-lg p-3 flex items-start gap-3 transition ${clickable ? "cursor-pointer hover:brightness-95" : ""}`} style={{ background: sev.bg, border: `1px solid ${sev.border}` }} onClick={clickable ? () => onReminderClick(n) : undefined}>
                 <AlertTriangle size={14} style={{ color: sev.color }} className="mt-0.5 flex-shrink-0" />
@@ -4199,14 +4201,19 @@ function ComplianceRemindersPanel({ onReminderClick }) {
 function BDCDashboard({ session, initialCustomerId, onInitialCustomerHandled }) {
   const [tab, setTab] = useState("quote");
   const [addedCustomers, setAddedCustomers] = useState([]);
-  // When a reminder is clicked, we switch to the Customers tab and tell
-  // BDCCustomers to open the drawer for that customer id. BDCCustomers clears
-  // the id back through onJumpHandled once it's opened the drawer.
+  // When a reminder is clicked, we switch to the relevant tab and tell the
+  // child component to open the right drawer. Each child clears its pending id
+  // back through onJumpHandled once it's opened the drawer.
   const [jumpToCustomerId, setJumpToCustomerId] = useState(null);
+  const [jumpToTransactionId, setJumpToTransactionId] = useState(null);
   const addCustomer = (c) => setAddedCustomers((prev) => [c, ...prev].slice(0, 50));
   const jumpToCustomer = (customerId) => {
     setTab("customers");
     setJumpToCustomerId(customerId);
+  };
+  const jumpToTransaction = (transactionId) => {
+    setTab("transactions");
+    setJumpToTransactionId(transactionId);
   };
   // If we arrived from an email/SMS deep-link with ?customer=<uuid>, jump there now.
   useEffect(() => {
@@ -4250,7 +4257,10 @@ function BDCDashboard({ session, initialCustomerId, onInitialCustomerHandled }) 
       </div>
 
       <div className="mb-6">
-        <ComplianceRemindersPanel onReminderClick={(n) => { if (n?.subject_type === "customer" && n?.subject_id) jumpToCustomer(n.subject_id); }} />
+        <ComplianceRemindersPanel onReminderClick={(n) => {
+          if (n?.subject_type === "customer" && n?.subject_id) jumpToCustomer(n.subject_id);
+          else if (n?.subject_type === "quote" && n?.subject_id) jumpToTransaction(n.subject_id);
+        }} />
       </div>
 
       <div className="lg:flex lg:gap-8">
@@ -4280,7 +4290,7 @@ function BDCDashboard({ session, initialCustomerId, onInitialCustomerHandled }) 
 
         <div className="flex-1 fade-in min-w-0">
           {tab === "quote" && <BDCRailQuotes />}
-          {tab === "transactions" && <BDCTransactions />}
+          {tab === "transactions" && <BDCTransactions jumpToTransactionId={jumpToTransactionId} onJumpHandled={() => setJumpToTransactionId(null)} />}
           {tab === "customers" && <BDCCustomers addedCustomers={addedCustomers} onAddCustomer={addCustomer} jumpToCustomerId={jumpToCustomerId} onJumpHandled={() => setJumpToCustomerId(null)} />}
           {tab === "recipients" && <BDCRecipients />}
           {tab === "earnings" && <BDCEarnings />}
@@ -5746,7 +5756,7 @@ const QUOTE_STATUS_TO_TX_STATUS = {
   request_pending: "pending", // customer-initiated request waiting on operator pricing
 };
 
-function BDCTransactions() {
+function BDCTransactions({ jumpToTransactionId, onJumpHandled } = {}) {
   const { push } = useToast();
   const auth = useAuth();
   const isSignedIn = !!auth.user;
@@ -5825,6 +5835,18 @@ function BDCTransactions() {
   };
 
   useEffect(() => { fetchTxs(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [auth.user?.id]);
+
+  // Deep-link from compliance reminders — when parent says "jump to this tx",
+  // find the matching row from the loaded list and open the drawer. Clear the
+  // pending id back through onJumpHandled so a re-click of the same tx works.
+  useEffect(() => {
+    if (!jumpToTransactionId) return;
+    const found = realTxs.find((t) => t.dbId === jumpToTransactionId);
+    if (found) {
+      setSelected(found);
+      onJumpHandled && onJumpHandled();
+    }
+  }, [jumpToTransactionId, realTxs, onJumpHandled]);
 
   // Live-refresh on Cedar webhook → quote row updates so operators don't need to
   // hit Refresh after submitting / approving / canceling.
@@ -8237,18 +8259,39 @@ function CustomerComplianceSection({ customer, docs, onUploaded }) {
     }
   };
 
-  const downloadPack = () => {
+  const downloadPack = async () => {
     try {
       const operatorName = auth.user?.user_metadata?.company || "XaeccoX";
+      // Pull completed transactions for this customer in the last 90 days + each
+      // transaction's trade-doc supporting documents. The transactions audit
+      // section of the pack lists them per-transaction with per-doc status.
+      const ninetyDaysAgo = new Date(Date.now() - 90 * 86400000).toISOString();
+      const { data: completedQuotes } = await supabase
+        .from("quotes")
+        .select("id, amount, currency, beneficiary, destination, review_tier, status, filled_at, created_at, cedar_request_status, cedar_payout_status")
+        .eq("customer_id", customer.id)
+        .or("status.eq.filled,cedar_request_status.ilike.%COMPLETED%,cedar_payout_status.ilike.%ARRIVED%")
+        .gte("created_at", ninetyDaysAgo)
+        .order("filled_at", { ascending: false, nullsFirst: false });
+      const completedWithDocs = [];
+      for (const t of (completedQuotes || [])) {
+        const { data: tdocs } = await supabase
+          .from("customer_documents")
+          .select("doc_type, file_name, issued_at, created_at")
+          .eq("quote_id", t.id);
+        completedWithDocs.push({ ...t, docs: tdocs || [] });
+      }
       const pdf = generateCompliancePackPdf({
         customer,
         docs,
         requirements,
         tier,
         operatorName,
+        completedTransactions: completedWithDocs,
+        transactionRequirements: TRANSACTION_DOC_REQUIREMENTS,
       });
       downloadCompliancePackPdf(pdf, customer);
-      push(`Compliance pack downloaded · ${TIERS[tier].name} tier`, "success");
+      push(`Compliance pack downloaded · ${TIERS[tier].name} tier · ${completedWithDocs.length} transactions`, "success");
     } catch (err) {
       push(`Couldn't generate pack: ${err?.message || err}`, "warn");
     }
