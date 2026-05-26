@@ -3139,6 +3139,24 @@ function CustomerPortal({ session, customerRows }) {
 
   useEffect(() => { fetchInvoices(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [activeCustomerId]);
 
+  // Email deep-link: a customer clicking the "Pay this invoice" button in their
+  // invoice email lands at /?invoice=<id>. After invoices load, find the match
+  // and auto-open the drawer so they don't have to hunt for it. Run once per
+  // invoices payload — strip the param after handling so re-opens don't re-fire.
+  useEffect(() => {
+    if (!invoices.length || selectedInvoice) return;
+    const params = new URLSearchParams(window.location.search);
+    const targetId = params.get("invoice");
+    if (!targetId) return;
+    const match = invoices.find((i) => i.id === targetId);
+    if (match) {
+      setSelectedInvoice(match);
+      params.delete("invoice");
+      const qs = params.toString();
+      window.history.replaceState(null, "", `${window.location.pathname}${qs ? `?${qs}` : ""}`);
+    }
+  }, [invoices, selectedInvoice]);
+
   // Realtime: when operator marks invoice paid (via Cedar webhook → quote completion),
   // refresh so the customer sees the status change immediately.
   useEffect(() => {
@@ -4669,7 +4687,7 @@ function CreateInvoiceModal({ open, onClose, onCreated }) {
         }).eq("id", inv.id);
       }
       if (sendNow && data.customerEmail) {
-        const portalUrl = "https://xaepay.com/";
+        const portalUrl = `https://xaepay.com/?invoice=${inv.id}`;
         const totalText = `${data.currency} ${total.toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
         const dueText = data.dueDate ? new Date(data.dueDate).toLocaleDateString("en-GB", { day: "2-digit", month: "long", year: "numeric" }) : "On receipt";
         const itemRowsHtml = itemRows.map((it) => `<tr><td style="padding:6px 0;font-size:13px;">${it.description}</td><td style="padding:6px 0;text-align:right;font-family:monospace;font-size:12px;">${it.quantity} × ${data.currency} ${it.unit_price.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td><td style="padding:6px 0;text-align:right;font-family:monospace;font-size:13px;font-weight:600;">${data.currency} ${it.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td></tr>`).join("");
@@ -4812,7 +4830,7 @@ function InvoiceDrawer({ invoice, onClose, onChanged }) {
       if (upRes.ok) {
         await supabase.from("invoices").update({ pdf_url: upRes.url, pdf_path: upRes.path, pdf_generated_at: new Date().toISOString() }).eq("id", invoice.id);
       }
-      const portalUrl = "https://xaepay.com/";
+      const portalUrl = `https://xaepay.com/?invoice=${invoice.id}`;
       const totalText = `${ccy} ${parseFloat(invoice.total || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
       const html = `<!doctype html><html><body style="font-family:system-ui,-apple-system,sans-serif;color:#0a0b0d;background:#fcfbf7;margin:0;padding:24px;"><div style="max-width:560px;margin:0 auto;background:white;border:1px solid #e5e7eb;border-radius:16px;padding:32px;"><h2 style="margin:0 0 8px;font-size:22px;">Invoice ${invoice.invoice_number}</h2><p style="color:#6b7280;margin:0 0 20px;font-size:14px;">${invoice.operator_name || "Your operator"} has issued you an invoice via XaePay.</p><div style="background:#0a0b0d;color:#d4f570;border-radius:12px;padding:20px;margin-bottom:20px;"><div style="font-size:11px;text-transform:uppercase;letter-spacing:0.05em;color:rgba(247,245,240,0.5);">Amount due</div><div style="font-size:30px;font-weight:600;margin-top:6px;">${totalText}</div></div><p style="text-align:center;margin:24px 0 8px;"><a href="${portalUrl}" style="display:inline-block;background:#0a0b0d;color:#d4f570;padding:12px 28px;border-radius:12px;text-decoration:none;font-weight:600;font-size:14px;">Pay this invoice</a></p></div></body></html>`;
       await sendEmail({ to: invoice.customer_email, subject: `Invoice ${invoice.invoice_number} from ${invoice.operator_name || "your operator"}`, html, text: `Invoice ${invoice.invoice_number}\n\nAmount: ${totalText}\n\nPay at: ${portalUrl}` });
