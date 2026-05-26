@@ -7,9 +7,9 @@ import {
   ArrowLeft, ArrowLeftRight, Loader2, Layers, TrendingUp, Wallet, DollarSign, Mail,
   RefreshCw, ShieldCheck,
 } from "lucide-react";
-import { supabase, sendWhatsAppText, sendWhatsAppTemplate, fetchCedarRate, submitCustomerToCedar, submitRecipientToCedar, submitReceiverAccountToCedar, submitCedarTransaction, approveCedarQuote, confirmCedarDeposit, cancelCedarTransaction, uploadCedarFile, uploadFileBoth, runComplianceReview, runComplianceWatchman, submitDocumentToCedar, sendEmail, safeUrl, logAuditEvent } from "./lib/supabase.js";
+import { supabase, sendWhatsAppText, sendWhatsAppTemplate, fetchCedarRate, submitCustomerToCedar, submitRecipientToCedar, submitReceiverAccountToCedar, submitCedarTransaction, approveCedarQuote, confirmCedarDeposit, cancelCedarTransaction, uploadCedarFile, uploadFileBoth, uploadInvoicePdf, runComplianceReview, runComplianceWatchman, submitDocumentToCedar, sendEmail, safeUrl, logAuditEvent } from "./lib/supabase.js";
 import { generateQuotePdf, uploadQuotePdf, downloadQuotePdf } from "./lib/pdf.js";
-import { generateCompliancePackPdf, downloadCompliancePackPdf, generateTransactionConfirmationPdf, downloadTransactionConfirmationPdf } from "./lib/pdf-doc.js";
+import { generateCompliancePackPdf, downloadCompliancePackPdf, generateTransactionConfirmationPdf, downloadTransactionConfirmationPdf, generateInvoicePdf, downloadInvoicePdf } from "./lib/pdf-doc.js";
 import { useAuth } from "./lib/auth.js";
 
 // ─── Editable in one place ────────────────────────────────────────────────
@@ -3122,8 +3122,34 @@ function CustomerPortal({ session, customerRows }) {
   const [loading, setLoading] = useState(false);
   const [requestOpen, setRequestOpen] = useState(false);
   const [pastDetailQuote, setPastDetailQuote] = useState(null);
+  const [invoices, setInvoices] = useState([]);
+  const [selectedInvoice, setSelectedInvoice] = useState(null);
 
   const activeCustomer = customerRows.find((c) => c.id === activeCustomerId);
+
+  const fetchInvoices = async () => {
+    if (!activeCustomerId) return;
+    const { data } = await supabase
+      .from("invoices")
+      .select("*, items:invoice_items(*)")
+      .eq("customer_id", activeCustomerId)
+      .order("created_at", { ascending: false });
+    setInvoices(data || []);
+  };
+
+  useEffect(() => { fetchInvoices(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [activeCustomerId]);
+
+  // Realtime: when operator marks invoice paid (via Cedar webhook → quote completion),
+  // refresh so the customer sees the status change immediately.
+  useEffect(() => {
+    if (!activeCustomerId) return;
+    const channel = supabase
+      .channel(`invoices-customer-${activeCustomerId}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "invoices", filter: `customer_id=eq.${activeCustomerId}` }, () => fetchInvoices())
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+    /* eslint-disable-next-line react-hooks/exhaustive-deps */
+  }, [activeCustomerId]);
 
   const fetchQuotes = async () => {
     if (!activeCustomerId) return;
@@ -3301,6 +3327,32 @@ function CustomerPortal({ session, customerRows }) {
         </Card>
       </section>
 
+      {invoices.filter((i) => i.status === "sent").length > 0 && (
+        <section className="mb-8 rise" style={{ animationDelay: "0.048s" }}>
+          <h2 className="font-display text-xl font-semibold mb-4">
+            {invoices.filter((i) => i.status === "sent").length} invoice{invoices.filter((i) => i.status === "sent").length === 1 ? "" : "s"} to pay
+          </h2>
+          <div className="space-y-3">
+            {invoices.filter((i) => i.status === "sent").map((inv) => (
+              <Card key={inv.id}>
+                <div className="space-y-3">
+                  <div className="flex items-baseline justify-between gap-3">
+                    <div className="font-mono text-xs" style={{ color: "var(--muted)" }}>{inv.invoice_number}</div>
+                    <span className="rounded-full px-2 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-wider" style={{ background: "#fef3c7", color: "#92400e" }}>Awaiting payment</span>
+                  </div>
+                  <div className="font-display text-3xl font-[500]">{inv.currency} {parseFloat(inv.total).toLocaleString(undefined, { minimumFractionDigits: 2 })}</div>
+                  <div className="text-sm" style={{ color: "var(--muted)" }}>From {inv.operator_name || "your operator"} {inv.due_date ? `· Due ${new Date(inv.due_date).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })}` : ""}</div>
+                  <div className="flex gap-2 pt-2" style={{ borderTop: "1px solid var(--line)" }}>
+                    <SecondaryBtn onClick={() => setSelectedInvoice(inv)}>View details</SecondaryBtn>
+                    <PrimaryBtn onClick={() => setSelectedInvoice(inv)}>Pay this invoice <ArrowRight size={12} /></PrimaryBtn>
+                  </div>
+                </div>
+              </Card>
+            ))}
+          </div>
+        </section>
+      )}
+
       {requestQuotes.length > 0 && (
         <section className="mb-8 rise" style={{ animationDelay: "0.05s" }}>
           <h2 className="font-display text-xl font-semibold mb-4">
@@ -3408,6 +3460,7 @@ function CustomerPortal({ session, customerRows }) {
         customer={activeCustomer}
         onCreated={fetchQuotes}
       />
+      <CustomerInvoiceDrawer invoice={selectedInvoice} customer={activeCustomer} onClose={() => setSelectedInvoice(null)} onPaid={() => { fetchInvoices(); fetchQuotes(); }} />
       <Drawer open={!!pastDetailQuote} onClose={() => setPastDetailQuote(null)} title={pastDetailQuote ? `Transaction QU-${pastDetailQuote.id.slice(0, 4).toUpperCase()}` : ""}>
         {pastDetailQuote && (() => {
           const txShape = {
@@ -3702,6 +3755,117 @@ function CustomerTransactionCard({ q, onSlipUploaded }) {
         )}
       </div>
     </Card>
+  );
+}
+
+// Customer-side invoice detail + payment kickoff. Hitting "Pay this invoice"
+// creates a quote in request_pending state pre-filled with the invoice's
+// amount + currency, then links the invoice to that quote so the operator's
+// dashboard knows this request originated from an invoice. When the resulting
+// quote eventually completes (Cedar reports COMPLETED), a future watchman job
+// can flip the invoice status to 'paid'. For V1 that final step is manual.
+function CustomerInvoiceDrawer({ invoice, customer, onClose, onPaid }) {
+  const { push } = useToast();
+  const [items, setItems] = useState([]);
+  const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    if (!invoice?.id) { setItems([]); return; }
+    if (invoice.items) { setItems(invoice.items); return; }
+    supabase.from("invoice_items").select("*").eq("invoice_id", invoice.id).order("position").then(({ data }) => setItems(data || []));
+  }, [invoice?.id, invoice?.items]);
+
+  if (!invoice) return null;
+  const ccy = invoice.currency || "USD";
+  const pill = INVOICE_STATUS_PILL[invoice.status] || INVOICE_STATUS_PILL.sent;
+
+  const downloadPdf = () => {
+    if (invoice.pdf_url) window.open(safeUrl(invoice.pdf_url), "_blank");
+    else {
+      const pdf = generateInvoicePdf({ invoice, items });
+      downloadInvoicePdf(pdf, invoice);
+    }
+  };
+
+  const payInvoice = async () => {
+    if (submitting || !customer?.id || !customer?.bdc_user_id) return;
+    setSubmitting(true);
+    try {
+      const { data: row, error } = await supabase.from("quotes").insert({
+        bdc_user_id: customer.bdc_user_id,
+        bdc_name: invoice.operator_name || customer.bdc_name || "XaeccoX",
+        customer_id: customer.id,
+        customer_name: customer.name || null,
+        customer_phone: customer.phone || null,
+        amount: parseFloat(invoice.total),
+        currency: ccy,
+        beneficiary: invoice.operator_name || "Operator",
+        destination: "Nigeria",
+        status: "request_pending",
+        cedar_purpose: "PAYMENT_OF_SERVICES",
+      }).select("*").single();
+      if (error) throw error;
+      // Link the invoice to this quote so the operator sees the connection
+      await supabase.from("invoices").update({ related_quote_id: row.id }).eq("id", invoice.id);
+      push(`Payment request sent to ${invoice.operator_name || "your operator"} · ${invoice.invoice_number}`, "success");
+      onPaid && onPaid();
+      onClose();
+    } catch (err) {
+      push(`Couldn't initiate payment: ${err?.message || err}`, "warn");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <Drawer open={!!invoice} onClose={onClose} title={invoice.invoice_number}>
+      <div className="space-y-5">
+        <div className="rounded-xl p-5" style={{ background: "var(--ink)", color: "var(--bone)" }}>
+          <div className="font-mono text-[10px] uppercase tracking-wider" style={{ color: "rgba(247,245,240,0.5)" }}>Amount due</div>
+          <div className="font-display mt-1 text-4xl font-[500]" style={{ color: "var(--lime)" }}>{ccy} {parseFloat(invoice.total).toLocaleString(undefined, { minimumFractionDigits: 2 })}</div>
+          <div className="mt-1 font-mono text-[11px]" style={{ color: "rgba(247,245,240,0.6)" }}>Issued by {invoice.operator_name || "your operator"} · {invoice.issue_date ? new Date(invoice.issue_date).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }) : "—"}{invoice.due_date ? ` · Due ${new Date(invoice.due_date).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })}` : ""}</div>
+          <div className="mt-3"><span className="rounded-full px-2 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-wider" style={{ background: pill.bg, color: pill.color }}>{pill.label}</span></div>
+        </div>
+        <div>
+          <Label>Line items</Label>
+          <div className="rounded-xl p-3 space-y-2" style={{ background: "var(--bone)", border: "1px solid var(--line)" }}>
+            {items.map((it) => (
+              <div key={it.id} className="flex justify-between items-baseline text-xs gap-2" style={{ borderBottom: "1px solid var(--line)", paddingBottom: 6 }}>
+                <div className="flex-1 min-w-0">
+                  <div className="font-medium truncate">{it.description}</div>
+                  <div className="font-mono text-[10px] mt-0.5" style={{ color: "var(--muted)" }}>{it.quantity} × {ccy} {parseFloat(it.unit_price).toFixed(2)}</div>
+                </div>
+                <div className="font-mono font-semibold flex-shrink-0">{ccy} {parseFloat(it.amount).toFixed(2)}</div>
+              </div>
+            ))}
+            <div className="flex justify-between items-baseline pt-1">
+              <span className="font-semibold text-sm">Total</span>
+              <span className="font-display text-lg font-semibold">{ccy} {parseFloat(invoice.total).toFixed(2)}</span>
+            </div>
+          </div>
+        </div>
+        {invoice.notes && (
+          <div>
+            <Label>Notes from your operator</Label>
+            <div className="rounded-xl p-3 text-xs leading-relaxed" style={{ background: "var(--bone)", border: "1px solid var(--line)", color: "var(--muted)" }}>{invoice.notes}</div>
+          </div>
+        )}
+        {invoice.related_quote_id && (
+          <div className="rounded-lg p-3 text-xs" style={{ background: "rgba(15,95,63,0.06)", border: "1px solid rgba(15,95,63,0.2)", color: "var(--emerald)" }}>
+            ✓ Payment in progress · QU-{invoice.related_quote_id.slice(0, 4).toUpperCase()}
+          </div>
+        )}
+        <div className="rounded-lg p-3 text-xs" style={{ background: "#f0f9ff", border: "1px solid #bae6fd", color: "#0369a1" }}>
+          Hitting <strong>Pay this invoice</strong> sends a payment request to your operator. They'll price it at the current rate and you'll get a quote to approve before any funds move.
+        </div>
+        <div className="flex flex-wrap gap-2 pt-2">
+          <SecondaryBtn onClick={downloadPdf}><Download size={12} /> PDF</SecondaryBtn>
+          {invoice.status === "sent" && !invoice.related_quote_id && (
+            <PrimaryBtn onClick={payInvoice} disabled={submitting}>{submitting ? <><Loader2 size={12} className="animate-spin" /> Sending…</> : <>Pay this invoice <ArrowRight size={12} /></>}</PrimaryBtn>
+          )}
+        </div>
+      </div>
+    </Drawer>
   );
 }
 
@@ -4228,6 +4392,7 @@ function BDCDashboard({ session, initialCustomerId, onInitialCustomerHandled }) 
     { id: "transactions", label: "Transactions", icon: Receipt },
     { id: "customers", label: "Customers", icon: User },
     { id: "recipients", label: "Recipients", icon: Briefcase },
+    { id: "invoicing", label: "Invoicing", icon: FileText },
     { id: "earnings", label: "Earnings", icon: TrendingUp },
   ];
   // Operator name + role line. Demo session passes a single string; real auth-backed
@@ -4293,10 +4458,445 @@ function BDCDashboard({ session, initialCustomerId, onInitialCustomerHandled }) 
           {tab === "transactions" && <BDCTransactions jumpToTransactionId={jumpToTransactionId} onJumpHandled={() => setJumpToTransactionId(null)} />}
           {tab === "customers" && <BDCCustomers addedCustomers={addedCustomers} onAddCustomer={addCustomer} jumpToCustomerId={jumpToCustomerId} onJumpHandled={() => setJumpToCustomerId(null)} />}
           {tab === "recipients" && <BDCRecipients />}
+          {tab === "invoicing" && <BDCInvoices />}
           {tab === "earnings" && <BDCEarnings />}
         </div>
       </div>
     </div>
+  );
+}
+
+// =============================================================================
+// Invoicing — operator-side
+// =============================================================================
+const INVOICE_STATUS_PILL = {
+  draft: { label: "Draft", bg: "#f3f4f6", color: "#6b7280" },
+  sent: { label: "Sent", bg: "#fef3c7", color: "#92400e" },
+  paid: { label: "Paid", bg: "#d1fae5", color: "#065f46" },
+  void: { label: "Void", bg: "#fee2e2", color: "#991b1b" },
+};
+
+const INVOICE_CURRENCIES = ["USD", "GBP", "EUR", "NGN"];
+
+function BDCInvoices() {
+  const { push } = useToast();
+  const auth = useAuth();
+  const isSignedIn = !!auth.user;
+  const [invoices, setInvoices] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [selected, setSelected] = useState(null);
+
+  const fetchInvoices = async () => {
+    if (!isSignedIn) return;
+    setLoading(true);
+    const { data, error } = await supabase
+      .from("invoices")
+      .select("*")
+      .order("created_at", { ascending: false })
+      .limit(100);
+    if (error) {
+      push("Couldn't load invoices — check console.", "warn");
+      // eslint-disable-next-line no-console
+      console.error("Fetch invoices failed:", error);
+    } else {
+      setInvoices(data || []);
+    }
+    setLoading(false);
+  };
+
+  useEffect(() => { fetchInvoices(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [auth.user?.id]);
+
+  // Realtime updates so paid status from customer payment flows reflects without refresh
+  useEffect(() => {
+    if (!isSignedIn) return;
+    const channel = supabase
+      .channel("invoices-realtime")
+      .on("postgres_changes", { event: "*", schema: "public", table: "invoices" }, () => fetchInvoices())
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+    /* eslint-disable-next-line react-hooks/exhaustive-deps */
+  }, [auth.user?.id]);
+
+  const stats = invoices.reduce((acc, i) => {
+    acc.total += 1;
+    if (i.status === "paid") acc.paid += parseFloat(i.total || 0);
+    if (i.status === "sent") acc.outstanding += parseFloat(i.total || 0);
+    return acc;
+  }, { total: 0, paid: 0, outstanding: 0 });
+
+  return (
+    <>
+      <div className="space-y-6">
+        <div className="grid gap-4 sm:grid-cols-3">
+          <StatCard label="Total invoices" value={String(stats.total)} sub={`${invoices.filter(i => i.status === "sent").length} awaiting payment`} />
+          <StatCard label="Outstanding" value={`$${stats.outstanding.toLocaleString(undefined, { maximumFractionDigits: 0 })}`} sub="Sent but unpaid" />
+          <StatCard label="Collected" value={`$${stats.paid.toLocaleString(undefined, { maximumFractionDigits: 0 })}`} sub="Lifetime paid" positive />
+        </div>
+
+        <Card padding="none">
+          <div className="flex items-center justify-between p-4 gap-2 flex-wrap" style={{ borderBottom: "1px solid var(--line)" }}>
+            <div className="text-sm font-semibold">{loading ? "Loading…" : `${invoices.length} invoice${invoices.length === 1 ? "" : "s"}`}</div>
+            <div className="flex gap-2">
+              <SecondaryBtn onClick={fetchInvoices} disabled={loading}><RefreshCw size={14} className={loading ? "animate-spin" : ""} /> Refresh</SecondaryBtn>
+              <PrimaryBtn onClick={() => setCreateOpen(true)}><Plus size={14} /> New invoice</PrimaryBtn>
+            </div>
+          </div>
+          {invoices.length === 0 ? (
+            <div className="p-12 text-center">
+              <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full" style={{ background: "var(--bone-2)" }}><Receipt size={20} style={{ color: "var(--muted)" }} /></div>
+              <h3 className="font-display text-lg font-semibold">No invoices yet</h3>
+              <p className="mt-1.5 text-sm" style={{ color: "var(--muted)" }}>Bill a customer for goods/services rendered. They'll receive an invoice they can pay via XaePay's rail.</p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead><tr style={{ background: "var(--bone)", borderBottom: "1px solid var(--line)" }}>
+                  {["Invoice #", "Customer", "Issued", "Due", "Total", "Status"].map((h) => (
+                    <th key={h} className="px-4 py-3 text-left font-mono text-[10px] font-semibold uppercase tracking-wider" style={{ color: "var(--muted)" }}>{h}</th>
+                  ))}
+                </tr></thead>
+                <tbody>
+                  {invoices.map((inv) => {
+                    const pill = INVOICE_STATUS_PILL[inv.status] || INVOICE_STATUS_PILL.draft;
+                    return (
+                      <tr key={inv.id} onClick={() => setSelected(inv)} className="cursor-pointer transition hover:bg-[color:var(--bone)]" style={{ borderBottom: "1px solid var(--line)" }}>
+                        <td className="px-4 py-3.5 font-mono text-xs font-semibold">{inv.invoice_number}</td>
+                        <td className="px-4 py-3.5">{inv.customer_name || "—"}</td>
+                        <td className="px-4 py-3.5 font-mono text-xs" style={{ color: "var(--muted)" }}>{inv.issue_date ? new Date(inv.issue_date).toLocaleDateString("en-GB", { day: "2-digit", month: "short" }) : "—"}</td>
+                        <td className="px-4 py-3.5 font-mono text-xs" style={{ color: "var(--muted)" }}>{inv.due_date ? new Date(inv.due_date).toLocaleDateString("en-GB", { day: "2-digit", month: "short" }) : "—"}</td>
+                        <td className="px-4 py-3.5 font-mono">{inv.currency} {parseFloat(inv.total || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                        <td className="px-4 py-3.5"><span className="rounded-full px-2 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-wider" style={{ background: pill.bg, color: pill.color }}>{pill.label}</span></td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </Card>
+      </div>
+      <CreateInvoiceModal open={createOpen} onClose={() => setCreateOpen(false)} onCreated={() => { fetchInvoices(); setCreateOpen(false); }} />
+      <InvoiceDrawer invoice={selected} onClose={() => setSelected(null)} onChanged={fetchInvoices} />
+    </>
+  );
+}
+
+function CreateInvoiceModal({ open, onClose, onCreated }) {
+  const { push } = useToast();
+  const auth = useAuth();
+  const empty = {
+    customerId: "",
+    customerName: "",
+    customerEmail: "",
+    customerPhone: "",
+    currency: "USD",
+    dueDate: "",
+    notes: "",
+    items: [{ description: "", quantity: "1", unit_price: "" }],
+  };
+  const [data, setData] = useState(empty);
+  const [savedCustomers, setSavedCustomers] = useState([]);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (!open) { const t = setTimeout(() => setData(empty), 250); return () => clearTimeout(t); }
+    supabase.from("customers").select("id, name, email, phone").order("name").then(({ data: rows }) => {
+      setSavedCustomers(rows || []);
+    });
+    /* eslint-disable-next-line react-hooks/exhaustive-deps */
+  }, [open]);
+
+  const updateItem = (idx, field, value) => {
+    setData((d) => {
+      const items = [...d.items];
+      items[idx] = { ...items[idx], [field]: value };
+      return { ...d, items };
+    });
+  };
+  const addItem = () => setData((d) => ({ ...d, items: [...d.items, { description: "", quantity: "1", unit_price: "" }] }));
+  const removeItem = (idx) => setData((d) => ({ ...d, items: d.items.length === 1 ? d.items : d.items.filter((_, i) => i !== idx) }));
+
+  const subtotal = data.items.reduce((s, it) => s + (parseFloat(it.quantity) || 0) * (parseFloat(it.unit_price) || 0), 0);
+  const total = subtotal;
+  const validItems = data.items.filter((it) => it.description && parseFloat(it.unit_price) > 0);
+  const canSubmit = !!data.customerName && validItems.length > 0 && !saving;
+
+  const submit = async (sendNow) => {
+    if (!canSubmit) return;
+    setSaving(true);
+    const operatorName = auth.user?.user_metadata?.company || "XaeccoX";
+    const { data: inv, error: invErr } = await supabase.from("invoices").insert({
+      operator_user_id: auth.user.id,
+      operator_name: operatorName,
+      customer_id: data.customerId || null,
+      customer_name: data.customerName,
+      customer_email: data.customerEmail || null,
+      customer_phone: data.customerPhone || null,
+      currency: data.currency,
+      due_date: data.dueDate || null,
+      notes: data.notes || null,
+      subtotal,
+      tax: 0,
+      total,
+      status: sendNow ? "sent" : "draft",
+      sent_at: sendNow ? new Date().toISOString() : null,
+    }).select("*").single();
+    if (invErr) {
+      setSaving(false);
+      push(`Couldn't create invoice: ${invErr.message}`, "warn");
+      return;
+    }
+    const itemRows = validItems.map((it, i) => ({
+      invoice_id: inv.id,
+      description: it.description,
+      quantity: parseFloat(it.quantity) || 1,
+      unit_price: parseFloat(it.unit_price),
+      amount: (parseFloat(it.quantity) || 1) * parseFloat(it.unit_price),
+      position: i,
+    }));
+    await supabase.from("invoice_items").insert(itemRows);
+
+    // Generate PDF + upload + (if sendNow) email
+    try {
+      const pdf = generateInvoicePdf({ invoice: inv, items: itemRows });
+      const upRes = await uploadInvoicePdf(inv.id, pdf);
+      if (upRes.ok) {
+        await supabase.from("invoices").update({
+          pdf_url: upRes.url,
+          pdf_path: upRes.path,
+          pdf_generated_at: new Date().toISOString(),
+        }).eq("id", inv.id);
+      }
+      if (sendNow && data.customerEmail) {
+        const portalUrl = "https://xaepay.com/";
+        const totalText = `${data.currency} ${total.toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
+        const dueText = data.dueDate ? new Date(data.dueDate).toLocaleDateString("en-GB", { day: "2-digit", month: "long", year: "numeric" }) : "On receipt";
+        const itemRowsHtml = itemRows.map((it) => `<tr><td style="padding:6px 0;font-size:13px;">${it.description}</td><td style="padding:6px 0;text-align:right;font-family:monospace;font-size:12px;">${it.quantity} × ${data.currency} ${it.unit_price.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td><td style="padding:6px 0;text-align:right;font-family:monospace;font-size:13px;font-weight:600;">${data.currency} ${it.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td></tr>`).join("");
+        const html = `<!doctype html><html><body style="font-family:system-ui,-apple-system,sans-serif;color:#0a0b0d;background:#fcfbf7;margin:0;padding:24px;"><div style="max-width:560px;margin:0 auto;background:white;border:1px solid #e5e7eb;border-radius:16px;padding:32px;"><h2 style="margin:0 0 8px;font-size:22px;">Invoice ${inv.invoice_number}</h2><p style="color:#6b7280;margin:0 0 20px;font-size:14px;">${operatorName} has issued you an invoice via XaePay.</p><div style="background:#0a0b0d;color:#d4f570;border-radius:12px;padding:20px;margin-bottom:20px;"><div style="font-size:11px;text-transform:uppercase;letter-spacing:0.05em;color:rgba(247,245,240,0.5);">Amount due</div><div style="font-size:30px;font-weight:600;margin-top:6px;">${totalText}</div><div style="font-size:11px;font-family:monospace;color:rgba(247,245,240,0.7);margin-top:8px;">Due: ${dueText}</div></div><table style="width:100%;border-collapse:collapse;margin-bottom:20px;"><thead><tr style="border-bottom:1px solid #e5e7eb;"><th style="text-align:left;padding-bottom:8px;font-size:10px;font-family:monospace;letter-spacing:0.05em;color:#6b7280;">DESCRIPTION</th><th style="text-align:right;padding-bottom:8px;font-size:10px;font-family:monospace;letter-spacing:0.05em;color:#6b7280;">QTY × UNIT</th><th style="text-align:right;padding-bottom:8px;font-size:10px;font-family:monospace;letter-spacing:0.05em;color:#6b7280;">AMOUNT</th></tr></thead><tbody>${itemRowsHtml}</tbody></table>${data.notes ? `<p style="color:#374151;font-size:13px;line-height:1.5;margin-bottom:20px;"><strong>Notes:</strong> ${data.notes}</p>` : ""}<p style="text-align:center;margin:24px 0 8px;"><a href="${portalUrl}" style="display:inline-block;background:#0a0b0d;color:#d4f570;padding:12px 28px;border-radius:12px;text-decoration:none;font-weight:600;font-size:14px;">Pay this invoice</a></p><p style="color:#9ca3af;font-size:11px;text-align:center;margin:20px 0 0;">Issued via XaePay · Funds custody by licensed payment partner</p></div></body></html>`;
+        const text = `Invoice ${inv.invoice_number}\n\n${operatorName} has issued you an invoice via XaePay.\n\nAmount: ${totalText}\nDue: ${dueText}\n\n${itemRows.map(it => `  ${it.description}  ${data.currency} ${it.amount.toFixed(2)}`).join("\n")}\n\nPay at: ${portalUrl}`;
+        await sendEmail({ to: data.customerEmail, subject: `Invoice ${inv.invoice_number} from ${operatorName}`, html, text });
+      }
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error("Invoice PDF/email post-process failed:", err);
+    }
+
+    setSaving(false);
+    push(`Invoice ${inv.invoice_number} ${sendNow ? "sent" : "saved as draft"}`, "success");
+    onCreated && onCreated(inv);
+  };
+
+  return (
+    <Modal open={open} onClose={onClose} title="Create invoice" size="xl">
+      <div className="space-y-5">
+        <div>
+          <p className="text-sm" style={{ color: "var(--muted)" }}>Bill a customer for goods or services. When they're ready to pay, the existing rate quote flow runs against the invoice's amount.</p>
+        </div>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field label="Customer" full>
+            <Select
+              value={data.customerId}
+              onChange={(e) => {
+                const picked = savedCustomers.find((c) => c.id === e.target.value);
+                if (picked) setData({ ...data, customerId: picked.id, customerName: picked.name || "", customerEmail: picked.email || "", customerPhone: picked.phone || "" });
+                else setData({ ...data, customerId: "", customerName: "", customerEmail: "", customerPhone: "" });
+              }}
+            >
+              <option value="">— New customer (enter manually) —</option>
+              {savedCustomers.map((c) => <option key={c.id} value={c.id}>{c.name} · {c.email || "no email"}</option>)}
+            </Select>
+          </Field>
+          {!data.customerId && (
+            <>
+              <Field label="Customer name"><Input value={data.customerName} onChange={(e) => setData({ ...data, customerName: e.target.value })} placeholder="Adekunle Imports Ltd" /></Field>
+              <Field label="Customer email"><Input type="email" value={data.customerEmail} onChange={(e) => setData({ ...data, customerEmail: e.target.value })} placeholder="ops@adekunle.ng" /></Field>
+              <Field label="Customer WhatsApp"><Input value={data.customerPhone} onChange={(e) => setData({ ...data, customerPhone: e.target.value })} placeholder="+234 803 123 4567" /></Field>
+            </>
+          )}
+          {data.customerId && (
+            <div className="sm:col-span-2 rounded-xl px-3 py-2 text-xs font-mono" style={{ background: "var(--bone)", color: "var(--muted)", border: "1px solid var(--line)" }}>
+              {data.customerName} · {data.customerEmail || "no email"} · {data.customerPhone || "no phone"}
+            </div>
+          )}
+          <Field label="Currency">
+            <Select value={data.currency} onChange={(e) => setData({ ...data, currency: e.target.value })}>
+              {INVOICE_CURRENCIES.map((c) => <option key={c} value={c}>{c}</option>)}
+            </Select>
+          </Field>
+          <Field label="Due date (optional)">
+            <Input type="date" value={data.dueDate} onChange={(e) => setData({ ...data, dueDate: e.target.value })} />
+          </Field>
+        </div>
+
+        <div>
+          <div className="flex items-baseline justify-between mb-2">
+            <Label>Line items</Label>
+            <SecondaryBtn onClick={addItem}><Plus size={12} /> Add item</SecondaryBtn>
+          </div>
+          <div className="space-y-2">
+            {data.items.map((it, idx) => (
+              <div key={idx} className="grid gap-2" style={{ gridTemplateColumns: "1fr 70px 110px 110px auto" }}>
+                <Input value={it.description} onChange={(e) => updateItem(idx, "description", e.target.value)} placeholder="What are you billing for?" />
+                <Input type="number" step="0.01" value={it.quantity} onChange={(e) => updateItem(idx, "quantity", e.target.value)} placeholder="Qty" />
+                <Input type="number" step="0.01" value={it.unit_price} onChange={(e) => updateItem(idx, "unit_price", e.target.value)} placeholder="Unit price" />
+                <div className="flex items-center px-2 font-mono text-sm justify-end" style={{ color: "var(--muted)" }}>
+                  {data.currency} {((parseFloat(it.quantity) || 0) * (parseFloat(it.unit_price) || 0)).toFixed(2)}
+                </div>
+                <button type="button" onClick={() => removeItem(idx)} disabled={data.items.length === 1} className="text-stone-400 hover:text-red-600 disabled:opacity-30 px-2"><X size={14} /></button>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="rounded-xl p-4" style={{ background: "var(--bone)", border: "1px solid var(--line)" }}>
+          <div className="flex justify-between items-baseline">
+            <span className="text-sm" style={{ color: "var(--muted)" }}>Total ({data.currency})</span>
+            <span className="font-display text-2xl font-semibold">{data.currency} {total.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+          </div>
+        </div>
+
+        <Field label="Notes (optional)" full>
+          <textarea rows={3} value={data.notes} onChange={(e) => setData({ ...data, notes: e.target.value })} placeholder="Payment terms, references, anything else the customer should know." className="w-full rounded-xl px-3 py-2 text-sm" style={{ background: "white", border: "1px solid var(--line)" }} />
+        </Field>
+
+        <div className="flex flex-col-reverse sm:flex-row sm:justify-between gap-2 pt-2">
+          <SecondaryBtn onClick={onClose} disabled={saving}>Cancel</SecondaryBtn>
+          <div className="flex flex-col sm:flex-row gap-2">
+            <SecondaryBtn onClick={() => submit(false)} disabled={!canSubmit}>{saving ? <Loader2 size={12} className="animate-spin" /> : null} Save as draft</SecondaryBtn>
+            <PrimaryBtn onClick={() => submit(true)} disabled={!canSubmit || !data.customerEmail}>{saving ? <><Loader2 size={12} className="animate-spin" /> Sending…</> : <>Send to customer <Send size={12} /></>}</PrimaryBtn>
+          </div>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+function InvoiceDrawer({ invoice, onClose, onChanged }) {
+  const { push } = useToast();
+  const [items, setItems] = useState([]);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    if (!invoice?.id) return;
+    supabase.from("invoice_items").select("*").eq("invoice_id", invoice.id).order("position").then(({ data }) => setItems(data || []));
+  }, [invoice?.id]);
+
+  if (!invoice) return null;
+  const pill = INVOICE_STATUS_PILL[invoice.status] || INVOICE_STATUS_PILL.draft;
+  const ccy = invoice.currency || "USD";
+
+  const downloadPdf = async () => {
+    try {
+      if (invoice.pdf_url) {
+        window.open(safeUrl(invoice.pdf_url), "_blank");
+        return;
+      }
+      const pdf = generateInvoicePdf({ invoice, items });
+      downloadInvoicePdf(pdf, invoice);
+    } catch (err) {
+      push(`Couldn't open PDF: ${err?.message || err}`, "warn");
+    }
+  };
+
+  const sendInvoice = async () => {
+    if (busy) return;
+    if (!invoice.customer_email) { push("Customer has no email on file", "warn"); return; }
+    setBusy(true);
+    try {
+      // Update status first
+      await supabase.from("invoices").update({ status: "sent", sent_at: new Date().toISOString() }).eq("id", invoice.id);
+      // Regenerate PDF + upload + email
+      const pdf = generateInvoicePdf({ invoice: { ...invoice, status: "sent" }, items });
+      const upRes = await uploadInvoicePdf(invoice.id, pdf);
+      if (upRes.ok) {
+        await supabase.from("invoices").update({ pdf_url: upRes.url, pdf_path: upRes.path, pdf_generated_at: new Date().toISOString() }).eq("id", invoice.id);
+      }
+      const portalUrl = "https://xaepay.com/";
+      const totalText = `${ccy} ${parseFloat(invoice.total || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
+      const html = `<!doctype html><html><body style="font-family:system-ui,-apple-system,sans-serif;color:#0a0b0d;background:#fcfbf7;margin:0;padding:24px;"><div style="max-width:560px;margin:0 auto;background:white;border:1px solid #e5e7eb;border-radius:16px;padding:32px;"><h2 style="margin:0 0 8px;font-size:22px;">Invoice ${invoice.invoice_number}</h2><p style="color:#6b7280;margin:0 0 20px;font-size:14px;">${invoice.operator_name || "Your operator"} has issued you an invoice via XaePay.</p><div style="background:#0a0b0d;color:#d4f570;border-radius:12px;padding:20px;margin-bottom:20px;"><div style="font-size:11px;text-transform:uppercase;letter-spacing:0.05em;color:rgba(247,245,240,0.5);">Amount due</div><div style="font-size:30px;font-weight:600;margin-top:6px;">${totalText}</div></div><p style="text-align:center;margin:24px 0 8px;"><a href="${portalUrl}" style="display:inline-block;background:#0a0b0d;color:#d4f570;padding:12px 28px;border-radius:12px;text-decoration:none;font-weight:600;font-size:14px;">Pay this invoice</a></p></div></body></html>`;
+      await sendEmail({ to: invoice.customer_email, subject: `Invoice ${invoice.invoice_number} from ${invoice.operator_name || "your operator"}`, html, text: `Invoice ${invoice.invoice_number}\n\nAmount: ${totalText}\n\nPay at: ${portalUrl}` });
+      push(`Invoice ${invoice.invoice_number} sent to ${invoice.customer_email}`, "success");
+      onChanged && onChanged();
+      onClose();
+    } catch (err) {
+      push(`Couldn't send: ${err?.message || err}`, "warn");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const voidInvoice = async () => {
+    if (!window.confirm(`Void ${invoice.invoice_number}?`)) return;
+    await supabase.from("invoices").update({ status: "void", voided_at: new Date().toISOString() }).eq("id", invoice.id);
+    push(`Invoice ${invoice.invoice_number} voided`, "info");
+    onChanged && onChanged();
+    onClose();
+  };
+
+  return (
+    <Drawer open={!!invoice} onClose={onClose} title={invoice.invoice_number}>
+      <div className="space-y-5">
+        <div className="rounded-xl p-5" style={{ background: "var(--ink)", color: "var(--bone)" }}>
+          <div className="font-mono text-[10px] uppercase tracking-wider" style={{ color: "rgba(247,245,240,0.5)" }}>Total</div>
+          <div className="font-display mt-1 text-4xl font-[500]" style={{ color: "var(--lime)" }}>{ccy} {parseFloat(invoice.total || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</div>
+          <div className="mt-1 font-mono text-[11px]" style={{ color: "rgba(247,245,240,0.6)" }}>Issued {invoice.issue_date ? new Date(invoice.issue_date).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }) : "—"} {invoice.due_date ? `· Due ${new Date(invoice.due_date).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })}` : ""}</div>
+          <div className="mt-3"><span className="rounded-full px-2 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-wider" style={{ background: pill.bg, color: pill.color }}>{pill.label}</span></div>
+        </div>
+        <div>
+          <Label>Bill to</Label>
+          <div className="rounded-xl p-3 text-xs" style={{ background: "var(--bone)", border: "1px solid var(--line)" }}>
+            <div className="font-medium">{invoice.customer_name || "—"}</div>
+            <div className="font-mono text-[11px] mt-1" style={{ color: "var(--muted)" }}>{[invoice.customer_email, invoice.customer_phone].filter(Boolean).join(" · ") || "—"}</div>
+          </div>
+        </div>
+        <div>
+          <Label>Line items</Label>
+          <div className="rounded-xl p-3 space-y-2" style={{ background: "var(--bone)", border: "1px solid var(--line)" }}>
+            {items.map((it) => (
+              <div key={it.id} className="flex justify-between items-baseline text-xs" style={{ borderBottom: "1px solid var(--line)", paddingBottom: 6 }}>
+                <div className="flex-1">
+                  <div className="font-medium">{it.description}</div>
+                  <div className="font-mono text-[10px] mt-0.5" style={{ color: "var(--muted)" }}>{it.quantity} × {ccy} {parseFloat(it.unit_price).toFixed(2)}</div>
+                </div>
+                <div className="font-mono font-semibold">{ccy} {parseFloat(it.amount).toFixed(2)}</div>
+              </div>
+            ))}
+            <div className="flex justify-between items-baseline pt-1">
+              <span className="font-semibold text-sm">Total</span>
+              <span className="font-display text-lg font-semibold">{ccy} {parseFloat(invoice.total || 0).toFixed(2)}</span>
+            </div>
+          </div>
+        </div>
+        {invoice.notes && (
+          <div>
+            <Label>Notes</Label>
+            <div className="rounded-xl p-3 text-xs leading-relaxed" style={{ background: "var(--bone)", border: "1px solid var(--line)", color: "var(--muted)" }}>{invoice.notes}</div>
+          </div>
+        )}
+        {invoice.related_quote_id && (
+          <div>
+            <Label>Linked transaction</Label>
+            <div className="rounded-xl p-3 text-xs flex items-center justify-between" style={{ background: "rgba(15,95,63,0.06)", border: "1px solid rgba(15,95,63,0.2)" }}>
+              <div className="flex items-center gap-2" style={{ color: "var(--emerald)" }}>
+                <CheckCircle2 size={14} />
+                <span className="font-medium">Paid via QU-{invoice.related_quote_id.slice(0, 4).toUpperCase()}</span>
+              </div>
+              {invoice.paid_at && <span className="font-mono text-[10px]" style={{ color: "var(--muted)" }}>{relativeTime(invoice.paid_at)}</span>}
+            </div>
+          </div>
+        )}
+        <div className="flex flex-wrap gap-2 pt-2">
+          <SecondaryBtn onClick={downloadPdf}><Download size={12} /> PDF</SecondaryBtn>
+          {invoice.status !== "paid" && invoice.status !== "void" && (
+            <SecondaryBtn onClick={voidInvoice}><X size={12} /> Void</SecondaryBtn>
+          )}
+          {invoice.status === "draft" && (
+            <PrimaryBtn onClick={sendInvoice} disabled={busy || !invoice.customer_email}>{busy ? <><Loader2 size={12} className="animate-spin" /> Sending…</> : <>Send <Send size={12} /></>}</PrimaryBtn>
+          )}
+        </div>
+      </div>
+    </Drawer>
   );
 }
 

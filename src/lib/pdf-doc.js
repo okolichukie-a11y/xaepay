@@ -734,4 +734,163 @@ export function downloadCompliancePackPdf(doc, customer) {
   doc.save(`${safeName}_compliance_pack_${period}.pdf`);
 }
 
+// === Invoice PDF =============================================================
+// Operator-issued invoice for goods or services rendered. Customer reviews +
+// hits "Pay this invoice" in their portal, which kicks off the existing
+// rate-quote flow with the invoice's amount + currency prefilled. PDF is
+// downloadable + emailable.
+
+function buildInvoicePdfPage(doc, invoice, items) {
+  drawHeader(doc, "Invoice");
+
+  let y = 38;
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(22);
+  doc.setTextColor(INK);
+  doc.text("Invoice", MARGIN, y);
+
+  doc.setFont("courier", "normal");
+  doc.setFontSize(12);
+  doc.setTextColor(MUTED);
+  doc.text(invoice.invoice_number || "—", PAGE_W - MARGIN, y, { align: "right" });
+  y += 7;
+
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(9);
+  doc.setTextColor(MUTED);
+  const issued = invoice.issue_date ? fmtDate(invoice.issue_date) : fmtDate(invoice.created_at);
+  const due = invoice.due_date ? `· Due ${fmtDate(invoice.due_date)}` : "";
+  doc.text(`Issued ${issued} ${due}`, MARGIN, y);
+  y += 14;
+
+  // Issued by / Bill to
+  const colW = (CONTENT_W - 8) / 2;
+  drawLabelValue(doc, "Issued by", invoice.operator_name || "Operator", MARGIN, y);
+  drawLabelValue(doc, "Bill to", invoice.customer_name || "Customer", MARGIN + colW + 8, y);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(8);
+  doc.setTextColor(MUTED);
+  doc.text("Via XaePay", MARGIN, y + 11);
+  doc.text([invoice.customer_phone, invoice.customer_email].filter(Boolean).join("  ·  ") || "—", MARGIN + colW + 8, y + 11, { maxWidth: colW });
+  y += 22;
+
+  doc.setDrawColor(LINE);
+  doc.line(MARGIN, y, PAGE_W - MARGIN, y);
+  y += 8;
+
+  // Items table
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(8);
+  doc.setTextColor(MUTED);
+  doc.text("DESCRIPTION", MARGIN, y);
+  doc.text("QTY", MARGIN + 105, y, { align: "right" });
+  doc.text("UNIT", MARGIN + 135, y, { align: "right" });
+  doc.text("AMOUNT", PAGE_W - MARGIN, y, { align: "right" });
+  y += 5;
+  doc.line(MARGIN, y, PAGE_W - MARGIN, y);
+  y += 7;
+
+  const ccy = invoice.currency || "USD";
+  const sortedItems = [...(items || [])].sort((a, b) => (a.position || 0) - (b.position || 0));
+  sortedItems.forEach((it) => {
+    if (y > PAGE_H - 80) {
+      drawFooter(doc, doc.internal.getNumberOfPages(), 0);
+      doc.addPage();
+      drawHeader(doc, "Invoice (cont.)");
+      y = 38;
+    }
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(10);
+    doc.setTextColor(INK);
+    const descLines = doc.splitTextToSize(it.description || "—", 95);
+    doc.text(descLines, MARGIN, y);
+
+    doc.setFont("courier", "normal");
+    doc.setFontSize(9);
+    doc.text(String(parseFloat(it.quantity || 1)), MARGIN + 105, y, { align: "right" });
+    doc.text(fmtMoney(parseFloat(it.unit_price || 0), ccy), MARGIN + 135, y, { align: "right" });
+    doc.setFont("courier", "bold");
+    doc.text(fmtMoney(parseFloat(it.amount || 0), ccy), PAGE_W - MARGIN, y, { align: "right" });
+
+    y += Math.max(descLines.length * 4, 6) + 4;
+  });
+
+  // Totals
+  doc.setDrawColor(LINE);
+  doc.line(MARGIN, y, PAGE_W - MARGIN, y);
+  y += 8;
+
+  const sumX = PAGE_W - MARGIN - 60;
+  const sumRow = (label, value, bold) => {
+    doc.setFont("helvetica", bold ? "bold" : "normal");
+    doc.setFontSize(bold ? 12 : 9);
+    doc.setTextColor(INK);
+    doc.text(label, sumX, y);
+    doc.setFont("courier", bold ? "bold" : "normal");
+    doc.text(value, PAGE_W - MARGIN, y, { align: "right" });
+    y += bold ? 8 : 6;
+  };
+
+  sumRow("Subtotal", fmtMoney(parseFloat(invoice.subtotal || 0), ccy));
+  if (parseFloat(invoice.tax || 0) > 0) {
+    sumRow("Tax", fmtMoney(parseFloat(invoice.tax || 0), ccy));
+  }
+  y += 2;
+  doc.setDrawColor(INK);
+  doc.line(sumX, y, PAGE_W - MARGIN, y);
+  y += 6;
+  sumRow(`Total (${ccy})`, fmtMoney(parseFloat(invoice.total || 0), ccy), true);
+
+  // Notes
+  if (invoice.notes) {
+    y += 6;
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(10);
+    doc.setTextColor(INK);
+    doc.text("Notes", MARGIN, y);
+    y += 6;
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(9);
+    doc.setTextColor(MUTED);
+    const noteLines = doc.splitTextToSize(invoice.notes, CONTENT_W);
+    doc.text(noteLines, MARGIN, y);
+    y += noteLines.length * 4.5 + 4;
+  }
+
+  // Status pill (if not draft)
+  if (invoice.status && invoice.status !== "draft") {
+    const pillBg = invoice.status === "paid" ? "#d1fae5" : invoice.status === "void" ? "#fee2e2" : "#fef3c7";
+    const pillColor = invoice.status === "paid" ? "#065f46" : invoice.status === "void" ? "#991b1b" : "#92400e";
+    doc.setFillColor(pillBg);
+    doc.roundedRect(MARGIN, y, 30, 7, 2, 2, "F");
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(8);
+    doc.setTextColor(pillColor);
+    doc.text(invoice.status.toUpperCase(), MARGIN + 15, y + 4.7, { align: "center" });
+  }
+
+  // Footer
+  const noteY = PAGE_H - 30;
+  doc.setDrawColor(LINE);
+  doc.line(MARGIN, noteY, PAGE_W - MARGIN, noteY);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(8);
+  doc.setTextColor(MUTED);
+  doc.text(`Pay this invoice by signing into your XaePay customer portal. XaePay's licensed payment partner executes the wire on your behalf at a rate locked at payment time.`, MARGIN, noteY + 5, { maxWidth: CONTENT_W });
+  doc.text("Issued via XaePay · Software/compliance layer · Funds custody by licensed payment partner.", MARGIN, noteY + 13, { maxWidth: CONTENT_W });
+}
+
+export function generateInvoicePdf({ invoice, items }) {
+  const doc = new jsPDF({ unit: "mm", format: "a4" });
+  buildInvoicePdfPage(doc, invoice, items);
+  drawFooter(doc, doc.internal.getNumberOfPages(), 0);
+  return doc;
+}
+
+export function downloadInvoicePdf(doc, invoice) {
+  const num = (invoice?.invoice_number || "invoice").replace(/[^\w-]+/g, "_");
+  doc.save(`${num}-XaePay.pdf`);
+}
+
 export const _refForFilename = ref;

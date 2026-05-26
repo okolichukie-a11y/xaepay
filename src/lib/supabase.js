@@ -305,6 +305,27 @@ export async function uploadCedarFile(file, category = "misc") {
 // Operators paste URLs into invoice_url / deposit_slip_url etc. — without this
 // a malicious operator (or compromised account) could XSS another operator
 // who clicks the rendered link in TxDrawer / Compliance panel.
+// Upload an invoice PDF blob to Storage and return the signed URL + path.
+// Reuses the quote-pdfs bucket for now (private, RLS scoped). Returns
+// { ok, url, path, error }.
+export async function uploadInvoicePdf(invoiceId, doc) {
+  try {
+    const blob = doc.output("blob");
+    const path = `${invoiceId}/${Date.now()}.pdf`;
+    const { error: upErr } = await supabase.storage
+      .from("quote-pdfs")
+      .upload(path, blob, { contentType: "application/pdf", upsert: false });
+    if (upErr) return { ok: false, error: upErr.message || "Upload failed" };
+    const { data: signed, error: signErr } = await supabase.storage
+      .from("quote-pdfs")
+      .createSignedUrl(path, 60 * 60 * 24 * 90); // 90 days — invoices live longer than quotes
+    if (signErr) return { ok: false, error: signErr.message };
+    return { ok: true, url: signed.signedUrl, path };
+  } catch (err) {
+    return { ok: false, error: err?.message || String(err) };
+  }
+}
+
 // Fire-and-forget call to cedar-submit-document after a compliance doc upload.
 // Currently runs in stub mode — see supabase/functions/cedar-submit-document for
 // the activation steps once Cedar's doc-refresh API shape is known.
