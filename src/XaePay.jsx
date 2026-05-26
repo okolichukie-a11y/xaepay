@@ -4637,7 +4637,24 @@ const INVOICE_STATUS_PILL = {
   void: { label: "Void", bg: "#fee2e2", color: "#991b1b" },
 };
 
-const INVOICE_CURRENCIES = ["USD", "GBP", "EUR", "NGN"];
+// Currency catalog. Nigerian operators commonly invoice in NGN (local services),
+// USD (diaspora customers, US-based clients), GBP / EUR (UK + EU customers),
+// and a handful of regional currencies for African trade partners. Cross-border
+// rail (Cedar) supports USD as the source — the rest are local-rail-only.
+const INVOICE_CURRENCIES = [
+  { code: "NGN", symbol: "₦",    name: "Naira" },
+  { code: "USD", symbol: "$",    name: "US Dollar" },
+  { code: "GBP", symbol: "£",    name: "Pound Sterling" },
+  { code: "EUR", symbol: "€",    name: "Euro" },
+  { code: "CAD", symbol: "CA$",  name: "Canadian Dollar" },
+  { code: "AUD", symbol: "AU$",  name: "Australian Dollar" },
+  { code: "ZAR", symbol: "R",    name: "South African Rand" },
+  { code: "GHS", symbol: "₵",    name: "Ghanaian Cedi" },
+  { code: "KES", symbol: "KSh",  name: "Kenyan Shilling" },
+  { code: "AED", symbol: "د.إ",  name: "UAE Dirham" },
+  { code: "CNY", symbol: "¥",    name: "Chinese Yuan" },
+  { code: "INR", symbol: "₹",    name: "Indian Rupee" },
+];
 
 // Payment method catalog. Operators pick which of these to expose per invoice
 // and type in the destination details (Zelle handle, bank account, etc.). The
@@ -4923,9 +4940,11 @@ function CreateInvoiceModal({ open, onClose, onCreated }) {
               {data.customerName} · {data.customerEmail || "no email"} · {data.customerPhone || "no phone"}
             </div>
           )}
-          <Field label="Currency">
+          <Field label="Invoice currency">
             <Select value={data.currency} onChange={(e) => setData({ ...data, currency: e.target.value })}>
-              {INVOICE_CURRENCIES.map((c) => <option key={c} value={c}>{c}</option>)}
+              {INVOICE_CURRENCIES.map((c) => (
+                <option key={c.code} value={c.code}>{c.symbol} {c.name} ({c.code})</option>
+              ))}
             </Select>
           </Field>
           <Field label="Due date (optional)">
