@@ -842,6 +842,47 @@ function buildInvoicePdfPage(doc, invoice, items) {
   y += 6;
   sumRow(`Total (${ccy})`, fmtMoney(parseFloat(invoice.total || 0), ccy), true);
 
+  // Payment methods (operator-configured per-invoice instructions)
+  const methods = Array.isArray(invoice.payment_methods) ? invoice.payment_methods : [];
+  if (methods.length > 0) {
+    y += 6;
+    if (y > PAGE_H - 60) { drawFooter(doc, doc.internal.getNumberOfPages(), 0); doc.addPage(); drawHeader(doc, "Invoice (cont.)"); y = 38; }
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(10);
+    doc.setTextColor(INK);
+    doc.text("Payment options", MARGIN, y);
+    y += 6;
+    const TYPE_LABELS = {
+      zelle: "Zelle", ach: "ACH transfer", wire_us: "Domestic wire (US)", apple_pay: "Apple Pay / Cash App",
+      check: "Certified check", card_link: "Card payment link", bank_ngn: "Nigerian bank transfer",
+      ussd: "USSD", crossborder: "International (XaePay)", other: "Other",
+    };
+    methods.forEach((m) => {
+      if (y > PAGE_H - 50) { drawFooter(doc, doc.internal.getNumberOfPages(), 0); doc.addPage(); drawHeader(doc, "Invoice (cont.)"); y = 38; }
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(9);
+      doc.setTextColor(INK);
+      const label = (TYPE_LABELS[m.type] || m.type) + (m.label ? ` · ${m.label}` : "");
+      doc.text(label, MARGIN, y);
+      y += 4.5;
+      if (m.instructions) {
+        doc.setFont("courier", "normal");
+        doc.setFontSize(8.5);
+        doc.setTextColor(MUTED);
+        const lines = doc.splitTextToSize(m.instructions, CONTENT_W);
+        doc.text(lines, MARGIN, y);
+        y += lines.length * 4 + 2;
+      } else if (m.type === "crossborder") {
+        doc.setFont("helvetica", "italic");
+        doc.setFontSize(8.5);
+        doc.setTextColor(MUTED);
+        doc.text("Pay via cross-border rate quote in your XaePay portal.", MARGIN, y);
+        y += 4 + 2;
+      }
+      y += 2;
+    });
+  }
+
   // Notes
   if (invoice.notes) {
     y += 6;
@@ -877,8 +918,8 @@ function buildInvoicePdfPage(doc, invoice, items) {
   doc.setFont("helvetica", "normal");
   doc.setFontSize(8);
   doc.setTextColor(MUTED);
-  doc.text(`Pay this invoice by signing into your XaePay customer portal. XaePay's licensed payment partner executes the wire on your behalf at a rate locked at payment time.`, MARGIN, noteY + 5, { maxWidth: CONTENT_W });
-  doc.text("Issued via XaePay · Software/compliance layer · Funds custody by licensed payment partner.", MARGIN, noteY + 13, { maxWidth: CONTENT_W });
+  doc.text(`Pay using any of the payment options above, then confirm the payment in your XaePay customer portal. The operator who issued this invoice will verify receipt before the invoice is marked paid.`, MARGIN, noteY + 5, { maxWidth: CONTENT_W });
+  doc.text("Issued via XaePay · Operator-issued invoice · XaePay does not custody local-rail payments.", MARGIN, noteY + 13, { maxWidth: CONTENT_W });
 }
 
 export function generateInvoicePdf({ invoice, items }) {

@@ -5,9 +5,9 @@ import {
   BarChart3, Zap, Eye, Download, Send, Filter, Plus, History, LogIn,
   ExternalLink, Sparkles, User, Building2, Briefcase, Coins, Lock, Unlock,
   ArrowLeft, ArrowLeftRight, Loader2, Layers, TrendingUp, Wallet, DollarSign, Mail,
-  RefreshCw, ShieldCheck,
+  RefreshCw, ShieldCheck, Paperclip,
 } from "lucide-react";
-import { supabase, sendWhatsAppText, sendWhatsAppTemplate, fetchCedarRate, submitCustomerToCedar, submitRecipientToCedar, submitReceiverAccountToCedar, submitCedarTransaction, approveCedarQuote, confirmCedarDeposit, cancelCedarTransaction, uploadCedarFile, uploadFileBoth, uploadInvoicePdf, runComplianceReview, runComplianceWatchman, submitDocumentToCedar, sendEmail, safeUrl, logAuditEvent } from "./lib/supabase.js";
+import { supabase, sendWhatsAppText, sendWhatsAppTemplate, fetchCedarRate, submitCustomerToCedar, submitRecipientToCedar, submitReceiverAccountToCedar, submitCedarTransaction, approveCedarQuote, confirmCedarDeposit, cancelCedarTransaction, uploadCedarFile, uploadFileBoth, uploadInvoicePdf, uploadInvoicePaymentProof, runComplianceReview, runComplianceWatchman, submitDocumentToCedar, sendEmail, safeUrl, logAuditEvent } from "./lib/supabase.js";
 import { generateQuotePdf, uploadQuotePdf, downloadQuotePdf } from "./lib/pdf.js";
 import { generateCompliancePackPdf, downloadCompliancePackPdf, generateTransactionConfirmationPdf, downloadTransactionConfirmationPdf, generateInvoicePdf, downloadInvoicePdf } from "./lib/pdf-doc.js";
 import { useAuth } from "./lib/auth.js";
@@ -3785,17 +3785,28 @@ function CustomerTransactionCard({ q, onSlipUploaded }) {
 function CustomerInvoiceDrawer({ invoice, customer, onClose, onPaid }) {
   const { push } = useToast();
   const [items, setItems] = useState([]);
+  const [claims, setClaims] = useState([]);
+  const [selectedMethodId, setSelectedMethodId] = useState(null);
+  const [claimRef, setClaimRef] = useState("");
+  const [claimNotes, setClaimNotes] = useState("");
+  const [proofFile, setProofFile] = useState(null);
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
-    if (!invoice?.id) { setItems([]); return; }
-    if (invoice.items) { setItems(invoice.items); return; }
-    supabase.from("invoice_items").select("*").eq("invoice_id", invoice.id).order("position").then(({ data }) => setItems(data || []));
+    if (!invoice?.id) { setItems([]); setClaims([]); setSelectedMethodId(null); setClaimRef(""); setClaimNotes(""); setProofFile(null); return; }
+    if (invoice.items) setItems(invoice.items);
+    else supabase.from("invoice_items").select("*").eq("invoice_id", invoice.id).order("position").then(({ data }) => setItems(data || []));
+    supabase.from("invoice_payments").select("*").eq("invoice_id", invoice.id).order("claimed_at", { ascending: false }).then(({ data }) => setClaims(data || []));
   }, [invoice?.id, invoice?.items]);
 
   if (!invoice) return null;
   const ccy = invoice.currency || "USD";
   const pill = INVOICE_STATUS_PILL[invoice.status] || INVOICE_STATUS_PILL.sent;
+  const methods = Array.isArray(invoice.payment_methods) ? invoice.payment_methods : [];
+  const selectedMethod = methods.find((m) => m.id === selectedMethodId);
+  const selectedDef = selectedMethod ? PAYMENT_METHOD_BY_TYPE[selectedMethod.type] : null;
+  const hasOpenClaim = claims.some((c) => c.status === "claimed");
+  const hasConfirmed = claims.some((c) => c.status === "confirmed") || invoice.status === "paid";
 
   const downloadPdf = () => {
     if (invoice.pdf_url) window.open(safeUrl(invoice.pdf_url), "_blank");
@@ -3805,7 +3816,9 @@ function CustomerInvoiceDrawer({ invoice, customer, onClose, onPaid }) {
     }
   };
 
-  const payInvoice = async () => {
+  // Cross-border path: kick off the existing rate-quote flow. Mark the invoice
+  // as linked to that quote — the DB trigger marks it paid when the quote completes.
+  const payCrossborder = async () => {
     if (submitting || !customer?.id || !customer?.bdc_user_id) return;
     setSubmitting(true);
     try {
@@ -3823,16 +3836,48 @@ function CustomerInvoiceDrawer({ invoice, customer, onClose, onPaid }) {
         cedar_purpose: "PAYMENT_OF_SERVICES",
       }).select("*").single();
       if (error) throw error;
-      // Link the invoice to this quote so the operator sees the connection
       await supabase.from("invoices").update({ related_quote_id: row.id }).eq("id", invoice.id);
-      push(`Payment request sent to ${invoice.operator_name || "your operator"} · ${invoice.invoice_number}`, "success");
+      push(`Cross-border payment request sent · ${invoice.invoice_number}`, "success");
       onPaid && onPaid();
       onClose();
     } catch (err) {
       push(`Couldn't initiate payment: ${err?.message || err}`, "warn");
-    } finally {
-      setSubmitting(false);
-    }
+    } finally { setSubmitting(false); }
+  };
+
+  // Local-rails path: customer says "I paid via X", optionally attaches proof.
+  // Operator confirms in their drawer → DB trigger flips invoice to paid.
+  const submitLocalClaim = async () => {
+    if (submitting || !selectedMethod) return;
+    setSubmitting(true);
+    try {
+      let proofUrl = null, proofPath = null;
+      if (proofFile) {
+        const up = await uploadInvoicePaymentProof(invoice.id, proofFile);
+        if (!up.ok) { push(`Couldn't upload proof: ${up.error}`, "warn"); setSubmitting(false); return; }
+        proofUrl = up.url; proofPath = up.path;
+      }
+      const { error } = await supabase.from("invoice_payments").insert({
+        invoice_id: invoice.id,
+        method_type: selectedMethod.type,
+        method_label: selectedMethod.label || null,
+        amount: parseFloat(invoice.total),
+        currency: ccy,
+        reference: claimRef || null,
+        notes: claimNotes || null,
+        proof_url: proofUrl,
+        proof_path: proofPath,
+      });
+      if (error) throw error;
+      push("Payment claim submitted — your operator will confirm shortly", "success");
+      setSelectedMethodId(null); setClaimRef(""); setClaimNotes(""); setProofFile(null);
+      // Refresh claims list inline so the UI flips to "awaiting confirmation"
+      const { data } = await supabase.from("invoice_payments").select("*").eq("invoice_id", invoice.id).order("claimed_at", { ascending: false });
+      setClaims(data || []);
+      onPaid && onPaid();
+    } catch (err) {
+      push(`Couldn't submit claim: ${err?.message || err}`, "warn");
+    } finally { setSubmitting(false); }
   };
 
   return (
@@ -3868,19 +3913,117 @@ function CustomerInvoiceDrawer({ invoice, customer, onClose, onPaid }) {
             <div className="rounded-xl p-3 text-xs leading-relaxed" style={{ background: "var(--bone)", border: "1px solid var(--line)", color: "var(--muted)" }}>{invoice.notes}</div>
           </div>
         )}
-        {invoice.related_quote_id && (
-          <div className="rounded-lg p-3 text-xs" style={{ background: "rgba(15,95,63,0.06)", border: "1px solid rgba(15,95,63,0.2)", color: "var(--emerald)" }}>
-            ✓ Payment in progress · QU-{invoice.related_quote_id.slice(0, 4).toUpperCase()}
+
+        {/* Payment-method picker. Hidden once the customer has a claim in flight
+            or the invoice is already paid — they shouldn't be able to double-pay. */}
+        {!hasConfirmed && invoice.status !== "void" && methods.length > 0 && !selectedMethod && (
+          <div>
+            <Label>How would you like to pay?</Label>
+            <div className="space-y-2">
+              {methods.map((m) => {
+                const def = PAYMENT_METHOD_BY_TYPE[m.type] || { label: m.type };
+                return (
+                  <button key={m.id || m.type} type="button" onClick={() => setSelectedMethodId(m.id)} disabled={hasOpenClaim && !def.auto}
+                    className="w-full rounded-xl p-3 text-left transition hover:shadow-sm disabled:opacity-50"
+                    style={{ background: "var(--bone)", border: "1px solid var(--line)" }}>
+                    <div className="flex items-center justify-between">
+                      <span className="font-semibold text-sm">{def.label}{m.label ? ` · ${m.label}` : ""}</span>
+                      <ArrowRight size={14} style={{ color: "var(--muted)" }} />
+                    </div>
+                    {m.instructions && <div className="font-mono text-[11px] mt-1 whitespace-pre-wrap" style={{ color: "var(--muted)" }}>{m.instructions.slice(0, 120)}{m.instructions.length > 120 ? "…" : ""}</div>}
+                    {def.auto && <div className="font-mono text-[11px] mt-1" style={{ color: "var(--emerald)" }}>Opens cross-border rate quote</div>}
+                  </button>
+                );
+              })}
+            </div>
+            {hasOpenClaim && (
+              <div className="mt-2 rounded-lg p-2 text-[11px]" style={{ background: "#fef3c7", color: "#92400e" }}>You have a payment claim awaiting your operator's confirmation. New claims are locked until that one resolves.</div>
+            )}
           </div>
         )}
-        <div className="rounded-lg p-3 text-xs" style={{ background: "#f0f9ff", border: "1px solid #bae6fd", color: "#0369a1" }}>
-          Hitting <strong>Pay this invoice</strong> sends a payment request to your operator. They'll price it at the current rate and you'll get a quote to approve before any funds move.
-        </div>
+
+        {/* Selected-method panel: shows full instructions and either the local
+            claim form (with proof upload) or a "Pay via XaePay" button for cross-border. */}
+        {selectedMethod && selectedDef && !selectedDef.auto && (
+          <div className="rounded-xl p-4 space-y-3" style={{ background: "white", border: "2px solid var(--ink)" }}>
+            <div className="flex items-center justify-between">
+              <div className="font-semibold text-sm">{selectedDef.label}{selectedMethod.label ? ` · ${selectedMethod.label}` : ""}</div>
+              <button type="button" onClick={() => setSelectedMethodId(null)} className="text-stone-400 hover:text-stone-700"><X size={14} /></button>
+            </div>
+            {selectedMethod.instructions && (
+              <div className="rounded-lg p-3 text-xs font-mono whitespace-pre-wrap" style={{ background: "var(--bone)", border: "1px solid var(--line)", color: "var(--ink)" }}>{selectedMethod.instructions}</div>
+            )}
+            <div className="rounded-lg p-2 text-[11px]" style={{ background: "#f0f9ff", color: "#0369a1" }}>Pay <strong>{ccy} {parseFloat(invoice.total).toFixed(2)}</strong> using the details above. Reference your invoice number: <strong>{invoice.invoice_number}</strong>.</div>
+            <Field label="Reference / transaction ID (optional)">
+              <Input value={claimRef} onChange={(e) => setClaimRef(e.target.value)} placeholder="The reference number from your bank app, Zelle receipt, etc." />
+            </Field>
+            <Field label="Proof of payment (optional — image or PDF)">
+              <Input type="file" accept="image/*,application/pdf" onChange={(e) => setProofFile(e.target.files?.[0] || null)} />
+              {proofFile && <div className="font-mono text-[10px] mt-1" style={{ color: "var(--muted)" }}>{proofFile.name} · {(proofFile.size / 1024).toFixed(0)} KB</div>}
+            </Field>
+            <Field label="Note (optional)">
+              <textarea rows={2} value={claimNotes} onChange={(e) => setClaimNotes(e.target.value)} placeholder="Anything you want your operator to know" className="w-full rounded-lg px-3 py-2 text-xs" style={{ background: "var(--bone)", border: "1px solid var(--line)" }} />
+            </Field>
+            <div className="flex gap-2">
+              <SecondaryBtn onClick={() => setSelectedMethodId(null)}>Back</SecondaryBtn>
+              <PrimaryBtn onClick={submitLocalClaim} disabled={submitting}>{submitting ? <><Loader2 size={12} className="animate-spin" /> Submitting…</> : <>I've sent payment <CheckCircle2 size={12} /></>}</PrimaryBtn>
+            </div>
+          </div>
+        )}
+        {selectedMethod && selectedDef && selectedDef.auto && (
+          <div className="rounded-xl p-4 space-y-3" style={{ background: "white", border: "2px solid var(--ink)" }}>
+            <div className="flex items-center justify-between">
+              <div className="font-semibold text-sm">{selectedDef.label}</div>
+              <button type="button" onClick={() => setSelectedMethodId(null)} className="text-stone-400 hover:text-stone-700"><X size={14} /></button>
+            </div>
+            <div className="rounded-lg p-3 text-xs" style={{ background: "#f0f9ff", color: "#0369a1" }}>
+              This opens a cross-border rate quote. {invoice.operator_name || "Your operator"} will price it at the current rate and send you a quote to approve before any funds move.
+            </div>
+            <div className="flex gap-2">
+              <SecondaryBtn onClick={() => setSelectedMethodId(null)}>Back</SecondaryBtn>
+              <PrimaryBtn onClick={payCrossborder} disabled={submitting}>{submitting ? <><Loader2 size={12} className="animate-spin" /> Sending…</> : <>Request rate quote <ArrowRight size={12} /></>}</PrimaryBtn>
+            </div>
+          </div>
+        )}
+
+        {/* Existing claims (so the customer sees what they've already submitted) */}
+        {claims.length > 0 && (
+          <div>
+            <Label>Your payment claims</Label>
+            <div className="space-y-2">
+              {claims.map((c) => {
+                const def = PAYMENT_METHOD_BY_TYPE[c.method_type] || { label: c.method_type };
+                const pillC = PAYMENT_CLAIM_STATUS_PILL[c.status] || PAYMENT_CLAIM_STATUS_PILL.claimed;
+                return (
+                  <div key={c.id} className="rounded-xl p-3 text-xs space-y-1" style={{ background: "var(--bone)", border: "1px solid var(--line)" }}>
+                    <div className="flex items-center justify-between gap-2 flex-wrap">
+                      <span className="font-semibold">{def.label}{c.method_label ? ` · ${c.method_label}` : ""}</span>
+                      <span className="rounded-full px-2 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-wider" style={{ background: pillC.bg, color: pillC.color }}>{pillC.label}</span>
+                    </div>
+                    <div className="font-mono text-[10px]" style={{ color: "var(--muted)" }}>{c.currency} {parseFloat(c.amount || 0).toFixed(2)} · {relativeTime(c.claimed_at)}</div>
+                    {c.reference && <div className="font-mono" style={{ color: "var(--muted)" }}>Reference: {c.reference}</div>}
+                    {c.proof_url && <a href={safeUrl(c.proof_url)} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 underline" style={{ color: "var(--emerald)" }}><Paperclip size={11} /> Proof attached</a>}
+                    {c.rejection_reason && c.status === "rejected" && <div className="rounded-lg p-2 text-[11px]" style={{ background: "#fee2e2", color: "#991b1b" }}>Operator rejected: {c.rejection_reason}</div>}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {invoice.related_quote_id && (
+          <div className="rounded-lg p-3 text-xs" style={{ background: "rgba(15,95,63,0.06)", border: "1px solid rgba(15,95,63,0.2)", color: "var(--emerald)" }}>
+            ✓ Cross-border payment in progress · QU-{invoice.related_quote_id.slice(0, 4).toUpperCase()}
+          </div>
+        )}
+        {methods.length === 0 && !hasConfirmed && (
+          <div className="rounded-lg p-3 text-xs" style={{ background: "#fef3c7", color: "#92400e" }}>
+            Your operator hasn't set payment options on this invoice yet. Reach out to {invoice.operator_name || "them"} to arrange payment.
+          </div>
+        )}
+
         <div className="flex flex-wrap gap-2 pt-2">
           <SecondaryBtn onClick={downloadPdf}><Download size={12} /> PDF</SecondaryBtn>
-          {invoice.status === "sent" && !invoice.related_quote_id && (
-            <PrimaryBtn onClick={payInvoice} disabled={submitting}>{submitting ? <><Loader2 size={12} className="animate-spin" /> Sending…</> : <>Pay this invoice <ArrowRight size={12} /></>}</PrimaryBtn>
-          )}
         </div>
       </div>
     </Drawer>
@@ -4496,6 +4639,30 @@ const INVOICE_STATUS_PILL = {
 
 const INVOICE_CURRENCIES = ["USD", "GBP", "EUR", "NGN"];
 
+// Payment method catalog. Operators pick which of these to expose per invoice
+// and type in the destination details (Zelle handle, bank account, etc.). The
+// `crossborder` type is special — it triggers the existing rate-quote flow
+// instead of the manual claim/confirm cycle.
+const PAYMENT_METHOD_TYPES = [
+  { type: "zelle",       label: "Zelle",                  hint: "Zelle email or US phone number",                 region: "US"  },
+  { type: "ach",         label: "ACH transfer",           hint: "Bank, account number, routing number",            region: "US"  },
+  { type: "wire_us",     label: "Domestic wire (US)",     hint: "Bank, account, routing, bank address",            region: "US"  },
+  { type: "apple_pay",   label: "Apple Pay / Cash App",   hint: "Cash App $cashtag or Apple Pay phone",            region: "US"  },
+  { type: "check",       label: "Certified check",        hint: "Mailing address and payee name",                  region: "US"  },
+  { type: "card_link",   label: "Card payment link",      hint: "Stripe / Square / Paystack checkout URL",         region: "any" },
+  { type: "bank_ngn",    label: "Nigerian bank transfer", hint: "Bank name, account number, account name",         region: "NG"  },
+  { type: "ussd",        label: "USSD",                   hint: "USSD code or merchant identifier",                region: "NG"  },
+  { type: "crossborder", label: "International (XaePay)", hint: "Diaspora-side USD via cross-border rate quote",   region: "any", auto: true },
+  { type: "other",       label: "Other",                  hint: "Describe how the customer should pay",            region: "any" },
+];
+const PAYMENT_METHOD_BY_TYPE = Object.fromEntries(PAYMENT_METHOD_TYPES.map((m) => [m.type, m]));
+
+const PAYMENT_CLAIM_STATUS_PILL = {
+  claimed:   { label: "Awaiting confirmation", bg: "#fef3c7", color: "#92400e" },
+  confirmed: { label: "Confirmed",             bg: "#d1fae5", color: "#065f46" },
+  rejected:  { label: "Rejected",              bg: "#fee2e2", color: "#991b1b" },
+};
+
 function BDCInvoices() {
   const { push } = useToast();
   const auth = useAuth();
@@ -4612,8 +4779,20 @@ function CreateInvoiceModal({ open, onClose, onCreated }) {
     dueDate: "",
     notes: "",
     items: [{ description: "", quantity: "1", unit_price: "" }],
+    paymentMethods: [], // [{ id, type, label, instructions }]
   };
   const [data, setData] = useState(empty);
+  const togglePaymentMethod = (type) => {
+    setData((d) => {
+      const exists = d.paymentMethods.find((m) => m.type === type);
+      if (exists) return { ...d, paymentMethods: d.paymentMethods.filter((m) => m.type !== type) };
+      const id = (crypto && crypto.randomUUID) ? crypto.randomUUID() : `${type}-${Date.now()}`;
+      return { ...d, paymentMethods: [...d.paymentMethods, { id, type, label: "", instructions: "" }] };
+    });
+  };
+  const updatePaymentMethod = (id, field, value) => {
+    setData((d) => ({ ...d, paymentMethods: d.paymentMethods.map((m) => m.id === id ? { ...m, [field]: value } : m) }));
+  };
   const [savedCustomers, setSavedCustomers] = useState([]);
   const [saving, setSaving] = useState(false);
 
@@ -4644,6 +4823,10 @@ function CreateInvoiceModal({ open, onClose, onCreated }) {
     if (!canSubmit) return;
     setSaving(true);
     const operatorName = auth.user?.user_metadata?.company || "XaeccoX";
+    // Strip empty methods (operator toggled them on but never typed instructions).
+    // crossborder is allowed without instructions because the rate-quote flow
+    // provides its own walkthrough.
+    const cleanedMethods = data.paymentMethods.filter((m) => m.type === "crossborder" || (m.instructions || "").trim().length > 0);
     const { data: inv, error: invErr } = await supabase.from("invoices").insert({
       operator_user_id: auth.user.id,
       operator_name: operatorName,
@@ -4657,6 +4840,7 @@ function CreateInvoiceModal({ open, onClose, onCreated }) {
       subtotal,
       tax: 0,
       total,
+      payment_methods: cleanedMethods,
       status: sendNow ? "sent" : "draft",
       sent_at: sendNow ? new Date().toISOString() : null,
     }).select("*").single();
@@ -4691,8 +4875,10 @@ function CreateInvoiceModal({ open, onClose, onCreated }) {
         const totalText = `${data.currency} ${total.toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
         const dueText = data.dueDate ? new Date(data.dueDate).toLocaleDateString("en-GB", { day: "2-digit", month: "long", year: "numeric" }) : "On receipt";
         const itemRowsHtml = itemRows.map((it) => `<tr><td style="padding:6px 0;font-size:13px;">${it.description}</td><td style="padding:6px 0;text-align:right;font-family:monospace;font-size:12px;">${it.quantity} × ${data.currency} ${it.unit_price.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td><td style="padding:6px 0;text-align:right;font-family:monospace;font-size:13px;font-weight:600;">${data.currency} ${it.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td></tr>`).join("");
-        const html = `<!doctype html><html><body style="font-family:system-ui,-apple-system,sans-serif;color:#0a0b0d;background:#fcfbf7;margin:0;padding:24px;"><div style="max-width:560px;margin:0 auto;background:white;border:1px solid #e5e7eb;border-radius:16px;padding:32px;"><h2 style="margin:0 0 8px;font-size:22px;">Invoice ${inv.invoice_number}</h2><p style="color:#6b7280;margin:0 0 20px;font-size:14px;">${operatorName} has issued you an invoice via XaePay.</p><div style="background:#0a0b0d;color:#d4f570;border-radius:12px;padding:20px;margin-bottom:20px;"><div style="font-size:11px;text-transform:uppercase;letter-spacing:0.05em;color:rgba(247,245,240,0.5);">Amount due</div><div style="font-size:30px;font-weight:600;margin-top:6px;">${totalText}</div><div style="font-size:11px;font-family:monospace;color:rgba(247,245,240,0.7);margin-top:8px;">Due: ${dueText}</div></div><table style="width:100%;border-collapse:collapse;margin-bottom:20px;"><thead><tr style="border-bottom:1px solid #e5e7eb;"><th style="text-align:left;padding-bottom:8px;font-size:10px;font-family:monospace;letter-spacing:0.05em;color:#6b7280;">DESCRIPTION</th><th style="text-align:right;padding-bottom:8px;font-size:10px;font-family:monospace;letter-spacing:0.05em;color:#6b7280;">QTY × UNIT</th><th style="text-align:right;padding-bottom:8px;font-size:10px;font-family:monospace;letter-spacing:0.05em;color:#6b7280;">AMOUNT</th></tr></thead><tbody>${itemRowsHtml}</tbody></table>${data.notes ? `<p style="color:#374151;font-size:13px;line-height:1.5;margin-bottom:20px;"><strong>Notes:</strong> ${data.notes}</p>` : ""}<p style="text-align:center;margin:24px 0 8px;"><a href="${portalUrl}" style="display:inline-block;background:#0a0b0d;color:#d4f570;padding:12px 28px;border-radius:12px;text-decoration:none;font-weight:600;font-size:14px;">Pay this invoice</a></p><p style="color:#9ca3af;font-size:11px;text-align:center;margin:20px 0 0;">Issued via XaePay · Funds custody by licensed payment partner</p></div></body></html>`;
-        const text = `Invoice ${inv.invoice_number}\n\n${operatorName} has issued you an invoice via XaePay.\n\nAmount: ${totalText}\nDue: ${dueText}\n\n${itemRows.map(it => `  ${it.description}  ${data.currency} ${it.amount.toFixed(2)}`).join("\n")}\n\nPay at: ${portalUrl}`;
+        const methodsHtml = cleanedMethods.length > 0 ? `<div style="margin-bottom:20px;padding:14px;background:#f5f4ee;border-radius:10px;"><div style="font-size:11px;text-transform:uppercase;letter-spacing:0.05em;color:#6b7280;margin-bottom:8px;font-weight:600;">Payment options</div>${cleanedMethods.map((m) => { const def = PAYMENT_METHOD_BY_TYPE[m.type] || { label: m.type }; return `<div style="font-size:12px;color:#374151;margin-bottom:6px;"><strong>${def.label}${m.label ? ` · ${m.label}` : ""}</strong>${m.instructions ? `<div style="font-family:monospace;font-size:11px;color:#6b7280;white-space:pre-wrap;margin-top:2px;">${m.instructions}</div>` : ""}</div>`; }).join("")}</div>` : "";
+        const methodsText = cleanedMethods.length > 0 ? `\n\nPayment options:\n${cleanedMethods.map((m) => { const def = PAYMENT_METHOD_BY_TYPE[m.type] || { label: m.type }; return `  ${def.label}${m.label ? ` (${m.label})` : ""}${m.instructions ? `\n    ${m.instructions.replace(/\n/g, "\n    ")}` : ""}`; }).join("\n")}` : "";
+        const html = `<!doctype html><html><body style="font-family:system-ui,-apple-system,sans-serif;color:#0a0b0d;background:#fcfbf7;margin:0;padding:24px;"><div style="max-width:560px;margin:0 auto;background:white;border:1px solid #e5e7eb;border-radius:16px;padding:32px;"><h2 style="margin:0 0 8px;font-size:22px;">Invoice ${inv.invoice_number}</h2><p style="color:#6b7280;margin:0 0 20px;font-size:14px;">${operatorName} has issued you an invoice via XaePay.</p><div style="background:#0a0b0d;color:#d4f570;border-radius:12px;padding:20px;margin-bottom:20px;"><div style="font-size:11px;text-transform:uppercase;letter-spacing:0.05em;color:rgba(247,245,240,0.5);">Amount due</div><div style="font-size:30px;font-weight:600;margin-top:6px;">${totalText}</div><div style="font-size:11px;font-family:monospace;color:rgba(247,245,240,0.7);margin-top:8px;">Due: ${dueText}</div></div><table style="width:100%;border-collapse:collapse;margin-bottom:20px;"><thead><tr style="border-bottom:1px solid #e5e7eb;"><th style="text-align:left;padding-bottom:8px;font-size:10px;font-family:monospace;letter-spacing:0.05em;color:#6b7280;">DESCRIPTION</th><th style="text-align:right;padding-bottom:8px;font-size:10px;font-family:monospace;letter-spacing:0.05em;color:#6b7280;">QTY × UNIT</th><th style="text-align:right;padding-bottom:8px;font-size:10px;font-family:monospace;letter-spacing:0.05em;color:#6b7280;">AMOUNT</th></tr></thead><tbody>${itemRowsHtml}</tbody></table>${methodsHtml}${data.notes ? `<p style="color:#374151;font-size:13px;line-height:1.5;margin-bottom:20px;"><strong>Notes:</strong> ${data.notes}</p>` : ""}<p style="text-align:center;margin:24px 0 8px;"><a href="${portalUrl}" style="display:inline-block;background:#0a0b0d;color:#d4f570;padding:12px 28px;border-radius:12px;text-decoration:none;font-weight:600;font-size:14px;">View &amp; pay invoice</a></p><p style="color:#9ca3af;font-size:11px;text-align:center;margin:20px 0 0;">Issued via XaePay · Pay using any of the methods above, then confirm payment in your portal</p></div></body></html>`;
+        const text = `Invoice ${inv.invoice_number}\n\n${operatorName} has issued you an invoice via XaePay.\n\nAmount: ${totalText}\nDue: ${dueText}\n\n${itemRows.map(it => `  ${it.description}  ${data.currency} ${it.amount.toFixed(2)}`).join("\n")}${methodsText}\n\nView and confirm payment: ${portalUrl}`;
         await sendEmail({ to: data.customerEmail, subject: `Invoice ${inv.invoice_number} from ${operatorName}`, html, text });
       }
     } catch (err) {
@@ -4774,6 +4960,58 @@ function CreateInvoiceModal({ open, onClose, onCreated }) {
           </div>
         </div>
 
+        <div>
+          <div className="flex items-baseline justify-between mb-2">
+            <Label>Payment options</Label>
+            <span className="text-[10px] font-mono" style={{ color: "var(--muted)" }}>How can the customer pay you?</span>
+          </div>
+          <div className="flex flex-wrap gap-2 mb-3">
+            {PAYMENT_METHOD_TYPES.map((m) => {
+              const on = data.paymentMethods.some((p) => p.type === m.type);
+              return (
+                <button key={m.type} type="button" onClick={() => togglePaymentMethod(m.type)}
+                  className="rounded-full px-3 py-1.5 text-xs font-medium transition"
+                  style={{ background: on ? "var(--ink)" : "var(--bone)", color: on ? "var(--lime)" : "var(--ink)", border: `1px solid ${on ? "var(--ink)" : "var(--line)"}` }}>
+                  {on ? "✓ " : "+ "}{m.label}
+                </button>
+              );
+            })}
+          </div>
+          {data.paymentMethods.length === 0 && (
+            <div className="rounded-lg p-3 text-xs" style={{ background: "var(--bone)", border: "1px dashed var(--line)", color: "var(--muted)" }}>
+              No payment methods selected. Pick at least one so the customer knows how to pay you.
+            </div>
+          )}
+          {data.paymentMethods.length > 0 && (
+            <div className="space-y-2">
+              {data.paymentMethods.map((m) => {
+                const def = PAYMENT_METHOD_BY_TYPE[m.type];
+                if (!def) return null;
+                if (def.auto) {
+                  return (
+                    <div key={m.id} className="rounded-xl p-3 text-xs" style={{ background: "rgba(15,95,63,0.06)", border: "1px solid rgba(15,95,63,0.2)" }}>
+                      <div className="font-semibold mb-1" style={{ color: "var(--emerald)" }}>{def.label}</div>
+                      <div style={{ color: "var(--muted)" }}>The customer will see a "Pay via XaePay" button that opens the cross-border rate quote flow. You'll handle that one in the quotes tab — nothing to type here.</div>
+                    </div>
+                  );
+                }
+                return (
+                  <div key={m.id} className="rounded-xl p-3 space-y-2" style={{ background: "var(--bone)", border: "1px solid var(--line)" }}>
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="font-semibold text-xs">{def.label}</div>
+                      <button type="button" onClick={() => togglePaymentMethod(m.type)} className="text-stone-400 hover:text-red-600"><X size={12} /></button>
+                    </div>
+                    <Input value={m.label} onChange={(e) => updatePaymentMethod(m.id, "label", e.target.value)} placeholder="Nickname (optional, e.g. Chase Business)" />
+                    <textarea rows={2} value={m.instructions} onChange={(e) => updatePaymentMethod(m.id, "instructions", e.target.value)}
+                      placeholder={def.hint}
+                      className="w-full rounded-lg px-3 py-2 text-xs font-mono" style={{ background: "white", border: "1px solid var(--line)" }} />
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
         <Field label="Notes (optional)" full>
           <textarea rows={3} value={data.notes} onChange={(e) => setData({ ...data, notes: e.target.value })} placeholder="Payment terms, references, anything else the customer should know." className="w-full rounded-xl px-3 py-2 text-sm" style={{ background: "white", border: "1px solid var(--line)" }} />
         </Field>
@@ -4793,12 +5031,61 @@ function CreateInvoiceModal({ open, onClose, onCreated }) {
 function InvoiceDrawer({ invoice, onClose, onChanged }) {
   const { push } = useToast();
   const [items, setItems] = useState([]);
+  const [claims, setClaims] = useState([]);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    if (!invoice?.id) return;
+    if (!invoice?.id) { setItems([]); setClaims([]); return; }
     supabase.from("invoice_items").select("*").eq("invoice_id", invoice.id).order("position").then(({ data }) => setItems(data || []));
+    supabase.from("invoice_payments").select("*").eq("invoice_id", invoice.id).order("claimed_at", { ascending: false }).then(({ data }) => setClaims(data || []));
   }, [invoice?.id]);
+
+  // Realtime: when the customer submits a payment claim, surface it without a refresh.
+  useEffect(() => {
+    if (!invoice?.id) return;
+    const channel = supabase
+      .channel(`invoice-claims-${invoice.id}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "invoice_payments", filter: `invoice_id=eq.${invoice.id}` }, () => {
+        supabase.from("invoice_payments").select("*").eq("invoice_id", invoice.id).order("claimed_at", { ascending: false }).then(({ data }) => setClaims(data || []));
+      })
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [invoice?.id]);
+
+  const confirmClaim = async (claim) => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const { error } = await supabase.from("invoice_payments").update({
+        status: "confirmed",
+        confirmed_at: new Date().toISOString(),
+        confirmed_by: (await supabase.auth.getUser()).data?.user?.id || null,
+      }).eq("id", claim.id);
+      if (error) throw error;
+      push("Payment confirmed — invoice marked paid", "success");
+      onChanged && onChanged();
+    } catch (err) {
+      push(`Couldn't confirm: ${err?.message || err}`, "warn");
+    } finally { setBusy(false); }
+  };
+  const rejectClaim = async (claim) => {
+    const reason = window.prompt(`Reject this payment claim? Tell the customer why:`);
+    if (!reason) return;
+    if (busy) return;
+    setBusy(true);
+    try {
+      const { error } = await supabase.from("invoice_payments").update({
+        status: "rejected",
+        rejected_at: new Date().toISOString(),
+        rejection_reason: reason,
+      }).eq("id", claim.id);
+      if (error) throw error;
+      push("Payment claim rejected", "info");
+      onChanged && onChanged();
+    } catch (err) {
+      push(`Couldn't reject: ${err?.message || err}`, "warn");
+    } finally { setBusy(false); }
+  };
 
   if (!invoice) return null;
   const pill = INVOICE_STATUS_PILL[invoice.status] || INVOICE_STATUS_PILL.draft;
@@ -4890,6 +5177,62 @@ function InvoiceDrawer({ invoice, onClose, onChanged }) {
           <div>
             <Label>Notes</Label>
             <div className="rounded-xl p-3 text-xs leading-relaxed" style={{ background: "var(--bone)", border: "1px solid var(--line)", color: "var(--muted)" }}>{invoice.notes}</div>
+          </div>
+        )}
+        {Array.isArray(invoice.payment_methods) && invoice.payment_methods.length > 0 && (
+          <div>
+            <Label>Payment options offered</Label>
+            <div className="space-y-2">
+              {invoice.payment_methods.map((m) => {
+                const def = PAYMENT_METHOD_BY_TYPE[m.type] || { label: m.type };
+                return (
+                  <div key={m.id || m.type} className="rounded-xl p-3 text-xs" style={{ background: "var(--bone)", border: "1px solid var(--line)" }}>
+                    <div className="flex items-center justify-between">
+                      <span className="font-semibold">{def.label}{m.label ? ` · ${m.label}` : ""}</span>
+                    </div>
+                    {m.instructions && <div className="font-mono mt-1 whitespace-pre-wrap" style={{ color: "var(--muted)" }}>{m.instructions}</div>}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+        {claims.length > 0 && (
+          <div>
+            <Label>Payment claims from customer</Label>
+            <div className="space-y-2">
+              {claims.map((c) => {
+                const def = PAYMENT_METHOD_BY_TYPE[c.method_type] || { label: c.method_type };
+                const pillC = PAYMENT_CLAIM_STATUS_PILL[c.status] || PAYMENT_CLAIM_STATUS_PILL.claimed;
+                return (
+                  <div key={c.id} className="rounded-xl p-3 text-xs space-y-2" style={{ background: "var(--bone)", border: "1px solid var(--line)" }}>
+                    <div className="flex items-center justify-between gap-2 flex-wrap">
+                      <div>
+                        <span className="font-semibold">{def.label}{c.method_label ? ` · ${c.method_label}` : ""}</span>
+                        <div className="font-mono text-[10px] mt-0.5" style={{ color: "var(--muted)" }}>{c.currency} {parseFloat(c.amount || 0).toFixed(2)} · {relativeTime(c.claimed_at)}</div>
+                      </div>
+                      <span className="rounded-full px-2 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-wider" style={{ background: pillC.bg, color: pillC.color }}>{pillC.label}</span>
+                    </div>
+                    {c.reference && <div className="font-mono" style={{ color: "var(--muted)" }}>Reference: <span style={{ color: "var(--ink)" }}>{c.reference}</span></div>}
+                    {c.notes && <div className="font-mono whitespace-pre-wrap" style={{ color: "var(--muted)" }}>"{c.notes}"</div>}
+                    {c.proof_url && (
+                      <a href={safeUrl(c.proof_url)} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 underline font-medium" style={{ color: "var(--emerald)" }}>
+                        <Paperclip size={11} /> View proof of payment
+                      </a>
+                    )}
+                    {c.rejection_reason && c.status === "rejected" && (
+                      <div className="rounded-lg p-2 text-[11px]" style={{ background: "#fee2e2", color: "#991b1b" }}>Reason: {c.rejection_reason}</div>
+                    )}
+                    {c.status === "claimed" && (
+                      <div className="flex gap-2 pt-1">
+                        <PrimaryBtn onClick={() => confirmClaim(c)} disabled={busy}><CheckCircle2 size={12} /> Confirm payment</PrimaryBtn>
+                        <SecondaryBtn onClick={() => rejectClaim(c)} disabled={busy}><X size={12} /> Reject</SecondaryBtn>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
           </div>
         )}
         {invoice.related_quote_id && (
