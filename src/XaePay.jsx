@@ -379,7 +379,7 @@ function AppShell() {
           .eq("email", email),
         supabase
           .from("service_provider_users")
-          .select("id, service_provider_id, role, service_providers(id, slug, display_name, status, has_api, api_status, supported_source_countries, supported_dest_countries, supported_currencies, contact_email, website_url, legal_name)")
+          .select("id, service_provider_id, role, service_providers(id, slug, display_name, status, has_api, api_status, supported_source_countries, supported_dest_countries, supported_currencies, contact_email, website_url, legal_name, xaepay_fee_bps, fx_margin_bps, fixed_fee_minor)")
           .eq("auth_user_id", auth.user.id),
       ]);
       if (cancelled) return;
