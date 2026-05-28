@@ -371,6 +371,34 @@ function AppShell() {
     let cancelled = false;
     (async () => {
       const email = auth.user.email;
+      // Before checking memberships, auto-accept any pending provider invites
+      // matching this email. Idempotent (unique constraint on the join table).
+      // This is what closes the invite loop — recipient signs in, lands as a
+      // provider user immediately, with no manual SQL.
+      try {
+        const { data: pendingInvites } = await supabase
+          .from("service_provider_invites")
+          .select("id, service_provider_id, role, invited_by, invited_at")
+          .eq("email", email)
+          .eq("status", "pending");
+        if (pendingInvites && pendingInvites.length > 0) {
+          for (const inv of pendingInvites) {
+            await supabase.from("service_provider_users").insert({
+              service_provider_id: inv.service_provider_id,
+              auth_user_id: auth.user.id,
+              role: inv.role,
+              invited_by: inv.invited_by,
+              invited_at: inv.invited_at,
+              joined_at: new Date().toISOString(),
+            }).then(() => {
+              return supabase.from("service_provider_invites")
+                .update({ status: "accepted", accepted_at: new Date().toISOString(), accepted_by: auth.user.id })
+                .eq("id", inv.id);
+            }).catch(() => {});
+          }
+        }
+      } catch { /* best-effort; don't block sign-in */ }
+
       // Check provider membership first since it takes routing precedence.
       const [{ data: customerData }, { data: spuData }] = await Promise.all([
         supabase
@@ -5402,6 +5430,7 @@ function ProviderSettings({ provider }) {
   const sources = Array.isArray(provider.supported_source_countries) ? provider.supported_source_countries : [];
   const dests = Array.isArray(provider.supported_dest_countries) ? provider.supported_dest_countries : [];
   const ccys = Array.isArray(provider.supported_currencies) ? provider.supported_currencies : [];
+
   return (
     <div className="space-y-6">
       <Card>
@@ -5433,7 +5462,161 @@ function ProviderSettings({ provider }) {
         </div>
         <p className="text-[11px] mt-3" style={{ color: "var(--muted)" }}>Coverage changes are managed by XaePay admin. Reach out to update.</p>
       </Card>
+      <ProviderTeamSection provider={provider} />
     </div>
+  );
+}
+
+function ProviderTeamSection({ provider }) {
+  const { push } = useToast();
+  const auth = useAuth();
+  const [members, setMembers] = useState([]);
+  const [invites, setInvites] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [inviteEmail, setInviteEmail] = useState("");
+  const [inviteRole, setInviteRole] = useState("member");
+  const [submitting, setSubmitting] = useState(false);
+
+  const fetch = async () => {
+    if (!auth.user) return;
+    setLoading(true);
+    const [{ data: m }, { data: i }] = await Promise.all([
+      supabase.from("service_provider_users").select("id, auth_user_id, role, invited_at, joined_at").eq("service_provider_id", provider.id),
+      supabase.from("service_provider_invites").select("id, email, role, status, invited_at, expires_at, accepted_at").eq("service_provider_id", provider.id).order("invited_at", { ascending: false }),
+    ]);
+    setMembers(m || []);
+    setInvites(i || []);
+    setLoading(false);
+  };
+  useEffect(() => { fetch(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [provider.id, auth.user?.id]);
+
+  // Determine the caller's role on this provider so we can gate the invite/revoke buttons.
+  const me = members.find((m) => m.auth_user_id === auth.user?.id);
+  const isAdmin = me?.role === "admin";
+
+  const sendInvite = async (e) => {
+    e?.preventDefault?.();
+    const email = (inviteEmail || "").trim().toLowerCase();
+    if (!email || submitting) return;
+    if (!email.includes("@")) { push("Enter a valid email", "warn"); return; }
+    setSubmitting(true);
+    try {
+      const { data: row, error } = await supabase.from("service_provider_invites").insert({
+        service_provider_id: provider.id,
+        email,
+        role: inviteRole,
+        invited_by: auth.user.id,
+        status: "pending",
+      }).select("*").single();
+      if (error) throw error;
+      // Best-effort: send the invite email. They sign in via the normal magic
+      // link and get auto-added to service_provider_users on first sign-in.
+      const html = `<!doctype html><html><body style="font-family:system-ui,sans-serif;background:#fcfbf7;margin:0;padding:24px;"><div style="max-width:520px;margin:0 auto;background:white;border:1px solid #e5e7eb;border-radius:16px;padding:32px;"><h2 style="margin:0 0 8px;font-size:22px;color:#0a0b0d;">You've been invited to ${provider.display_name}</h2><p style="color:#6b7280;font-size:14px;margin:0 0 20px;">A team admin has invited you to join the ${provider.display_name} service-provider portal on XaePay. You'll review KYC, see routed transactions, and manage your team's billing.</p><p style="text-align:center;margin:24px 0 8px;"><a href="https://xaepay.com/" style="display:inline-block;background:#0a0b0d;color:#d4f570;padding:12px 28px;border-radius:12px;text-decoration:none;font-weight:600;font-size:14px;">Sign in with this email</a></p><p style="color:#9ca3af;font-size:11px;text-align:center;margin:20px 0 0;">Use <strong>${email}</strong> when signing in — we'll add you to ${provider.display_name} automatically. Invite expires in 14 days.</p></div></body></html>`;
+      sendEmail({ to: email, subject: `You've been invited to ${provider.display_name} on XaePay`, html, text: `You've been invited to ${provider.display_name} on XaePay.\nSign in at https://xaepay.com/ with ${email}.\nInvite expires in 14 days.` }).catch(() => {});
+      push(`Invite sent to ${email}`, "success");
+      setInviteEmail("");
+      setInviteRole("member");
+      fetch();
+    } catch (err) {
+      const msg = (err?.message || "").includes("duplicate")
+        ? `${email} has already been invited (or is already a member)`
+        : (err?.message || String(err));
+      push(`Couldn't send invite: ${msg}`, "warn");
+    } finally { setSubmitting(false); }
+  };
+
+  const revoke = async (inviteId) => {
+    if (!window.confirm("Revoke this invite?")) return;
+    const { error } = await supabase.from("service_provider_invites").update({ status: "revoked" }).eq("id", inviteId);
+    if (error) push(`Couldn't revoke: ${error.message}`, "warn");
+    else { push("Invite revoked", "info"); fetch(); }
+  };
+
+  const pending = invites.filter((i) => i.status === "pending");
+  const history = invites.filter((i) => i.status !== "pending");
+
+  return (
+    <Card>
+      <h3 className="font-display text-lg font-semibold mb-3">Team</h3>
+      <p className="text-sm mb-4" style={{ color: "var(--muted)" }}>People with access to the {provider.display_name} portal. Admins can invite + revoke; members can review KYC + view billing.</p>
+
+      {isAdmin && (
+        <form onSubmit={sendInvite} className="rounded-xl p-3 space-y-2 mb-4" style={{ background: "var(--bone)", border: "1px solid var(--line)" }}>
+          <Label>Invite a team member</Label>
+          <div className="grid gap-2 sm:grid-cols-[1fr_120px_auto]">
+            <Input type="email" value={inviteEmail} onChange={(e) => setInviteEmail(e.target.value)} placeholder="teammate@cedar.money" />
+            <Select value={inviteRole} onChange={(e) => setInviteRole(e.target.value)}>
+              <option value="member">Member</option>
+              <option value="admin">Admin</option>
+              <option value="viewer">Viewer</option>
+            </Select>
+            <PrimaryBtn type="submit" disabled={submitting || !inviteEmail}>{submitting ? <><Loader2 size={12} className="animate-spin" /> Sending…</> : <>Invite <ArrowRight size={12} /></>}</PrimaryBtn>
+          </div>
+        </form>
+      )}
+
+      <div className="mb-4">
+        <Label>Active members ({members.length})</Label>
+        <div className="rounded-lg overflow-hidden" style={{ border: "1px solid var(--line)" }}>
+          {members.length === 0 ? (
+            <div className="p-4 text-xs text-center" style={{ color: "var(--muted)" }}>No members yet.</div>
+          ) : (
+            <table className="w-full text-sm">
+              <tbody>
+                {members.map((m) => (
+                  <tr key={m.id} style={{ borderBottom: "1px solid var(--line)" }}>
+                    <td className="px-3 py-2 font-mono text-xs">{m.auth_user_id === auth.user?.id ? "You" : m.auth_user_id.slice(0, 8) + "…"}</td>
+                    <td className="px-3 py-2"><span className="rounded-full px-2 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-wider" style={{ background: m.role === "admin" ? "var(--lime)" : "var(--bone-2)", color: "var(--ink)" }}>{m.role}</span></td>
+                    <td className="px-3 py-2 text-xs text-right" style={{ color: "var(--muted)" }}>{m.joined_at ? `joined ${relativeTime(m.joined_at)}` : ""}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </div>
+
+      {pending.length > 0 && (
+        <div className="mb-4">
+          <Label>Pending invites ({pending.length})</Label>
+          <div className="space-y-2">
+            {pending.map((i) => (
+              <div key={i.id} className="rounded-lg p-2 flex items-center justify-between gap-2" style={{ background: "var(--bone)", border: "1px solid var(--line)" }}>
+                <div className="min-w-0">
+                  <div className="text-sm font-medium truncate">{i.email}</div>
+                  <div className="font-mono text-[10px]" style={{ color: "var(--muted)" }}>{i.role} · invited {relativeTime(i.invited_at)} · expires {relativeTime(i.expires_at)}</div>
+                </div>
+                {isAdmin && <SecondaryBtn onClick={() => revoke(i.id)}><X size={12} /> Revoke</SecondaryBtn>}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {history.length > 0 && (
+        <div>
+          <Label>Invite history</Label>
+          <div className="rounded-lg overflow-hidden" style={{ border: "1px solid var(--line)" }}>
+            <table className="w-full text-sm">
+              <tbody>
+                {history.slice(0, 10).map((i) => (
+                  <tr key={i.id} style={{ borderBottom: "1px solid var(--line)" }}>
+                    <td className="px-3 py-2 truncate">{i.email}</td>
+                    <td className="px-3 py-2 font-mono text-xs" style={{ color: "var(--muted)" }}>{i.role}</td>
+                    <td className="px-3 py-2 text-xs"><span className="rounded-full px-2 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-wider" style={i.status === "accepted" ? { background: "#d1fae5", color: "#065f46" } : { background: "#fee2e2", color: "#991b1b" }}>{i.status}</span></td>
+                    <td className="px-3 py-2 text-xs text-right" style={{ color: "var(--muted)" }}>{relativeTime(i.accepted_at || i.invited_at)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {!isAdmin && pending.length === 0 && history.length === 0 && (
+        <p className="text-[11px]" style={{ color: "var(--muted)" }}>Only admins can invite new team members.</p>
+      )}
+    </Card>
   );
 }
 
