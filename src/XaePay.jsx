@@ -9381,6 +9381,28 @@ function cedarRequestLabel(status) {
 }
 
 // Map a Supabase customers row to the shape the table expects
+// Small badge surfacing the service provider's KYC verdict on a customer or
+// recipient. Operators see this so they know whether the routing partner has
+// approved before pushing a transaction. Renders nothing if the provider
+// hasn't reviewed yet (status is null).
+function ProviderVerdictPill({ status, reason, reviewedAt }) {
+  if (!status) return null;
+  const conf = status === "approved"
+    ? { label: "Provider ✓ approved", bg: "#d1fae5", color: "#065f46" }
+    : status === "rejected"
+      ? { label: "Provider ✗ rejected", bg: "#fee2e2", color: "#991b1b" }
+      : { label: status, bg: "#f3f4f6", color: "#6b7280" };
+  const title = [reason, reviewedAt ? `reviewed ${relativeTime(reviewedAt)}` : null].filter(Boolean).join(" · ");
+  return (
+    <span
+      title={title || undefined}
+      className="rounded-full px-2 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-wider whitespace-nowrap"
+      style={{ background: conf.bg, color: conf.color }}>
+      {conf.label}
+    </span>
+  );
+}
+
 function dbCustomerToUi(row) {
   return {
     id: row.id,
@@ -9408,6 +9430,10 @@ function dbCustomerToUi(row) {
     cedarIndustry: row.cedar_industry,
     cedarLocalRegNumber: row.cedar_local_reg_number,
     cedarSubmittedAt: row.cedar_submitted_at,
+    // V3.3+ — service provider's verdict on this customer's KYC
+    providerKycStatus: row.provider_kyc_status,
+    providerKycReason: row.provider_kyc_reason,
+    providerKycReviewedAt: row.provider_kyc_reviewed_at,
   };
 }
 
@@ -9504,7 +9530,12 @@ function BDCCustomers({ addedCustomers = [], onAddCustomer, jumpToCustomerId, on
                   <tr key={c.id || c.name} onClick={() => setSelected(c)} className="cursor-pointer transition hover:bg-[color:var(--bone)]" style={{ borderBottom: "1px solid var(--line)" }}>
                     <td className="px-4 py-3.5 font-medium">{c.name}</td>
                     <td className="px-4 py-3.5"><span className="rounded-full px-2 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-wider" style={c.tier === "Corporate" ? { background: "var(--emerald)", color: "var(--lime)" } : c.tier === "SME" ? { background: "#fef3c7", color: "#92400e" } : { background: "var(--bone-2)", color: "var(--muted)" }}>{c.tier}</span></td>
-                    <td className="px-4 py-3.5"><span className="rounded-full px-2 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-wider whitespace-nowrap" style={{ background: kyc.bg, color: kyc.color }}>{kyc.label}</span></td>
+                    <td className="px-4 py-3.5">
+                      <div className="flex flex-col gap-1">
+                        <span className="rounded-full px-2 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-wider whitespace-nowrap" style={{ background: kyc.bg, color: kyc.color }}>{kyc.label}</span>
+                        <ProviderVerdictPill status={c.providerKycStatus} reason={c.providerKycReason} reviewedAt={c.providerKycReviewedAt} />
+                      </div>
+                    </td>
                     <td className="px-4 py-3.5 text-right font-mono font-semibold">${c.volume.toLocaleString()}</td>
                     <td className="px-4 py-3.5 text-right font-mono">{c.count}</td>
                     <td className="px-4 py-3.5"><ChevronRight size={14} style={{ color: "var(--muted)" }} /></td>
@@ -9572,6 +9603,13 @@ function dbRecipientToUi(row) {
     cedarKycStatus: row.cedar_kyc_status,
     cedarLastError: row.cedar_last_error,
     addedAt: row.created_at,
+    // V3.3+ — service provider's verdict on this recipient's KYC
+    providerKycStatus: row.provider_kyc_status,
+    providerKycReason: row.provider_kyc_reason,
+    providerKycReviewedAt: row.provider_kyc_reviewed_at,
+    recipientType: row.recipient_type,
+    fullName: row.full_name,
+    addedByCustomerId: row.added_by_customer_id,
   };
 }
 
@@ -9707,7 +9745,10 @@ function BDCRecipients() {
                     </td>
                     <td className="px-4 py-3.5 text-xs" style={{ color: "var(--muted)" }}>{industry?.label || r.industry}</td>
                     <td className="px-4 py-3.5">
-                      <span className="rounded-full px-2 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-wider" style={{ background: k.bg, color: k.color }}>{k.label}</span>
+                      <div className="flex flex-col gap-1">
+                        <span className="rounded-full px-2 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-wider" style={{ background: k.bg, color: k.color }}>{k.label}</span>
+                        <ProviderVerdictPill status={r.providerKycStatus} reason={r.providerKycReason} reviewedAt={r.providerKycReviewedAt} />
+                      </div>
                       {r.cedarLastError && <div className="font-mono text-[9px] mt-1 truncate max-w-[200px]" style={{ color: "#991b1b" }} title={r.cedarLastError}>{r.cedarLastError}</div>}
                     </td>
                     <td className="px-4 py-3.5 font-mono text-xs" style={{ color: "var(--muted)" }}>{r.cedarBusinessId || "—"}</td>
