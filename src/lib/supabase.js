@@ -326,6 +326,71 @@ export async function uploadInvoicePdf(invoiceId, doc) {
   }
 }
 
+// =============================================================================
+// Routing engine — pick the best service provider for a given quote draft.
+// Inputs are loose so this can be called from any quote-create path. Returns
+// the provider id or null if no eligible provider is configured. The caller
+// should accept null gracefully (quote saved without a provider, operator
+// assigns manually later).
+//
+// V3.3 logic is "first eligible provider, cheapest first." When more providers
+// are onboarded, this will grow into a real rules engine (corridor coverage,
+// daily caps, FX rate freshness, etc.).
+// =============================================================================
+
+const COUNTRY_NAME_TO_ISO = {
+  "Nigeria": "NG",
+  "China": "CN",
+  "USA": "US",
+  "United States": "US",
+  "UK": "GB",
+  "United Kingdom": "GB",
+  "Germany": "DE",
+  "UAE": "AE",
+  "India": "IN",
+  "Türkiye": "TR",
+  "Turkey": "TR",
+  "Canada": "CA",
+  "Australia": "AU",
+  "Ghana": "GH",
+  "Kenya": "KE",
+  "South Africa": "ZA",
+};
+export function countryNameToIso(name) {
+  if (!name) return null;
+  return COUNTRY_NAME_TO_ISO[name] || (name.length === 2 ? name.toUpperCase() : null);
+}
+
+export async function pickServiceProviderForQuote({ sourceName, destName, currency }) {
+  const destIso = countryNameToIso(destName);
+  const sourceIso = countryNameToIso(sourceName);
+  const { data, error } = await supabase
+    .from("service_providers")
+    .select("id, supported_source_countries, supported_dest_countries, supported_currencies, fx_margin_bps, fixed_fee_minor")
+    .eq("status", "active");
+  if (error || !data) return null;
+  const eligible = data.filter((p) => {
+    const sources = Array.isArray(p.supported_source_countries) ? p.supported_source_countries : [];
+    const dests = Array.isArray(p.supported_dest_countries) ? p.supported_dest_countries : [];
+    const ccys = Array.isArray(p.supported_currencies) ? p.supported_currencies : [];
+    if (destIso && dests.length > 0 && !dests.includes(destIso)) return false;
+    if (sourceIso && sources.length > 0 && !sources.includes(sourceIso)) return false;
+    if (currency && ccys.length > 0 && !ccys.includes(currency)) return false;
+    return true;
+  });
+  // Cheapest-first ordering: lowest fx_margin_bps wins, then fixed_fee_minor.
+  // Nulls sort last so configured providers beat unconfigured ones.
+  eligible.sort((a, b) => {
+    const am = a.fx_margin_bps ?? 999999;
+    const bm = b.fx_margin_bps ?? 999999;
+    if (am !== bm) return am - bm;
+    const af = a.fixed_fee_minor ?? 999999;
+    const bf = b.fixed_fee_minor ?? 999999;
+    return af - bf;
+  });
+  return eligible[0]?.id || null;
+}
+
 // Upload an operator-issued recipient receipt PDF. Stored under
 // recipient-receipts/<quote_id>/ in the same private bucket as invoice
 // receipts. 90-day signed URL.

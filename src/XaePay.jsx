@@ -7,7 +7,7 @@ import {
   ArrowLeft, ArrowLeftRight, Loader2, Layers, TrendingUp, Wallet, DollarSign, Mail,
   RefreshCw, ShieldCheck, Paperclip,
 } from "lucide-react";
-import { supabase, sendWhatsAppText, sendWhatsAppTemplate, fetchCedarRate, submitCustomerToCedar, submitRecipientToCedar, submitReceiverAccountToCedar, submitCedarTransaction, approveCedarQuote, confirmCedarDeposit, cancelCedarTransaction, uploadCedarFile, uploadFileBoth, uploadInvoicePdf, uploadInvoicePaymentProof, uploadReceiptPdf, uploadRecipientReceiptPdf, runComplianceReview, runComplianceWatchman, submitDocumentToCedar, sendEmail, safeUrl, logAuditEvent } from "./lib/supabase.js";
+import { supabase, sendWhatsAppText, sendWhatsAppTemplate, fetchCedarRate, submitCustomerToCedar, submitRecipientToCedar, submitReceiverAccountToCedar, submitCedarTransaction, approveCedarQuote, confirmCedarDeposit, cancelCedarTransaction, uploadCedarFile, uploadFileBoth, uploadInvoicePdf, uploadInvoicePaymentProof, uploadReceiptPdf, uploadRecipientReceiptPdf, pickServiceProviderForQuote, runComplianceReview, runComplianceWatchman, submitDocumentToCedar, sendEmail, safeUrl, logAuditEvent } from "./lib/supabase.js";
 import { generateQuotePdf, uploadQuotePdf, downloadQuotePdf } from "./lib/pdf.js";
 import { generateCompliancePackPdf, downloadCompliancePackPdf, generateTransactionConfirmationPdf, downloadTransactionConfirmationPdf, generateInvoicePdf, downloadInvoicePdf, generateReceiptPdf, downloadReceiptPdf, generateRecipientReceiptPdf, downloadRecipientReceiptPdf } from "./lib/pdf-doc.js";
 import { useAuth } from "./lib/auth.js";
@@ -3620,6 +3620,14 @@ function CustomerRequestQuoteModal({ open, onClose, customer, onCreated }) {
         recipientDisplay = pick?.full_name || pick?.legal_business_name || "Recipient";
       }
 
+      // Pick the rail before insert so the quote is auditable as routed-to-X
+      // from the moment it exists. Falls back to null if no provider matches —
+      // operator can assign manually later.
+      const providerId = await pickServiceProviderForQuote({
+        sourceName: isInbound ? data.country : "Nigeria",
+        destName: isInbound ? "Nigeria" : data.country,
+        currency: data.currency,
+      });
       const patch = {
         bdc_user_id: customer.bdc_user_id,
         bdc_name: customer.bdc_name || "XaeccoX",
@@ -3633,6 +3641,7 @@ function CustomerRequestQuoteModal({ open, onClose, customer, onCreated }) {
         destination: isInbound ? "Nigeria" : data.country,
         status: "request_pending",
         purpose_note: data.purposeNote || null,
+        service_provider_id: providerId,
         ...(data.invoiceUrl ? {
           invoice_url: data.invoiceUrl,
           invoice_uploaded_at: new Date().toISOString(),
@@ -3986,6 +3995,7 @@ function CustomerInvoiceDrawer({ invoice, customer, onClose, onPaid }) {
     if (submitting || !customer?.id || !customer?.bdc_user_id) return;
     setSubmitting(true);
     try {
+      const providerId = await pickServiceProviderForQuote({ destName: "Nigeria", currency: ccy });
       const { data: row, error } = await supabase.from("quotes").insert({
         bdc_user_id: customer.bdc_user_id,
         bdc_name: invoice.operator_name || customer.bdc_name || "XaeccoX",
@@ -3998,6 +4008,7 @@ function CustomerInvoiceDrawer({ invoice, customer, onClose, onPaid }) {
         destination: "Nigeria",
         status: "request_pending",
         cedar_purpose: "PAYMENT_OF_SERVICES",
+        service_provider_id: providerId,
       }).select("*").single();
       if (error) throw error;
       await supabase.from("invoices").update({ related_quote_id: row.id }).eq("id", invoice.id);
@@ -4799,7 +4810,7 @@ function ProviderDashboard({ provider }) {
     const now = new Date();
     const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
     const weekStart = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString();
-    const [{ data: todayRows }, { data: weekRows }, { data: totalRows }, { data: recentRows }] = await Promise.all([
+    const [{ data: todayRows }, { data: weekRows }, { data: totalRows }, { data: recentRows }, { data: qIds }] = await Promise.all([
       supabase.from("quotes").select("id, amount").gte("created_at", todayStart).eq("service_provider_id", provider.id),
       supabase.from("quotes").select("id, amount").gte("created_at", weekStart).eq("service_provider_id", provider.id),
       supabase.from("quotes").select("id, amount").eq("service_provider_id", provider.id),
@@ -4808,13 +4819,22 @@ function ProviderDashboard({ provider }) {
         .eq("service_provider_id", provider.id)
         .order("created_at", { ascending: false })
         .limit(8),
+      supabase.from("quotes").select("customer_id, recipient_id").eq("service_provider_id", provider.id),
     ]);
     const sumAmt = (rows) => (rows || []).reduce((s, r) => s + parseFloat(r.amount || 0), 0);
+    // Count distinct customers + recipients tied to this provider's quotes that
+    // don't yet have a provider verdict — matches the KYC queue filter.
+    const cIds = Array.from(new Set((qIds || []).map((q) => q.customer_id).filter(Boolean)));
+    const rIds = Array.from(new Set((qIds || []).map((q) => q.recipient_id).filter(Boolean)));
+    const [{ data: pCustomers }, { data: pRecipients }] = await Promise.all([
+      cIds.length > 0 ? supabase.from("customers").select("id").in("id", cIds).is("provider_kyc_status", null) : Promise.resolve({ data: [] }),
+      rIds.length > 0 ? supabase.from("recipients").select("id").in("id", rIds).is("provider_kyc_status", null) : Promise.resolve({ data: [] }),
+    ]);
     setStats({
       today: sumAmt(todayRows),
       week: sumAmt(weekRows),
       total: sumAmt(totalRows),
-      pendingKyc: 0, // wired in V3.3
+      pendingKyc: (pCustomers?.length || 0) + (pRecipients?.length || 0),
     });
     setRecent(recentRows || []);
     setLoading(false);
@@ -4984,14 +5004,233 @@ function ProviderTransactions({ provider }) {
   );
 }
 
-// V3.2 stubs — actual functionality lands in V3.3
+// =============================================================================
+// Provider KYC queue — V3.3 functional.
+// Lists customers + recipients tied to quotes routed through this provider that
+// don't yet have a provider_kyc_status set. Each row opens a review drawer with
+// the KYC document bundle XaePay assembled. Provider hits Approve or Reject;
+// the verdict gets written to provider_kyc_* fields. Operator-side surfaces the
+// verdict in the next refresh.
+// =============================================================================
+
+const PROVIDER_KYC_PILL = {
+  pending:  { label: "Pending", bg: "#fef3c7", color: "#92400e" },
+  approved: { label: "Approved", bg: "#d1fae5", color: "#065f46" },
+  rejected: { label: "Rejected", bg: "#fee2e2", color: "#991b1b" },
+};
+
 function ProviderKYCQueue({ provider }) {
+  const { push } = useToast();
+  const auth = useAuth();
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [showAll, setShowAll] = useState(false);  // include already-reviewed
+  const [selected, setSelected] = useState(null);
+
+  const fetchQueue = async () => {
+    if (!auth.user) return;
+    setLoading(true);
+    // Pull the quote ids routed through this provider, then derive the customer + recipient sets.
+    const { data: quoteRows } = await supabase
+      .from("quotes")
+      .select("id, customer_id, recipient_id")
+      .eq("service_provider_id", provider.id);
+    const customerIds = Array.from(new Set((quoteRows || []).map((q) => q.customer_id).filter(Boolean)));
+    const recipientIds = Array.from(new Set((quoteRows || []).map((q) => q.recipient_id).filter(Boolean)));
+    const [{ data: customers }, { data: recipients }] = await Promise.all([
+      customerIds.length > 0
+        ? supabase.from("customers")
+            .select("id, name, business_name, email, phone, type, kyc_status, kyc_tier, provider_kyc_status, provider_kyc_reason, provider_kyc_reviewed_at, bdc_name, created_at")
+            .in("id", customerIds)
+        : Promise.resolve({ data: [] }),
+      recipientIds.length > 0
+        ? supabase.from("recipients")
+            .select("id, recipient_type, full_name, legal_business_name, bank_name, bank_account_number, contact_phone, photo_id_url, business_invoice_url, provider_kyc_status, provider_kyc_reason, provider_kyc_reviewed_at, added_by_customer_id, created_at")
+            .in("id", recipientIds)
+        : Promise.resolve({ data: [] }),
+    ]);
+    const merged = [
+      ...(customers || []).map((c) => ({ kind: "customer", entity: c })),
+      ...(recipients || []).map((r) => ({ kind: "recipient", entity: r })),
+    ];
+    const filtered = showAll ? merged : merged.filter((m) => !m.entity.provider_kyc_status);
+    filtered.sort((a, b) => new Date(b.entity.created_at) - new Date(a.entity.created_at));
+    setItems(filtered);
+    setLoading(false);
+  };
+  useEffect(() => { fetchQueue(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [provider.id, auth.user?.id, showAll]);
+
   return (
-    <div className="rounded-xl p-8 text-center" style={{ background: "var(--bone)", border: "1px dashed var(--line)" }}>
-      <ShieldCheck size={28} className="mx-auto mb-3" style={{ color: "var(--muted)" }} />
-      <h3 className="font-display text-lg font-semibold">KYC queue · coming in V3.3</h3>
-      <p className="mt-1 text-sm max-w-md mx-auto" style={{ color: "var(--muted)" }}>Once routing is live, customers and recipients waiting for {provider.display_name}'s KYC approval will land in this queue. You'll review the document bundle XaePay assembled and approve or request more info.</p>
+    <div className="space-y-4">
+      <Card padding="none">
+        <div className="flex items-center justify-between p-4 flex-wrap gap-2" style={{ borderBottom: "1px solid var(--line)" }}>
+          <div className="font-semibold text-sm">{loading ? "Loading…" : `${items.length} ${showAll ? "in queue" : "awaiting review"}`}</div>
+          <div className="flex gap-2">
+            <SecondaryBtn onClick={() => setShowAll((v) => !v)}>{showAll ? "Show pending only" : "Show all"}</SecondaryBtn>
+            <SecondaryBtn onClick={fetchQueue} disabled={loading}><RefreshCw size={14} className={loading ? "animate-spin" : ""} /> Refresh</SecondaryBtn>
+          </div>
+        </div>
+        {items.length === 0 ? (
+          <div className="p-12 text-center">
+            <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full" style={{ background: "var(--bone-2)" }}><ShieldCheck size={20} style={{ color: "var(--muted)" }} /></div>
+            <h3 className="font-display text-lg font-semibold">{showAll ? "No KYC records yet" : "Inbox clear"}</h3>
+            <p className="mt-1.5 text-sm" style={{ color: "var(--muted)" }}>{showAll ? "Customers and recipients tied to quotes routed through you will show up here." : "All reviewed. Toggle 'Show all' to see your past verdicts."}</p>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr style={{ background: "var(--bone)", borderBottom: "1px solid var(--line)" }}>
+                  {["Type", "Name", "Submitted by", "Submitted", "Verdict"].map((h) => (
+                    <th key={h} className="px-4 py-3 text-left font-mono text-[10px] font-semibold uppercase tracking-wider" style={{ color: "var(--muted)" }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {items.map((it) => {
+                  const e = it.entity;
+                  const name = it.kind === "customer" ? (e.business_name || e.name || "Unnamed") : (e.full_name || e.legal_business_name || "Unnamed");
+                  const pill = PROVIDER_KYC_PILL[e.provider_kyc_status] || PROVIDER_KYC_PILL.pending;
+                  const submittedBy = it.kind === "customer" ? (e.bdc_name || "—") : (e.added_by_customer_id ? "Customer-added" : "Operator");
+                  return (
+                    <tr key={`${it.kind}-${e.id}`} onClick={() => setSelected(it)} className="cursor-pointer hover:bg-[color:var(--bone)]" style={{ borderBottom: "1px solid var(--line)" }}>
+                      <td className="px-4 py-3 capitalize">{it.kind}</td>
+                      <td className="px-4 py-3 font-medium">{name}</td>
+                      <td className="px-4 py-3 text-xs" style={{ color: "var(--muted)" }}>{submittedBy}</td>
+                      <td className="px-4 py-3 font-mono text-xs" style={{ color: "var(--muted)" }}>{relativeTime(e.created_at)}</td>
+                      <td className="px-4 py-3"><span className="rounded-full px-2 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-wider" style={{ background: pill.bg, color: pill.color }}>{pill.label}</span></td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Card>
+      <ProviderKYCReviewDrawer item={selected} onClose={() => setSelected(null)} onChanged={() => { setSelected(null); fetchQueue(); }} />
     </div>
+  );
+}
+
+function ProviderKYCReviewDrawer({ item, onClose, onChanged }) {
+  const { push } = useToast();
+  const [docs, setDocs] = useState([]);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    if (!item || item.kind !== "customer") { setDocs([]); return; }
+    supabase.from("customer_documents")
+      .select("id, doc_type, file_name, storage_path, issued_at, expires_at, created_at")
+      .eq("customer_id", item.entity.id)
+      .order("created_at", { ascending: false })
+      .then(({ data }) => setDocs(data || []));
+  }, [item]);
+  if (!item) return null;
+  const e = item.entity;
+  const isCustomer = item.kind === "customer";
+  const displayName = isCustomer ? (e.business_name || e.name || "Unnamed customer") : (e.full_name || e.legal_business_name || "Unnamed recipient");
+  const pill = PROVIDER_KYC_PILL[e.provider_kyc_status] || PROVIDER_KYC_PILL.pending;
+
+  const writeVerdict = async (status, reason) => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const patch = {
+        provider_kyc_status: status,
+        provider_kyc_reason: reason || null,
+        provider_kyc_reviewed_at: new Date().toISOString(),
+        provider_kyc_reviewed_by: (await supabase.auth.getUser()).data?.user?.id || null,
+      };
+      const table = isCustomer ? "customers" : "recipients";
+      const { error } = await supabase.from(table).update(patch).eq("id", e.id);
+      if (error) throw error;
+      push(`${displayName} ${status === "approved" ? "approved" : "rejected"}`, status === "approved" ? "success" : "info");
+      onChanged && onChanged();
+    } catch (err) {
+      push(`Couldn't save verdict: ${err?.message || err}`, "warn");
+    } finally { setBusy(false); }
+  };
+  const onApprove = () => writeVerdict("approved", null);
+  const onReject = () => {
+    const reason = window.prompt(`Reject ${displayName}? Tell the operator why so they can fix it:`);
+    if (!reason) return;
+    writeVerdict("rejected", reason);
+  };
+  const openDoc = async (doc) => {
+    const { data } = await supabase.storage.from("kyc-docs").createSignedUrl(doc.storage_path, 600);
+    if (data?.signedUrl) window.open(data.signedUrl, "_blank");
+    else push("Couldn't open document", "warn");
+  };
+
+  return (
+    <Drawer open={!!item} onClose={onClose} title={displayName}>
+      <div className="space-y-4">
+        <div className="flex items-center justify-between gap-2">
+          <span className="rounded-full px-2 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-wider" style={{ background: pill.bg, color: pill.color }}>{pill.label}</span>
+          {e.provider_kyc_reviewed_at && (
+            <span className="font-mono text-[10px]" style={{ color: "var(--muted)" }}>Reviewed {relativeTime(e.provider_kyc_reviewed_at)}</span>
+          )}
+        </div>
+        <div>
+          <Label>Identity</Label>
+          <div className="rounded-xl p-3 text-xs space-y-1" style={{ background: "var(--bone)", border: "1px solid var(--line)" }}>
+            <div className="flex justify-between"><span style={{ color: "var(--muted)" }}>Type</span><span className="capitalize">{item.kind}{isCustomer ? ` · ${e.type || "individual"}` : ` · ${e.recipient_type || "business"}`}</span></div>
+            {isCustomer && e.business_name && <div className="flex justify-between"><span style={{ color: "var(--muted)" }}>Business</span><span>{e.business_name}</span></div>}
+            {isCustomer && e.name && <div className="flex justify-between"><span style={{ color: "var(--muted)" }}>Contact</span><span>{e.name}</span></div>}
+            {!isCustomer && (e.full_name || e.legal_business_name) && <div className="flex justify-between"><span style={{ color: "var(--muted)" }}>Name</span><span>{e.full_name || e.legal_business_name}</span></div>}
+            {(e.email) && <div className="flex justify-between"><span style={{ color: "var(--muted)" }}>Email</span><span className="font-mono text-[10px]">{e.email}</span></div>}
+            {(e.phone || e.contact_phone) && <div className="flex justify-between"><span style={{ color: "var(--muted)" }}>Phone</span><span className="font-mono text-[10px]">{e.phone || e.contact_phone}</span></div>}
+            {!isCustomer && e.bank_name && <div className="flex justify-between"><span style={{ color: "var(--muted)" }}>Bank</span><span>{e.bank_name}</span></div>}
+            {!isCustomer && e.bank_account_number && <div className="flex justify-between"><span style={{ color: "var(--muted)" }}>Account</span><span className="font-mono text-[10px]">{e.bank_account_number}</span></div>}
+            {isCustomer && e.bdc_name && <div className="flex justify-between"><span style={{ color: "var(--muted)" }}>Submitted by operator</span><span>{e.bdc_name}</span></div>}
+          </div>
+        </div>
+
+        {/* Documents — for customers, pull from customer_documents (KYC docs uploaded by the operator).
+            For recipients, the customer attached either a photo_id or a business_invoice. */}
+        <div>
+          <Label>Documents</Label>
+          {isCustomer ? (
+            docs.length === 0 ? (
+              <div className="rounded-lg p-3 text-xs" style={{ background: "var(--bone)", border: "1px dashed var(--line)", color: "var(--muted)" }}>No documents uploaded yet by the operator. You may want to reject and request more info.</div>
+            ) : (
+              <div className="space-y-2">
+                {docs.map((d) => (
+                  <button key={d.id} type="button" onClick={() => openDoc(d)} className="w-full rounded-lg p-2 text-xs text-left transition hover:shadow-sm flex items-center justify-between" style={{ background: "var(--bone)", border: "1px solid var(--line)" }}>
+                    <div className="flex items-center gap-2 min-w-0">
+                      <FileText size={12} style={{ color: "var(--muted)" }} />
+                      <span className="font-medium">{d.doc_type}</span>
+                      <span className="font-mono text-[10px] truncate" style={{ color: "var(--muted)" }}>{d.file_name}</span>
+                    </div>
+                    <Download size={12} style={{ color: "var(--emerald)" }} />
+                  </button>
+                ))}
+              </div>
+            )
+          ) : (
+            (e.photo_id_url || e.business_invoice_url) ? (
+              <a href={safeUrl(e.photo_id_url || e.business_invoice_url)} target="_blank" rel="noreferrer" className="rounded-lg p-2 text-xs flex items-center justify-between" style={{ background: "var(--bone)", border: "1px solid var(--line)" }}>
+                <div className="flex items-center gap-2"><Paperclip size={12} style={{ color: "var(--muted)" }} /><span>{e.photo_id_url ? "Photo ID" : "Business invoice"}</span></div>
+                <Download size={12} style={{ color: "var(--emerald)" }} />
+              </a>
+            ) : (
+              <div className="rounded-lg p-3 text-xs" style={{ background: "var(--bone)", border: "1px dashed var(--line)", color: "var(--muted)" }}>No document attached by the customer. Reject and request a photo ID or business invoice if needed.</div>
+            )
+          )}
+        </div>
+
+        {e.provider_kyc_reason && (
+          <div className="rounded-lg p-3 text-xs" style={{ background: "#fee2e2", color: "#991b1b" }}>
+            <div className="font-mono text-[10px] uppercase tracking-wider mb-1">Previous reason</div>
+            {e.provider_kyc_reason}
+          </div>
+        )}
+
+        <div className="flex gap-2 pt-2">
+          <PrimaryBtn onClick={onApprove} disabled={busy}>{busy ? <><Loader2 size={12} className="animate-spin" /> Saving…</> : <><CheckCircle2 size={12} /> Approve</>}</PrimaryBtn>
+          <SecondaryBtn onClick={onReject} disabled={busy}><X size={12} /> Reject</SecondaryBtn>
+        </div>
+      </div>
+    </Drawer>
   );
 }
 
