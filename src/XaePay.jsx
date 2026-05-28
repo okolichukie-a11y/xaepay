@@ -4717,6 +4717,7 @@ function BDCDashboard({ session, initialCustomerId, onInitialCustomerHandled }) 
     { id: "customers", label: "Customers", icon: User },
     { id: "recipients", label: "Recipients", icon: Briefcase },
     { id: "invoicing", label: "Invoicing", icon: FileText },
+    { id: "providers", label: "Providers", icon: Layers },
     { id: "earnings", label: "Earnings", icon: TrendingUp },
   ];
   // Operator name + role line. Demo session passes a single string; real auth-backed
@@ -4783,6 +4784,7 @@ function BDCDashboard({ session, initialCustomerId, onInitialCustomerHandled }) 
           {tab === "customers" && <BDCCustomers addedCustomers={addedCustomers} onAddCustomer={addCustomer} jumpToCustomerId={jumpToCustomerId} onJumpHandled={() => setJumpToCustomerId(null)} />}
           {tab === "recipients" && <BDCRecipients />}
           {tab === "invoicing" && <BDCInvoices />}
+          {tab === "providers" && <BDCProviders />}
           {tab === "earnings" && <BDCEarnings />}
         </div>
       </div>
@@ -5606,6 +5608,150 @@ function InvoiceDrawer({ invoice, onClose, onChanged }) {
         </div>
       </div>
     </Drawer>
+  );
+}
+
+// =============================================================================
+// Service Providers — operator's read-only view of the rails available to route
+// through. Each row in service_providers represents a licensed OTC/PSP/MTL
+// partner. Operators don't currently choose at quote time (Cedar is the default)
+// — that comes with V3.3 routing engine. For V3.1 this is informational so
+// operators can see who's onboarded and what corridors they cover.
+// =============================================================================
+
+const PROVIDER_STATUS_PILL = {
+  active:   { label: "Active",   bg: "#d1fae5", color: "#065f46" },
+  paused:   { label: "Paused",   bg: "#fef3c7", color: "#92400e" },
+  archived: { label: "Archived", bg: "#fee2e2", color: "#991b1b" },
+};
+
+const PROVIDER_API_STATUS_PILL = {
+  production: { label: "Production",   bg: "rgba(15,95,63,0.10)", color: "var(--emerald)" },
+  sandbox:    { label: "Sandbox",      bg: "#fef3c7",             color: "#92400e" },
+  inactive:   { label: "No API",       bg: "#f3f4f6",             color: "#6b7280" },
+};
+
+function BDCProviders() {
+  const { push } = useToast();
+  const auth = useAuth();
+  const isSignedIn = !!auth.user;
+  const [providers, setProviders] = useState([]);
+  const [loading, setLoading] = useState(false);
+
+  const fetchProviders = async () => {
+    if (!isSignedIn) return;
+    setLoading(true);
+    const { data, error } = await supabase
+      .from("service_providers")
+      .select("*")
+      .order("onboarded_at", { ascending: true });
+    if (error) {
+      // eslint-disable-next-line no-console
+      console.error("Fetch providers failed:", error);
+      push("Couldn't load providers — check console.", "warn");
+    } else {
+      setProviders(data || []);
+    }
+    setLoading(false);
+  };
+  useEffect(() => { fetchProviders(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [auth.user?.id]);
+
+  return (
+    <div className="space-y-6">
+      <div className="grid gap-4 sm:grid-cols-3">
+        <StatCard label="Service providers" value={String(providers.length)} sub={`${providers.filter(p => p.status === "active").length} active`} />
+        <StatCard label="With API" value={String(providers.filter(p => p.has_api).length)} sub="Automated rails" />
+        <StatCard label="Manual / OTC" value={String(providers.filter(p => !p.has_api).length)} sub="No-API providers" />
+      </div>
+
+      <Card>
+        <div className="space-y-3">
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <div>
+              <h3 className="font-display text-lg font-semibold">Available rails</h3>
+              <p className="text-sm" style={{ color: "var(--muted)" }}>Licensed service providers XaePay can route through. New providers are onboarded by XaePay admin.</p>
+            </div>
+            <SecondaryBtn onClick={fetchProviders} disabled={loading}><RefreshCw size={14} className={loading ? "animate-spin" : ""} /> Refresh</SecondaryBtn>
+          </div>
+          {loading && providers.length === 0 ? (
+            <div className="p-8 text-center"><Loader2 size={20} className="animate-spin mx-auto" style={{ color: "var(--muted)" }} /></div>
+          ) : providers.length === 0 ? (
+            <div className="p-12 text-center">
+              <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full" style={{ background: "var(--bone-2)" }}><Layers size={20} style={{ color: "var(--muted)" }} /></div>
+              <h3 className="font-display text-lg font-semibold">No providers onboarded yet</h3>
+              <p className="mt-1.5 text-sm" style={{ color: "var(--muted)" }}>Once XaePay onboards a licensed service provider, they'll show up here.</p>
+            </div>
+          ) : (
+            <div className="grid gap-3">
+              {providers.map((p) => {
+                const statusPill = PROVIDER_STATUS_PILL[p.status] || PROVIDER_STATUS_PILL.active;
+                const apiPill = PROVIDER_API_STATUS_PILL[p.has_api ? (p.api_status || "sandbox") : "inactive"];
+                const sources = Array.isArray(p.supported_source_countries) ? p.supported_source_countries : [];
+                const dests = Array.isArray(p.supported_dest_countries) ? p.supported_dest_countries : [];
+                const ccys = Array.isArray(p.supported_currencies) ? p.supported_currencies : [];
+                return (
+                  <div key={p.id} className="rounded-xl p-4 space-y-3" style={{ background: "var(--bone)", border: "1px solid var(--line)" }}>
+                    <div className="flex items-start justify-between gap-3 flex-wrap">
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <h4 className="font-display text-base font-semibold">{p.display_name}</h4>
+                          <span className="rounded-full px-2 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-wider" style={{ background: statusPill.bg, color: statusPill.color }}>{statusPill.label}</span>
+                          <span className="rounded-full px-2 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-wider" style={{ background: apiPill.bg, color: apiPill.color }}>{apiPill.label}</span>
+                        </div>
+                        {p.legal_name && p.legal_name !== p.display_name && (
+                          <div className="font-mono text-[10px] mt-0.5" style={{ color: "var(--muted)" }}>{p.legal_name}</div>
+                        )}
+                        {p.description && <p className="text-sm mt-2" style={{ color: "var(--muted)" }}>{p.description}</p>}
+                      </div>
+                      {p.website_url && (
+                        <a href={safeUrl(p.website_url)} target="_blank" rel="noreferrer" className="font-mono text-[10px] inline-flex items-center gap-1 underline" style={{ color: "var(--emerald)" }}>
+                          Website <ExternalLink size={10} />
+                        </a>
+                      )}
+                    </div>
+                    <div className="grid gap-3 sm:grid-cols-3 text-xs">
+                      <div>
+                        <div className="font-mono text-[9px] uppercase tracking-wider mb-1" style={{ color: "var(--muted)" }}>Source countries</div>
+                        <div className="flex flex-wrap gap-1">
+                          {sources.length > 0 ? sources.map((c) => <span key={c} className="rounded px-1.5 py-0.5 font-mono text-[10px]" style={{ background: "white", border: "1px solid var(--line)" }}>{c}</span>) : <span style={{ color: "var(--muted)" }}>—</span>}
+                        </div>
+                      </div>
+                      <div>
+                        <div className="font-mono text-[9px] uppercase tracking-wider mb-1" style={{ color: "var(--muted)" }}>Destination countries</div>
+                        <div className="flex flex-wrap gap-1">
+                          {dests.length > 0 ? dests.map((c) => <span key={c} className="rounded px-1.5 py-0.5 font-mono text-[10px]" style={{ background: "white", border: "1px solid var(--line)" }}>{c}</span>) : <span style={{ color: "var(--muted)" }}>—</span>}
+                        </div>
+                      </div>
+                      <div>
+                        <div className="font-mono text-[9px] uppercase tracking-wider mb-1" style={{ color: "var(--muted)" }}>Currencies</div>
+                        <div className="flex flex-wrap gap-1">
+                          {ccys.length > 0 ? ccys.map((c) => <span key={c} className="rounded px-1.5 py-0.5 font-mono text-[10px]" style={{ background: "white", border: "1px solid var(--line)" }}>{c}</span>) : <span style={{ color: "var(--muted)" }}>—</span>}
+                        </div>
+                      </div>
+                    </div>
+                    {(p.fx_margin_bps != null || p.fixed_fee_minor != null) && (
+                      <div className="rounded-lg p-2 text-xs flex flex-wrap gap-4" style={{ background: "white", border: "1px solid var(--line)" }}>
+                        {p.fx_margin_bps != null && <div><span style={{ color: "var(--muted)" }}>FX margin:</span> <span className="font-mono font-semibold">{(p.fx_margin_bps / 100).toFixed(2)}%</span></div>}
+                        {p.fixed_fee_minor != null && <div><span style={{ color: "var(--muted)" }}>Fixed fee:</span> <span className="font-mono font-semibold">${(p.fixed_fee_minor / 100).toFixed(2)}</span></div>}
+                        <div><span style={{ color: "var(--muted)" }}>XaePay fee:</span> <span className="font-mono font-semibold">{(p.xaepay_fee_bps / 100).toFixed(2)}%</span></div>
+                      </div>
+                    )}
+                    {p.onboarded_at && (
+                      <div className="font-mono text-[10px]" style={{ color: "var(--muted)" }}>Onboarded {relativeTime(p.onboarded_at)}</div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </Card>
+
+      <div className="rounded-xl p-4 text-xs" style={{ background: "rgba(15,95,63,0.05)", border: "1px solid rgba(15,95,63,0.15)" }}>
+        <div className="font-mono text-[10px] uppercase tracking-wider mb-1" style={{ color: "var(--emerald)" }}>How routing works today</div>
+        <p style={{ color: "var(--muted)" }}>Right now Cedar is the default rail for all cross-border quotes. As more providers come online, XaePay will pick the best-fit provider per quote based on corridor coverage, pricing, and speed. Providers pay XaePay <strong style={{ color: "var(--ink)" }}>0.2%</strong> on routed volume.</p>
+      </div>
+    </div>
   );
 }
 
