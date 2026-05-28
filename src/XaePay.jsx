@@ -3516,52 +3516,127 @@ function CustomerRequestQuoteModal({ open, onClose, customer, onCreated }) {
     amount: "",
     currency: "USD",
     country: "China",
-    supplier: "",
+    // Recipient capture — V2.1
+    recipientId: "",                  // existing customer-added recipient (UUID) or "" for new
+    recipientType: "business",        // 'individual' | 'business'
+    recipientName: "",                // individual: their full name; business: legal business name
+    recipientPhone: "",
+    recipientBankName: "",
+    recipientAccountNumber: "",
+    recipientPhotoIdFile: null,       // individual only
+    recipientBusinessInvoiceFile: null, // business only
+    // Purpose of payment — free-text context for the operator
+    purposeNote: "",
+    // Existing fields below
     invoiceUrl: "",
     cedarInvoiceUrl: "",
     note: "",
   };
   const [data, setData] = useState(empty);
   const [submitting, setSubmitting] = useState(false);
+  const [savedRecipients, setSavedRecipients] = useState([]);
   const isInbound = data.direction === "inbound";
-  const canSubmit = !!(data.amount && parseFloat(data.amount) > 0 && data.supplier && customer?.id && customer?.bdc_user_id);
+
+  // Hydrate the picker with recipients this customer has previously added,
+  // so repeat suppliers don't have to retype bank details.
+  useEffect(() => {
+    if (!open || !customer?.id) { return; }
+    supabase.from("recipients")
+      .select("id, recipient_type, legal_business_name, full_name, bank_name, bank_account_number")
+      .eq("added_by_customer_id", customer.id)
+      .order("created_at", { ascending: false })
+      .then(({ data: rows }) => setSavedRecipients(rows || []));
+    /* eslint-disable-next-line react-hooks/exhaustive-deps */
+  }, [open, customer?.id]);
+
+  // Whether the operator can act on this request — requires recipient identity + bank info.
+  const recipientReady = data.recipientId
+    || (
+      !!data.recipientName
+      && !!data.recipientBankName
+      && !!data.recipientAccountNumber
+    );
+  const canSubmit = !!(data.amount && parseFloat(data.amount) > 0 && recipientReady && customer?.id && customer?.bdc_user_id);
 
   const submit = async () => {
     if (!canSubmit || submitting) return;
     setSubmitting(true);
     const amount = parseFloat(data.amount);
-    const patch = {
-      bdc_user_id: customer.bdc_user_id,
-      bdc_name: customer.bdc_name || "XaeccoX",
-      customer_id: customer.id,
-      customer_name: customer.name || null,
-      customer_phone: customer.phone || null,
-      amount,
-      currency: data.currency,
-      beneficiary: data.supplier,
-      destination: isInbound ? "Nigeria" : data.country,
-      status: "request_pending",
-      ...(data.invoiceUrl ? {
-        invoice_url: data.invoiceUrl,
-        invoice_uploaded_at: new Date().toISOString(),
-        invoice_uploaded_by: "customer",
-      } : {}),
-      ...(data.cedarInvoiceUrl ? { cedar_invoice_url: data.cedarInvoiceUrl } : {}),
-    };
-    const { data: row, error } = await supabase.from("quotes").insert(patch).select("*").single();
-    if (error) {
+    try {
+      let resolvedRecipientId = data.recipientId || null;
+      let recipientDisplay = "";
+
+      // New-recipient path: persist a recipients row, upload supporting file if attached.
+      if (!resolvedRecipientId) {
+        const isInd = data.recipientType === "individual";
+
+        // Best-effort file upload first (so we have URLs to stamp on the row).
+        let photoIdUrl = null, businessInvoiceUrl = null;
+        const fileToUpload = isInd ? data.recipientPhotoIdFile : data.recipientBusinessInvoiceFile;
+        if (fileToUpload) {
+          const up = await uploadCedarFile(fileToUpload, isInd ? "recipient-photo-ids" : "recipient-business-invoices");
+          if (up.ok) {
+            if (isInd) photoIdUrl = up.url;
+            else businessInvoiceUrl = up.url;
+          }
+        }
+
+        const { data: newR, error: rErr } = await supabase.from("recipients").insert({
+          recipient_type: data.recipientType,
+          full_name: isInd ? data.recipientName : null,
+          legal_business_name: !isInd ? data.recipientName : null,
+          bank_name: data.recipientBankName,
+          bank_account_number: data.recipientAccountNumber,
+          bank_account_currency: data.currency,
+          contact_phone: (data.recipientPhone || "").replace(/[^\d]/g, "") || null,
+          photo_id_url: photoIdUrl,
+          business_invoice_url: businessInvoiceUrl,
+          added_by_customer_id: customer.id,
+          country: isInbound ? "NG" : (data.country || null),
+          created_by: null, // customer-added; created_by is operator-only
+        }).select("*").single();
+        if (rErr) throw rErr;
+        resolvedRecipientId = newR.id;
+        recipientDisplay = newR.full_name || newR.legal_business_name || "Recipient";
+      } else {
+        const pick = savedRecipients.find((r) => r.id === resolvedRecipientId);
+        recipientDisplay = pick?.full_name || pick?.legal_business_name || "Recipient";
+      }
+
+      const patch = {
+        bdc_user_id: customer.bdc_user_id,
+        bdc_name: customer.bdc_name || "XaeccoX",
+        customer_id: customer.id,
+        customer_name: customer.name || null,
+        customer_phone: customer.phone || null,
+        amount,
+        currency: data.currency,
+        beneficiary: recipientDisplay,
+        recipient_id: resolvedRecipientId,
+        destination: isInbound ? "Nigeria" : data.country,
+        status: "request_pending",
+        purpose_note: data.purposeNote || null,
+        ...(data.invoiceUrl ? {
+          invoice_url: data.invoiceUrl,
+          invoice_uploaded_at: new Date().toISOString(),
+          invoice_uploaded_by: "customer",
+        } : {}),
+        ...(data.cedarInvoiceUrl ? { cedar_invoice_url: data.cedarInvoiceUrl } : {}),
+      };
+      const { data: row, error } = await supabase.from("quotes").insert(patch).select("*").single();
+      if (error) throw error;
+      if (data.invoiceUrl) {
+        runComplianceReview(row.id).catch(() => {});
+      }
+      push(`Quote request sent to ${customer.bdc_name || "your operator"}`, "success");
+      onCreated && onCreated();
+      setData(empty);
+      onClose();
+    } catch (err) {
+      push(`Couldn't send request: ${err?.message || err}`, "warn");
+    } finally {
       setSubmitting(false);
-      push(`Couldn't send request: ${error.message}`, "warn");
-      return;
     }
-    if (data.invoiceUrl) {
-      runComplianceReview(row.id).catch(() => {});
-    }
-    setSubmitting(false);
-    push(`Quote request sent to ${customer.bdc_name || "your operator"}`, "success");
-    onCreated && onCreated();
-    setData(empty);
-    onClose();
   };
 
   return (
@@ -3592,29 +3667,101 @@ function CustomerRequestQuoteModal({ open, onClose, customer, onCreated }) {
               <input type="text" value={data.amount} onChange={(e) => setData({ ...data, amount: e.target.value })} className="w-full bg-transparent px-2 py-3 text-sm outline-none font-mono" placeholder="25000" />
             </div>
           </Field>
-          <Field label={isInbound ? "Recipient country" : "Supplier country"}>
+          <Field label={isInbound ? "Recipient country" : "Recipient country"}>
             <Select value={isInbound ? "Nigeria" : data.country} onChange={(e) => setData({ ...data, country: e.target.value })} disabled={isInbound}>
               {isInbound ? <option>Nigeria</option> : (<><option>China</option><option>USA</option><option>UK</option><option>Germany</option><option>UAE</option><option>India</option><option>Türkiye</option></>)}
             </Select>
           </Field>
-          <Field label={isInbound ? "Recipient (Nigerian supplier/vendor)" : "Supplier name"} full>
-            <Input value={data.supplier} onChange={(e) => setData({ ...data, supplier: e.target.value })} placeholder={isInbound ? "Lagos Trading Ltd" : "Shenzhen Electronics Co., Ltd"} />
-          </Field>
-          <Field label="Supplier invoice (PDF or image)" full>
-            <FileUploadField
-              category="invoices"
-              value={data.invoiceUrl}
-              onChange={(url) => setData((d) => ({ ...d, invoiceUrl: url }))}
-              onCedarUrl={(url) => setData((d) => ({ ...d, cedarInvoiceUrl: url }))}
-            />
-            <p className="text-[11px] mt-1" style={{ color: "var(--muted)" }}>
-              Attach the invoice your supplier issued. We'll run automatic checks against it before your operator finalizes the quote.
-            </p>
-          </Field>
-          <Field label="Anything else your operator should know? (optional)" full>
-            <textarea rows={3} value={data.note} onChange={(e) => setData({ ...data, note: e.target.value })} placeholder="Urgency, special instructions, etc." className="w-full rounded-xl px-3 py-2 text-sm" style={{ background: "white", border: "1px solid var(--line)" }} />
-          </Field>
         </div>
+
+        {/* Recipient capture — pick from previously added, or fill in a new one. */}
+        <div className="rounded-xl p-4 space-y-3" style={{ background: "var(--bone)", border: "1px solid var(--line)" }}>
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <Label>Who's receiving the money?</Label>
+            {savedRecipients.length > 0 && (
+              <span className="text-[10px] font-mono" style={{ color: "var(--muted)" }}>{savedRecipients.length} saved</span>
+            )}
+          </div>
+          {savedRecipients.length > 0 && (
+            <Field label="Pick a saved recipient" full>
+              <Select value={data.recipientId} onChange={(e) => {
+                const pick = savedRecipients.find((r) => r.id === e.target.value);
+                setData((d) => ({ ...d, recipientId: pick?.id || "" }));
+              }}>
+                <option value="">— Add a new recipient below —</option>
+                {savedRecipients.map((r) => (
+                  <option key={r.id} value={r.id}>
+                    {(r.full_name || r.legal_business_name || "Unnamed")} · {r.bank_name || "no bank"} {r.bank_account_number ? `· ${r.bank_account_number.slice(-4).padStart(r.bank_account_number.length, "•")}` : ""}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+          )}
+
+          {!data.recipientId && (
+            <>
+              <Field label="Recipient type" full>
+                <div className="grid grid-cols-2 gap-2">
+                  <button type="button" onClick={() => setData({ ...data, recipientType: "individual" })}
+                    className="rounded-lg px-3 py-2 text-sm font-medium transition"
+                    style={data.recipientType === "individual" ? { background: "var(--ink)", color: "var(--bone)" } : { background: "white", border: "1px solid var(--line)" }}>
+                    Individual
+                  </button>
+                  <button type="button" onClick={() => setData({ ...data, recipientType: "business" })}
+                    className="rounded-lg px-3 py-2 text-sm font-medium transition"
+                    style={data.recipientType === "business" ? { background: "var(--ink)", color: "var(--bone)" } : { background: "white", border: "1px solid var(--line)" }}>
+                    Business
+                  </button>
+                </div>
+              </Field>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <Field label={data.recipientType === "individual" ? "Full name" : "Business name"} full>
+                  <Input value={data.recipientName} onChange={(e) => setData({ ...data, recipientName: e.target.value })}
+                    placeholder={data.recipientType === "individual" ? "Chinedu Okafor" : "Shenzhen Electronics Co., Ltd"} />
+                </Field>
+                <Field label="Phone (optional)"><Input value={data.recipientPhone} onChange={(e) => setData({ ...data, recipientPhone: e.target.value })} placeholder="+86 138 0000 1234" /></Field>
+                <Field label="Bank name"><Input value={data.recipientBankName} onChange={(e) => setData({ ...data, recipientBankName: e.target.value })} placeholder={data.recipientType === "individual" ? "GTBank" : "Bank of China"} /></Field>
+                <Field label="Bank account number"><Input value={data.recipientAccountNumber} onChange={(e) => setData({ ...data, recipientAccountNumber: e.target.value })} placeholder="0123456789" /></Field>
+                {data.recipientType === "individual" ? (
+                  <Field label="Photo ID (optional)" full>
+                    <Input type="file" accept="image/*,application/pdf" onChange={(e) => setData({ ...data, recipientPhotoIdFile: e.target.files?.[0] || null })} />
+                    {data.recipientPhotoIdFile && (
+                      <div className="text-[10px] mt-1 font-mono" style={{ color: "var(--muted)" }}>{data.recipientPhotoIdFile.name} · {(data.recipientPhotoIdFile.size / 1024).toFixed(0)} KB</div>
+                    )}
+                  </Field>
+                ) : (
+                  <Field label="Business invoice (optional)" full>
+                    <Input type="file" accept="image/*,application/pdf" onChange={(e) => setData({ ...data, recipientBusinessInvoiceFile: e.target.files?.[0] || null })} />
+                    {data.recipientBusinessInvoiceFile && (
+                      <div className="text-[10px] mt-1 font-mono" style={{ color: "var(--muted)" }}>{data.recipientBusinessInvoiceFile.name} · {(data.recipientBusinessInvoiceFile.size / 1024).toFixed(0)} KB</div>
+                    )}
+                  </Field>
+                )}
+              </div>
+            </>
+          )}
+        </div>
+
+        <Field label="What's this payment for?" full>
+          <Input value={data.purposeNote} onChange={(e) => setData({ ...data, purposeNote: e.target.value })}
+            placeholder="e.g. School fees for Q3, payment for 100 laptops, family support" />
+          <p className="text-[11px] mt-1" style={{ color: "var(--muted)" }}>One short sentence so your operator knows the reason. Helps with compliance + reporting.</p>
+        </Field>
+
+        <Field label="Supporting invoice (optional)" full>
+          <FileUploadField
+            category="invoices"
+            value={data.invoiceUrl}
+            onChange={(url) => setData((d) => ({ ...d, invoiceUrl: url }))}
+            onCedarUrl={(url) => setData((d) => ({ ...d, cedarInvoiceUrl: url }))}
+          />
+          <p className="text-[11px] mt-1" style={{ color: "var(--muted)" }}>
+            If you have a supplier invoice or supporting document for this payment, attach it here. We'll run automatic checks before your operator finalizes the quote.
+          </p>
+        </Field>
+        <Field label="Anything else your operator should know? (optional)" full>
+          <textarea rows={3} value={data.note} onChange={(e) => setData({ ...data, note: e.target.value })} placeholder="Urgency, special instructions, etc." className="w-full rounded-xl px-3 py-2 text-sm" style={{ background: "white", border: "1px solid var(--line)" }} />
+        </Field>
         <div className="flex justify-end gap-2 pt-2">
           <SecondaryBtn onClick={onClose} disabled={submitting}>Cancel</SecondaryBtn>
           <PrimaryBtn onClick={submit} disabled={!canSubmit || submitting}>
@@ -6933,7 +7080,7 @@ function BDCTransactions({ jumpToTransactionId, onJumpHandled } = {}) {
     setLoading(true);
     const { data, error } = await supabase
       .from("quotes")
-      .select("id, customer_name, customer_phone, customer_id, beneficiary, destination, amount, currency, rate, ngn_total, rail, status, submitted_at, created_at, markup_pct, cost_basis_ngn, recipient_id, recipient_external_account_id, cedar_business_request_id, cedar_request_status, cedar_purpose, cedar_invoice_url, cedar_last_error, cedar_request_status_updated_at, cedar_bank_details, cedar_quote_rate, cedar_deposit_amount_minor, cedar_deposit_currency, cedar_payout_status, invoice_url, invoice_uploaded_at, invoice_uploaded_by, customer_deposit_slip_url, customer_deposit_slip_uploaded_at, review_decision, review_reason, review_details, review_tier, reviewed_at, operator_review_override, operator_review_override_at, operator_review_override_reason, invoice_total_amount, invoice_total_currency, invoice_payment_label, pdf_url, pdf_path, pdf_generated_at")
+      .select("id, customer_name, customer_phone, customer_id, beneficiary, destination, amount, currency, rate, ngn_total, rail, status, submitted_at, created_at, markup_pct, cost_basis_ngn, recipient_id, recipient_external_account_id, cedar_business_request_id, cedar_request_status, cedar_purpose, cedar_invoice_url, cedar_last_error, cedar_request_status_updated_at, cedar_bank_details, cedar_quote_rate, cedar_deposit_amount_minor, cedar_deposit_currency, cedar_payout_status, invoice_url, invoice_uploaded_at, invoice_uploaded_by, customer_deposit_slip_url, customer_deposit_slip_uploaded_at, review_decision, review_reason, review_details, review_tier, reviewed_at, operator_review_override, operator_review_override_at, operator_review_override_reason, invoice_total_amount, invoice_total_currency, invoice_payment_label, pdf_url, pdf_path, pdf_generated_at, purpose_note")
       .order("created_at", { ascending: false })
       .limit(50);
     if (error) {
@@ -6991,6 +7138,7 @@ function BDCTransactions({ jumpToTransactionId, onJumpHandled } = {}) {
         pdfPath: q.pdf_path,
         pdfGeneratedAt: q.pdf_generated_at,
         invoicePaymentLabel: q.invoice_payment_label,
+        purposeNote: q.purpose_note,
       })));
     }
     setLoading(false);
@@ -7085,6 +7233,43 @@ function BDCTransactions({ jumpToTransactionId, onJumpHandled } = {}) {
   );
 }
 
+// Tiny inline lookup for the recipient row attached to a quote. Renders the
+// recipient details + photo ID / business invoice if the customer attached one.
+// Empty/silent if the recipient was the legacy Cedar-shape type (operator-added).
+function CustomerAddedRecipientPanel({ recipientId }) {
+  const [r, setR] = useState(null);
+  useEffect(() => {
+    if (!recipientId) { setR(null); return; }
+    supabase.from("recipients").select("id, recipient_type, full_name, legal_business_name, bank_name, bank_account_number, bank_account_currency, contact_phone, photo_id_url, business_invoice_url, added_by_customer_id").eq("id", recipientId).maybeSingle().then(({ data }) => setR(data));
+  }, [recipientId]);
+  if (!r) return null;
+  // Operator-managed Cedar recipients are already covered elsewhere in the
+  // drawer — only show this panel when the customer added the recipient.
+  if (!r.added_by_customer_id) return null;
+  const name = r.full_name || r.legal_business_name || "Recipient";
+  const typeLabel = r.recipient_type === "individual" ? "Individual" : "Business";
+  return (
+    <div className="rounded-xl p-3 space-y-2" style={{ background: "var(--bone)", border: "1px solid var(--line)" }}>
+      <div className="flex items-center justify-between gap-2">
+        <div className="font-mono text-[10px] uppercase tracking-wider" style={{ color: "var(--muted)" }}>Recipient (added by customer)</div>
+        <span className="rounded-full px-2 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-wider" style={{ background: "#f3f4f6", color: "#6b7280" }}>{typeLabel}</span>
+      </div>
+      <div className="text-sm font-semibold">{name}</div>
+      <div className="grid grid-cols-2 gap-2 text-xs font-mono" style={{ color: "var(--muted)" }}>
+        {r.bank_name && <div>Bank<br /><span style={{ color: "var(--ink)" }}>{r.bank_name}</span></div>}
+        {r.bank_account_number && <div>Account<br /><span style={{ color: "var(--ink)" }}>{r.bank_account_number}</span></div>}
+        {r.contact_phone && <div>Phone<br /><span style={{ color: "var(--ink)" }}>{r.contact_phone}</span></div>}
+        {r.bank_account_currency && <div>Currency<br /><span style={{ color: "var(--ink)" }}>{r.bank_account_currency}</span></div>}
+      </div>
+      {(r.photo_id_url || r.business_invoice_url) && (
+        <a href={safeUrl(r.photo_id_url || r.business_invoice_url)} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 underline font-medium text-xs" style={{ color: "var(--emerald)" }}>
+          <Paperclip size={11} /> {r.photo_id_url ? "View photo ID" : "View business invoice"}
+        </a>
+      )}
+    </div>
+  );
+}
+
 function TxDrawer({ tx, onClose, onRefresh }) {
   const { push } = useToast();
   const [uploadingInvoice, setUploadingInvoice] = useState(false);
@@ -7165,6 +7350,21 @@ function TxDrawer({ tx, onClose, onRefresh }) {
           <div className="relative font-display mt-1 text-4xl font-[500] tracking-tight" style={{ color: "var(--lime)" }}>${tx.amount.toLocaleString()}</div>
           <div className="relative mt-1 font-mono text-[11px]" style={{ color: "rgba(247,245,240,0.6)" }}>{tx.customer} → {tx.dest} · via {SHOW_TRIPLE_A ? tx.rail : "partner"}</div>
         </div>
+
+        {/* What the customer wrote when they filed the request. Surface this
+            above the pricing panel so the operator reads it before quoting. */}
+        {tx.purposeNote && (
+          <div className="rounded-xl p-3" style={{ background: "var(--bone)", border: "1px solid var(--line)" }}>
+            <div className="font-mono text-[10px] uppercase tracking-wider" style={{ color: "var(--muted)" }}>Customer's stated purpose</div>
+            <div className="mt-1 text-sm">"{tx.purposeNote}"</div>
+          </div>
+        )}
+
+        {/* Recipient details for customer-added recipients — pulled live on demand
+            so we don't fetch every recipient row on the dashboard list query. */}
+        {tx.recipientId && (
+          <CustomerAddedRecipientPanel recipientId={tx.recipientId} />
+        )}
 
         {/* Customer-initiated request — operator prices + sends back from here. */}
         {tx.dbId && tx.status === "pending" && tx.dbStatus === "request_pending" && (
