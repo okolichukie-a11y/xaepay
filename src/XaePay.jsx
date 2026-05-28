@@ -359,31 +359,47 @@ function AppShell() {
   // we surface their quotes / transactions in a customer-side portal instead
   // of the operator dashboard.
   const [customerRows, setCustomerRows] = useState(null); // null = not checked yet, [] = none, [...] = matched
+  // Service-provider membership: rows the signed-in user owns in
+  // service_provider_users (linking them to one or more service providers).
+  // When non-empty, they're routed to the provider portal instead of operator/customer.
+  const [providerMemberships, setProviderMemberships] = useState(null);
 
   // hydrate the local session from auth metadata + check whether the signed-in
-  // user is registered as a customer with any operator.
+  // user is registered as a customer or as a service-provider user.
   useEffect(() => {
-    if (!auth.user) { setCustomerRows(null); return; }
+    if (!auth.user) { setCustomerRows(null); setProviderMemberships(null); return; }
     let cancelled = false;
     (async () => {
       const email = auth.user.email;
-      const { data: rows } = await supabase
-        .from("customers")
-        .select("id, name, phone, email, type, kyc_status, kyc_tier, cedar_business_id, cedar_kyc_status, bdc_user_id, bdc_name, created_at")
-        .eq("email", email);
+      // Check provider membership first since it takes routing precedence.
+      const [{ data: customerData }, { data: spuData }] = await Promise.all([
+        supabase
+          .from("customers")
+          .select("id, name, phone, email, type, kyc_status, kyc_tier, cedar_business_id, cedar_kyc_status, bdc_user_id, bdc_name, created_at")
+          .eq("email", email),
+        supabase
+          .from("service_provider_users")
+          .select("id, service_provider_id, role, service_providers(id, slug, display_name, status, has_api, api_status, supported_source_countries, supported_dest_countries, supported_currencies, contact_email, website_url, legal_name)")
+          .eq("auth_user_id", auth.user.id),
+      ]);
       if (cancelled) return;
-      const matched = rows || [];
+      const matched = customerData || [];
+      const matchedSpu = spuData || [];
       setCustomerRows(matched);
+      setProviderMemberships(matchedSpu);
       const meta = auth.user.user_metadata || {};
+      const primaryType = matchedSpu.length > 0
+        ? "provider-portal"
+        : matched.length > 0 ? "customer-portal" : "bdc";
       setSession((prev) => prev.type ? prev : ({
-        type: matched.length > 0 ? "customer-portal" : "bdc",
+        type: primaryType,
         tier: meta.tier ?? 1,
-        name: matched[0]?.name || meta.name || meta.company || auth.user.email,
+        name: matchedSpu[0]?.service_providers?.display_name || matched[0]?.name || meta.name || meta.company || auth.user.email,
         company: meta.company || matched[0]?.name || null,
         email,
         authUserId: auth.user.id,
       }));
-      setView((prev) => (prev === "landing" ? (matched.length > 0 ? "customer-portal" : "bdc") : prev));
+      setView((prev) => (prev === "landing" ? primaryType : prev));
     })();
     return () => { cancelled = true; };
   }, [auth.user]);
@@ -425,7 +441,7 @@ function AppShell() {
       }
     }
   } catch { /* localStorage might be blocked */ }
-  const authResolving = auth.loading || (auth.user && customerRows === null);
+  const authResolving = auth.loading || (auth.user && (customerRows === null || providerMemberships === null));
   const isSignedIn = !!auth.user || hasCachedSession;
   if (isSignedIn && authResolving) {
     return (
@@ -463,6 +479,7 @@ function AppShell() {
       {view === "landing" && <Landing setView={setView} onRequestAccess={() => setBecomePartnerOpen(true)} onWaitlist={() => setWaitlistOpen(true)} />}
       {view === "customer" && <CustomerApp session={session} />}
       {view === "customer-portal" && <CustomerPortal session={session} customerRows={customerRows || []} />}
+      {view === "provider-portal" && <ProviderPortal session={session} memberships={providerMemberships || []} />}
       {view === "bdc" && <BDCDashboard session={session} initialCustomerId={initialCustomerId} onInitialCustomerHandled={() => setInitialCustomerId(null)} />}
       {view === "lp" && <LPDashboard session={session} />}
       {view === "diaspora" && <DiasporaApp session={session} />}
@@ -4683,6 +4700,337 @@ function ComplianceRemindersPanel({ onReminderClick }) {
         </div>
       )}
     </Card>
+  );
+}
+
+// =============================================================================
+// Service Provider Portal — separate top-level view for users who belong to a
+// service provider (Cedar, future PSPs). Distinct from operator + customer
+// portals. Provider users see the transactions routed through their provider,
+// their own coverage/profile, and (later in V3.3) a KYC queue + integrations.
+//
+// Routing precedence: service-provider membership > customer match > operator.
+// So if someone is added to service_provider_users, they land here on sign-in.
+// =============================================================================
+
+function ProviderPortal({ session, memberships }) {
+  const { push } = useToast();
+  const auth = useAuth();
+  // Multiple-provider support: a user could in principle belong to more than
+  // one provider org. For V3.2 just default to the first one; later we add a
+  // switcher in the header.
+  const primary = memberships?.[0];
+  const provider = primary?.service_providers;
+  const [tab, setTab] = useState("dashboard");
+
+  if (!provider) {
+    return (
+      <div className="mx-auto max-w-3xl px-4 py-16 text-center">
+        <h2 className="font-display text-2xl font-semibold">Provider profile not found</h2>
+        <p className="mt-2 text-sm" style={{ color: "var(--muted)" }}>You're authenticated, but no service provider is linked to your account. Reach out to XaePay admin to get connected.</p>
+      </div>
+    );
+  }
+
+  const providerTabs = [
+    { id: "dashboard", label: "Dashboard", icon: BarChart3 },
+    { id: "transactions", label: "Transactions", icon: Receipt },
+    { id: "kyc", label: "KYC queue", icon: ShieldCheck },
+    { id: "settings", label: "Settings", icon: Layers },
+  ];
+
+  return (
+    <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8 lg:py-10">
+      <div className="mb-6 flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-end">
+        <div className="rise">
+          <SectionEyebrow>Service provider portal</SectionEyebrow>
+          <h1 className="font-display mt-3 text-3xl font-[450] tracking-tight sm:text-[40px]">{provider.display_name}</h1>
+          <div className="mt-2 font-mono text-xs" style={{ color: "var(--muted)" }}>
+            {primary.role === "admin" ? "Provider admin" : primary.role === "member" ? "Provider member" : "Viewer"} · {provider.has_api ? (provider.api_status === "production" ? "Production API" : "Sandbox API") : "Manual / OTC"}
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <div className="hidden sm:inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 font-mono text-[10px] font-semibold uppercase tracking-wider" style={{ background: provider.status === "active" ? "var(--lime)" : "#fef3c7", color: "var(--ink)" }}>
+            <div className="h-1.5 w-1.5 rounded-full" style={{ background: "var(--ink)" }} />
+            {provider.status === "active" ? "Active" : (provider.status || "—")}
+          </div>
+        </div>
+      </div>
+
+      <div className="mb-6 -mx-1 overflow-x-auto">
+        <div className="flex gap-1 px-1">
+          {providerTabs.map((t) => {
+            const Icon = t.icon;
+            const active = tab === t.id;
+            return (
+              <button key={t.id} type="button" onClick={() => setTab(t.id)}
+                className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium whitespace-nowrap transition"
+                style={active ? { background: "var(--ink)", color: "var(--bone)" } : { background: "transparent", color: "var(--muted)" }}>
+                <Icon size={14} /> {t.label}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="fade-in min-w-0">
+        {tab === "dashboard"    && <ProviderDashboard provider={provider} />}
+        {tab === "transactions" && <ProviderTransactions provider={provider} />}
+        {tab === "kyc"          && <ProviderKYCQueue provider={provider} />}
+        {tab === "settings"     && <ProviderSettings provider={provider} />}
+      </div>
+    </div>
+  );
+}
+
+// =============================================================================
+// Provider dashboard — top-line numbers + recent transactions feed
+// =============================================================================
+
+function ProviderDashboard({ provider }) {
+  const auth = useAuth();
+  const [stats, setStats] = useState({ today: 0, week: 0, total: 0, pendingKyc: 0 });
+  const [recent, setRecent] = useState([]);
+  const [loading, setLoading] = useState(false);
+
+  const fetch = async () => {
+    if (!auth.user) return;
+    setLoading(true);
+    const now = new Date();
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
+    const weekStart = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString();
+    const [{ data: todayRows }, { data: weekRows }, { data: totalRows }, { data: recentRows }] = await Promise.all([
+      supabase.from("quotes").select("id, amount").gte("created_at", todayStart).eq("service_provider_id", provider.id),
+      supabase.from("quotes").select("id, amount").gte("created_at", weekStart).eq("service_provider_id", provider.id),
+      supabase.from("quotes").select("id, amount").eq("service_provider_id", provider.id),
+      supabase.from("quotes")
+        .select("id, customer_name, beneficiary, amount, currency, status, cedar_request_status, cedar_payout_status, created_at, purpose_note")
+        .eq("service_provider_id", provider.id)
+        .order("created_at", { ascending: false })
+        .limit(8),
+    ]);
+    const sumAmt = (rows) => (rows || []).reduce((s, r) => s + parseFloat(r.amount || 0), 0);
+    setStats({
+      today: sumAmt(todayRows),
+      week: sumAmt(weekRows),
+      total: sumAmt(totalRows),
+      pendingKyc: 0, // wired in V3.3
+    });
+    setRecent(recentRows || []);
+    setLoading(false);
+  };
+  useEffect(() => { fetch(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [provider.id, auth.user?.id]);
+
+  return (
+    <div className="space-y-6">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <StatCard label="Today's volume" value={`$${stats.today.toLocaleString(undefined, { maximumFractionDigits: 0 })}`} sub="Transactions routed to you" />
+        <StatCard label="Past 7 days" value={`$${stats.week.toLocaleString(undefined, { maximumFractionDigits: 0 })}`} sub="Rolling weekly" />
+        <StatCard label="Lifetime volume" value={`$${stats.total.toLocaleString(undefined, { maximumFractionDigits: 0 })}`} sub="Since onboarding" positive />
+        <StatCard label="Pending KYC" value={String(stats.pendingKyc)} sub="Awaiting your approval" />
+      </div>
+
+      <Card padding="none">
+        <div className="flex items-center justify-between p-4" style={{ borderBottom: "1px solid var(--line)" }}>
+          <div className="font-semibold text-sm">{loading ? "Loading…" : "Recent transactions"}</div>
+          <SecondaryBtn onClick={fetch} disabled={loading}><RefreshCw size={14} className={loading ? "animate-spin" : ""} /> Refresh</SecondaryBtn>
+        </div>
+        {recent.length === 0 ? (
+          <div className="p-12 text-center">
+            <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full" style={{ background: "var(--bone-2)" }}><Receipt size={20} style={{ color: "var(--muted)" }} /></div>
+            <h3 className="font-display text-lg font-semibold">No transactions yet</h3>
+            <p className="mt-1.5 text-sm" style={{ color: "var(--muted)" }}>Quotes routed through {provider.display_name} will appear here.</p>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr style={{ background: "var(--bone)", borderBottom: "1px solid var(--line)" }}>
+                  {["When", "Customer", "Recipient", "Amount", "Status"].map((h) => (
+                    <th key={h} className="px-4 py-3 text-left font-mono text-[10px] font-semibold uppercase tracking-wider" style={{ color: "var(--muted)" }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {recent.map((q) => {
+                  const cs = (q.cedar_request_status || "").toUpperCase();
+                  const cp = (q.cedar_payout_status || "").toUpperCase();
+                  const settled = q.status === "filled" || cs.includes("COMPLETED") || cp.includes("ARRIVED");
+                  return (
+                    <tr key={q.id} style={{ borderBottom: "1px solid var(--line)" }}>
+                      <td className="px-4 py-3 font-mono text-xs" style={{ color: "var(--muted)" }}>{relativeTime(q.created_at)}</td>
+                      <td className="px-4 py-3">{q.customer_name || "—"}</td>
+                      <td className="px-4 py-3">{q.beneficiary || "—"}</td>
+                      <td className="px-4 py-3 font-mono">{q.currency} {parseFloat(q.amount || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                      <td className="px-4 py-3"><StatusPill status={settled ? "completed" : "pending"} /></td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Card>
+    </div>
+  );
+}
+
+// =============================================================================
+// Provider transactions — full list with the same shape as the operator view,
+// minus operator-internal fields (markup, cost basis) which the provider doesn't see.
+// =============================================================================
+
+function ProviderTransactions({ provider }) {
+  const auth = useAuth();
+  const [rows, setRows] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [selected, setSelected] = useState(null);
+
+  const fetch = async () => {
+    if (!auth.user) return;
+    setLoading(true);
+    const { data, error } = await supabase
+      .from("quotes")
+      .select("id, customer_name, customer_phone, beneficiary, destination, amount, currency, status, cedar_request_status, cedar_payout_status, created_at, submitted_at, purpose_note, recipient_id")
+      .eq("service_provider_id", provider.id)
+      .order("created_at", { ascending: false })
+      .limit(200);
+    if (error) {
+      // eslint-disable-next-line no-console
+      console.error("Provider transactions fetch failed:", error);
+    } else {
+      setRows(data || []);
+    }
+    setLoading(false);
+  };
+  useEffect(() => { fetch(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [provider.id, auth.user?.id]);
+
+  return (
+    <Card padding="none">
+      <div className="flex items-center justify-between p-4 flex-wrap gap-2" style={{ borderBottom: "1px solid var(--line)" }}>
+        <div className="font-semibold text-sm">{loading ? "Loading…" : `${rows.length} transactions`}</div>
+        <SecondaryBtn onClick={fetch} disabled={loading}><RefreshCw size={14} className={loading ? "animate-spin" : ""} /> Refresh</SecondaryBtn>
+      </div>
+      {rows.length === 0 ? (
+        <div className="p-12 text-center">
+          <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full" style={{ background: "var(--bone-2)" }}><Receipt size={20} style={{ color: "var(--muted)" }} /></div>
+          <h3 className="font-display text-lg font-semibold">No transactions yet</h3>
+          <p className="mt-1.5 text-sm" style={{ color: "var(--muted)" }}>Quotes routed through {provider.display_name} will appear here once operators start sending them.</p>
+        </div>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr style={{ background: "var(--bone)", borderBottom: "1px solid var(--line)" }}>
+                {["Date", "Customer", "Recipient", "Destination", "Amount", "Purpose", "Status"].map((h) => (
+                  <th key={h} className="px-4 py-3 text-left font-mono text-[10px] font-semibold uppercase tracking-wider" style={{ color: "var(--muted)" }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((q) => {
+                const cs = (q.cedar_request_status || "").toUpperCase();
+                const cp = (q.cedar_payout_status || "").toUpperCase();
+                const settled = q.status === "filled" || cs.includes("COMPLETED") || cp.includes("ARRIVED");
+                return (
+                  <tr key={q.id} onClick={() => setSelected(q)} className="cursor-pointer hover:bg-[color:var(--bone)]" style={{ borderBottom: "1px solid var(--line)" }}>
+                    <td className="px-4 py-3 font-mono text-xs" style={{ color: "var(--muted)" }}>{relativeTime(q.created_at)}</td>
+                    <td className="px-4 py-3">{q.customer_name || "—"}</td>
+                    <td className="px-4 py-3">{q.beneficiary || "—"}</td>
+                    <td className="px-4 py-3 font-mono text-xs">{q.destination || "—"}</td>
+                    <td className="px-4 py-3 font-mono">{q.currency} {parseFloat(q.amount || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                    <td className="px-4 py-3 text-xs max-w-[180px] truncate" title={q.purpose_note || ""}>{q.purpose_note || "—"}</td>
+                    <td className="px-4 py-3"><StatusPill status={settled ? "completed" : "pending"} /></td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {/* Light drawer for provider-side detail. V3.2 keeps it read-only;
+          mutating actions land with V3.3 (KYC approve, integration callbacks). */}
+      <Drawer open={!!selected} onClose={() => setSelected(null)} title={selected ? `Transaction ${selected.id.slice(0, 8).toUpperCase()}` : ""}>
+        {selected && (
+          <div className="space-y-4">
+            <div className="rounded-xl p-4" style={{ background: "var(--ink)", color: "var(--bone)" }}>
+              <div className="font-mono text-[10px] uppercase tracking-wider" style={{ color: "rgba(247,245,240,0.5)" }}>Amount</div>
+              <div className="font-display mt-1 text-3xl font-[500]" style={{ color: "var(--lime)" }}>{selected.currency} {parseFloat(selected.amount || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</div>
+              <div className="mt-1 font-mono text-[11px]" style={{ color: "rgba(247,245,240,0.6)" }}>{selected.customer_name} → {selected.beneficiary || "—"}</div>
+            </div>
+            {selected.purpose_note && (
+              <div className="rounded-xl p-3" style={{ background: "var(--bone)", border: "1px solid var(--line)" }}>
+                <div className="font-mono text-[10px] uppercase tracking-wider" style={{ color: "var(--muted)" }}>Customer's stated purpose</div>
+                <div className="mt-1 text-sm">"{selected.purpose_note}"</div>
+              </div>
+            )}
+            <div className="grid gap-2 text-xs">
+              <div className="flex justify-between"><span style={{ color: "var(--muted)" }}>Customer</span><span>{selected.customer_name || "—"}</span></div>
+              <div className="flex justify-between"><span style={{ color: "var(--muted)" }}>Customer phone</span><span className="font-mono">{selected.customer_phone || "—"}</span></div>
+              <div className="flex justify-between"><span style={{ color: "var(--muted)" }}>Recipient</span><span>{selected.beneficiary || "—"}</span></div>
+              <div className="flex justify-between"><span style={{ color: "var(--muted)" }}>Destination</span><span>{selected.destination || "—"}</span></div>
+              <div className="flex justify-between"><span style={{ color: "var(--muted)" }}>Created</span><span className="font-mono">{relativeTime(selected.created_at)}</span></div>
+              <div className="flex justify-between"><span style={{ color: "var(--muted)" }}>Submitted</span><span className="font-mono">{selected.submitted_at ? relativeTime(selected.submitted_at) : "—"}</span></div>
+              <div className="flex justify-between"><span style={{ color: "var(--muted)" }}>Request status</span><span className="font-mono">{selected.cedar_request_status || selected.status}</span></div>
+              <div className="flex justify-between"><span style={{ color: "var(--muted)" }}>Payout status</span><span className="font-mono">{selected.cedar_payout_status || "—"}</span></div>
+            </div>
+            <div className="rounded-lg p-2 text-[11px]" style={{ background: "var(--bone)", color: "var(--muted)" }}>
+              Mutating actions (KYC approve, status callbacks) come online once integrations are wired in V3.3.
+            </div>
+          </div>
+        )}
+      </Drawer>
+    </Card>
+  );
+}
+
+// V3.2 stubs — actual functionality lands in V3.3
+function ProviderKYCQueue({ provider }) {
+  return (
+    <div className="rounded-xl p-8 text-center" style={{ background: "var(--bone)", border: "1px dashed var(--line)" }}>
+      <ShieldCheck size={28} className="mx-auto mb-3" style={{ color: "var(--muted)" }} />
+      <h3 className="font-display text-lg font-semibold">KYC queue · coming in V3.3</h3>
+      <p className="mt-1 text-sm max-w-md mx-auto" style={{ color: "var(--muted)" }}>Once routing is live, customers and recipients waiting for {provider.display_name}'s KYC approval will land in this queue. You'll review the document bundle XaePay assembled and approve or request more info.</p>
+    </div>
+  );
+}
+
+function ProviderSettings({ provider }) {
+  const sources = Array.isArray(provider.supported_source_countries) ? provider.supported_source_countries : [];
+  const dests = Array.isArray(provider.supported_dest_countries) ? provider.supported_dest_countries : [];
+  const ccys = Array.isArray(provider.supported_currencies) ? provider.supported_currencies : [];
+  return (
+    <div className="space-y-6">
+      <Card>
+        <h3 className="font-display text-lg font-semibold mb-3">Provider profile</h3>
+        <div className="grid gap-3 sm:grid-cols-2 text-sm">
+          <div><div className="font-mono text-[10px] uppercase tracking-wider" style={{ color: "var(--muted)" }}>Display name</div><div className="font-semibold">{provider.display_name}</div></div>
+          {provider.legal_name && <div><div className="font-mono text-[10px] uppercase tracking-wider" style={{ color: "var(--muted)" }}>Legal name</div><div>{provider.legal_name}</div></div>}
+          <div><div className="font-mono text-[10px] uppercase tracking-wider" style={{ color: "var(--muted)" }}>Slug</div><div className="font-mono text-xs">{provider.slug}</div></div>
+          <div><div className="font-mono text-[10px] uppercase tracking-wider" style={{ color: "var(--muted)" }}>Integration</div><div>{provider.has_api ? `API · ${provider.api_status || "sandbox"}` : "Manual / OTC"}</div></div>
+          {provider.contact_email && <div><div className="font-mono text-[10px] uppercase tracking-wider" style={{ color: "var(--muted)" }}>Contact email</div><div className="font-mono text-xs">{provider.contact_email}</div></div>}
+          {provider.website_url && <div><div className="font-mono text-[10px] uppercase tracking-wider" style={{ color: "var(--muted)" }}>Website</div><a href={safeUrl(provider.website_url)} target="_blank" rel="noreferrer" className="underline font-mono text-xs" style={{ color: "var(--emerald)" }}>{provider.website_url}</a></div>}
+        </div>
+      </Card>
+      <Card>
+        <h3 className="font-display text-lg font-semibold mb-3">Coverage</h3>
+        <div className="grid gap-3 sm:grid-cols-3 text-xs">
+          <div>
+            <div className="font-mono text-[10px] uppercase tracking-wider mb-1" style={{ color: "var(--muted)" }}>Source countries</div>
+            <div className="flex flex-wrap gap-1">{sources.length > 0 ? sources.map((c) => <span key={c} className="rounded px-1.5 py-0.5 font-mono text-[10px]" style={{ background: "var(--bone)", border: "1px solid var(--line)" }}>{c}</span>) : "—"}</div>
+          </div>
+          <div>
+            <div className="font-mono text-[10px] uppercase tracking-wider mb-1" style={{ color: "var(--muted)" }}>Destination countries</div>
+            <div className="flex flex-wrap gap-1">{dests.length > 0 ? dests.map((c) => <span key={c} className="rounded px-1.5 py-0.5 font-mono text-[10px]" style={{ background: "var(--bone)", border: "1px solid var(--line)" }}>{c}</span>) : "—"}</div>
+          </div>
+          <div>
+            <div className="font-mono text-[10px] uppercase tracking-wider mb-1" style={{ color: "var(--muted)" }}>Currencies</div>
+            <div className="flex flex-wrap gap-1">{ccys.length > 0 ? ccys.map((c) => <span key={c} className="rounded px-1.5 py-0.5 font-mono text-[10px]" style={{ background: "var(--bone)", border: "1px solid var(--line)" }}>{c}</span>) : "—"}</div>
+          </div>
+        </div>
+        <p className="text-[11px] mt-3" style={{ color: "var(--muted)" }}>Coverage changes are managed by XaePay admin. Reach out to update.</p>
+      </Card>
+    </div>
   );
 }
 
