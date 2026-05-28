@@ -5309,7 +5309,7 @@ function ProviderBilling({ provider }) {
       <div className="rounded-xl p-4 text-xs" style={{ background: "rgba(15,95,63,0.05)", border: "1px solid rgba(15,95,63,0.15)" }}>
         <div className="font-mono text-[10px] uppercase tracking-wider mb-1" style={{ color: "var(--emerald)" }}>How fees work</div>
         <p style={{ color: "var(--muted)" }}>
-          XaePay charges <strong style={{ color: "var(--ink)" }}>{(provider.xaepay_fee_bps / 100).toFixed(2)}%</strong> on the source amount of every settled transaction routed through {provider.display_name}. Fees accrue automatically when a transaction settles. XaePay issues a monthly invoice consolidating all accrued lines into a single bill payable by wire or ACH.
+          XaePay charges <strong style={{ color: "var(--ink)" }}>{(provider.xaepay_fee_bps / 100).toFixed(2)}%</strong> on the source amount of every settled transaction routed through {provider.display_name}. Fees accrue automatically when a transaction settles. XaePay issues a monthly invoice consolidating all accrued lines into a single bill payable by wire, ACH, or bank transfer.
         </p>
       </div>
 
