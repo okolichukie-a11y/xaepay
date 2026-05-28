@@ -7,9 +7,9 @@ import {
   ArrowLeft, ArrowLeftRight, Loader2, Layers, TrendingUp, Wallet, DollarSign, Mail,
   RefreshCw, ShieldCheck, Paperclip,
 } from "lucide-react";
-import { supabase, sendWhatsAppText, sendWhatsAppTemplate, fetchCedarRate, submitCustomerToCedar, submitRecipientToCedar, submitReceiverAccountToCedar, submitCedarTransaction, approveCedarQuote, confirmCedarDeposit, cancelCedarTransaction, uploadCedarFile, uploadFileBoth, uploadInvoicePdf, uploadInvoicePaymentProof, uploadReceiptPdf, runComplianceReview, runComplianceWatchman, submitDocumentToCedar, sendEmail, safeUrl, logAuditEvent } from "./lib/supabase.js";
+import { supabase, sendWhatsAppText, sendWhatsAppTemplate, fetchCedarRate, submitCustomerToCedar, submitRecipientToCedar, submitReceiverAccountToCedar, submitCedarTransaction, approveCedarQuote, confirmCedarDeposit, cancelCedarTransaction, uploadCedarFile, uploadFileBoth, uploadInvoicePdf, uploadInvoicePaymentProof, uploadReceiptPdf, uploadRecipientReceiptPdf, runComplianceReview, runComplianceWatchman, submitDocumentToCedar, sendEmail, safeUrl, logAuditEvent } from "./lib/supabase.js";
 import { generateQuotePdf, uploadQuotePdf, downloadQuotePdf } from "./lib/pdf.js";
-import { generateCompliancePackPdf, downloadCompliancePackPdf, generateTransactionConfirmationPdf, downloadTransactionConfirmationPdf, generateInvoicePdf, downloadInvoicePdf, generateReceiptPdf, downloadReceiptPdf } from "./lib/pdf-doc.js";
+import { generateCompliancePackPdf, downloadCompliancePackPdf, generateTransactionConfirmationPdf, downloadTransactionConfirmationPdf, generateInvoicePdf, downloadInvoicePdf, generateReceiptPdf, downloadReceiptPdf, generateRecipientReceiptPdf, downloadRecipientReceiptPdf } from "./lib/pdf-doc.js";
 import { useAuth } from "./lib/auth.js";
 
 // ─── Editable in one place ────────────────────────────────────────────────
@@ -7080,7 +7080,7 @@ function BDCTransactions({ jumpToTransactionId, onJumpHandled } = {}) {
     setLoading(true);
     const { data, error } = await supabase
       .from("quotes")
-      .select("id, customer_name, customer_phone, customer_id, beneficiary, destination, amount, currency, rate, ngn_total, rail, status, submitted_at, created_at, markup_pct, cost_basis_ngn, recipient_id, recipient_external_account_id, cedar_business_request_id, cedar_request_status, cedar_purpose, cedar_invoice_url, cedar_last_error, cedar_request_status_updated_at, cedar_bank_details, cedar_quote_rate, cedar_deposit_amount_minor, cedar_deposit_currency, cedar_payout_status, invoice_url, invoice_uploaded_at, invoice_uploaded_by, customer_deposit_slip_url, customer_deposit_slip_uploaded_at, review_decision, review_reason, review_details, review_tier, reviewed_at, operator_review_override, operator_review_override_at, operator_review_override_reason, invoice_total_amount, invoice_total_currency, invoice_payment_label, pdf_url, pdf_path, pdf_generated_at, purpose_note")
+      .select("id, customer_name, customer_phone, customer_id, beneficiary, destination, amount, currency, rate, ngn_total, rail, status, submitted_at, created_at, markup_pct, cost_basis_ngn, recipient_id, recipient_external_account_id, cedar_business_request_id, cedar_request_status, cedar_purpose, cedar_invoice_url, cedar_last_error, cedar_request_status_updated_at, cedar_bank_details, cedar_quote_rate, cedar_deposit_amount_minor, cedar_deposit_currency, cedar_payout_status, invoice_url, invoice_uploaded_at, invoice_uploaded_by, customer_deposit_slip_url, customer_deposit_slip_uploaded_at, review_decision, review_reason, review_details, review_tier, reviewed_at, operator_review_override, operator_review_override_at, operator_review_override_reason, invoice_total_amount, invoice_total_currency, invoice_payment_label, pdf_url, pdf_path, pdf_generated_at, purpose_note, recipient_receipt_pdf_url, recipient_receipt_pdf_path, recipient_receipt_issued_at, bdc_name")
       .order("created_at", { ascending: false })
       .limit(50);
     if (error) {
@@ -7139,6 +7139,10 @@ function BDCTransactions({ jumpToTransactionId, onJumpHandled } = {}) {
         pdfGeneratedAt: q.pdf_generated_at,
         invoicePaymentLabel: q.invoice_payment_label,
         purposeNote: q.purpose_note,
+        recipientReceiptPdfUrl: q.recipient_receipt_pdf_url,
+        recipientReceiptPdfPath: q.recipient_receipt_pdf_path,
+        recipientReceiptIssuedAt: q.recipient_receipt_issued_at,
+        bdcName: q.bdc_name,
       })));
     }
     setLoading(false);
@@ -7230,6 +7234,94 @@ function BDCTransactions({ jumpToTransactionId, onJumpHandled } = {}) {
     </Card>
     <TxDrawer tx={selected} onClose={() => setSelected(null)} onRefresh={fetchTxs} />
     </>
+  );
+}
+
+// Operator-issued receipt to the recipient after a payout completes. Auto-generates
+// on first view of a completed transaction that doesn't have a receipt yet. The
+// operator can re-issue (e.g. if recipient details were corrected mid-transaction)
+// via the manual button.
+function RecipientReceiptPanel({ tx, onChanged }) {
+  const { push } = useToast();
+  const [busy, setBusy] = useState(false);
+  const [autoTried, setAutoTried] = useState(false);
+
+  const issue = async (silent = false) => {
+    if (busy || !tx?.dbId) return;
+    setBusy(true);
+    try {
+      // Re-fetch fresh quote + recipient. The tx object on the dashboard is a
+      // projection, not the full row.
+      const { data: q, error: qErr } = await supabase.from("quotes").select("*").eq("id", tx.dbId).maybeSingle();
+      if (qErr || !q) throw new Error(qErr?.message || "Quote not found");
+      let recipient = null;
+      if (q.recipient_id) {
+        const { data: r } = await supabase.from("recipients").select("*").eq("id", q.recipient_id).maybeSingle();
+        recipient = r || null;
+      }
+      const issuedAt = new Date().toISOString();
+      const enriched = { ...q, recipient_receipt_issued_at: issuedAt };
+      const doc = generateRecipientReceiptPdf({ quote: enriched, recipient });
+      const up = await uploadRecipientReceiptPdf(q.id, doc);
+      if (!up.ok) throw new Error(up.error || "Upload failed");
+      await supabase.from("quotes").update({
+        recipient_receipt_pdf_url: up.url,
+        recipient_receipt_pdf_path: up.path,
+        recipient_receipt_issued_at: issuedAt,
+      }).eq("id", q.id);
+      // If the recipient has an email, send a copy. Customer-added recipients
+      // typically don't, so this is best-effort.
+      if (recipient?.email) {
+        const ccy = q.currency || "USD";
+        const amtText = `${ccy} ${parseFloat(q.amount || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
+        const operatorName = q.bdc_name || "XaeccoX";
+        const senderName = q.customer_name || "the sender";
+        const html = `<!doctype html><html><body style="font-family:system-ui,sans-serif;background:#fcfbf7;margin:0;padding:24px;"><div style="max-width:560px;margin:0 auto;background:white;border:1px solid #e5e7eb;border-radius:16px;padding:32px;"><h2 style="margin:0 0 8px;font-size:22px;color:#0a0b0d;">Payment sent to you</h2><p style="color:#6b7280;font-size:14px;margin:0 0 20px;">${senderName} has sent you a payment via ${operatorName} on XaePay.</p><div style="background:#0f5f3f;color:white;border-radius:12px;padding:20px;margin-bottom:20px;"><div style="font-size:11px;text-transform:uppercase;letter-spacing:0.05em;color:#d1fae5;">Amount received</div><div style="font-size:30px;font-weight:600;margin-top:6px;">${amtText}</div></div><p style="text-align:center;margin:24px 0 8px;"><a href="${safeUrl(up.url)}" style="display:inline-block;background:#0a0b0d;color:#d4f570;padding:12px 28px;border-radius:12px;text-decoration:none;font-weight:600;font-size:14px;">Download confirmation PDF</a></p><p style="color:#9ca3af;font-size:11px;text-align:center;margin:20px 0 0;">Confirmation issued via XaePay · Keep this for your records</p></div></body></html>`;
+        sendEmail({ to: recipient.email, subject: `Payment received via XaePay · ${amtText}`, html, text: `${senderName} sent you ${amtText} via ${operatorName} on XaePay.\nDownload confirmation: ${up.url}` }).catch(() => {});
+      }
+      if (!silent) push("Recipient receipt issued", "success");
+      onChanged && onChanged();
+    } catch (err) {
+      if (!silent) push(`Couldn't issue receipt: ${err?.message || err}`, "warn");
+      // eslint-disable-next-line no-console
+      console.error("Recipient receipt failed:", err);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // Lazy first-issue. Runs once per drawer mount per tx if missing.
+  useEffect(() => {
+    if (autoTried) return;
+    if (!tx?.dbId) return;
+    if (tx.recipientReceiptPdfUrl) return;
+    setAutoTried(true);
+    issue(true);
+    /* eslint-disable-next-line react-hooks/exhaustive-deps */
+  }, [tx?.dbId]);
+
+  return (
+    <div>
+      <Label>Receipt to recipient</Label>
+      {tx.recipientReceiptPdfUrl ? (
+        <div className="space-y-2">
+          <a href={safeUrl(tx.recipientReceiptPdfUrl)} target="_blank" rel="noreferrer" className="rounded-xl p-3 text-xs flex items-center justify-between transition hover:bg-emerald-50" style={{ background: "rgba(15,95,63,0.06)", border: "1px solid rgba(15,95,63,0.2)" }}>
+            <div className="flex items-center gap-2" style={{ color: "var(--emerald)" }}>
+              <FileText size={14} />
+              <span className="font-medium">Recipient confirmation</span>
+              <span className="font-mono text-[10px]" style={{ color: "var(--muted)" }}>{tx.recipientReceiptIssuedAt ? relativeTime(tx.recipientReceiptIssuedAt) : ""}</span>
+            </div>
+            <Download size={12} style={{ color: "var(--emerald)" }} />
+          </a>
+          <SecondaryBtn onClick={() => issue(false)} disabled={busy}>{busy ? <><Loader2 size={12} className="animate-spin" /> Re-issuing…</> : <>Re-issue receipt</>}</SecondaryBtn>
+        </div>
+      ) : (
+        <div className="rounded-xl p-3 text-xs space-y-2" style={{ background: "var(--bone)", border: "1px solid var(--line)" }}>
+          <p style={{ color: "var(--muted)" }}>No recipient receipt issued yet. Issuing emails the recipient (if they have one on file) and gives you a shareable PDF link.</p>
+          <PrimaryBtn onClick={() => issue(false)} disabled={busy}>{busy ? <><Loader2 size={12} className="animate-spin" /> Issuing…</> : <>Issue receipt to recipient</>}</PrimaryBtn>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -7384,6 +7476,16 @@ function TxDrawer({ tx, onClose, onRefresh }) {
         {/* Confirmation + bank docs (MT103, debit advice) — only completed */}
         {tx.dbId && (
           <TransactionConfirmationSection tx={tx} onChanged={() => onRefresh && onRefresh()} />
+        )}
+
+        {/* Recipient-facing payout receipt — shown only when the transaction has
+            actually settled (status=filled / Cedar COMPLETED / Cedar ARRIVED).
+            Auto-generates on first view if missing. */}
+        {tx.dbId && (
+          (tx.dbStatus === "filled"
+            || (tx.cedarRequestStatus || "").toUpperCase().includes("COMPLETED")
+            || (tx.cedarPayoutStatus || "").toUpperCase().includes("ARRIVED")
+          ) && <RecipientReceiptPanel tx={tx} onChanged={() => onRefresh && onRefresh()} />
         )}
 
         {/* Invoice — primary uploader is the customer (via portal); operator can upload here on customer's behalf. Required before customer can approve. */}

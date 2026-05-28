@@ -1087,4 +1087,136 @@ export function downloadReceiptPdf(doc, invoice) {
   doc.save(`${num}-R-XaePay.pdf`);
 }
 
+// =============================================================================
+// Recipient receipt — operator-issued confirmation that a payout was sent to a
+// recipient. Distinct from the invoice receipt (which acknowledges money
+// received from a customer). Triggered when a quote moves into a completed
+// state (status=filled / cedar COMPLETED / cedar ARRIVED).
+// =============================================================================
+
+function buildRecipientReceiptPage(doc, quote, recipient) {
+  drawHeader(doc, "Payment Confirmation");
+
+  let y = 38;
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(22);
+  doc.setTextColor(INK);
+  doc.text("Payment sent", MARGIN, y);
+
+  const ref = `QU-${(quote.id || "").slice(0, 8).toUpperCase()}/R`;
+  doc.setFont("courier", "normal");
+  doc.setFontSize(12);
+  doc.setTextColor(MUTED);
+  doc.text(ref, PAGE_W - MARGIN, y, { align: "right" });
+  y += 7;
+
+  const issuedAt = quote.recipient_receipt_issued_at || quote.cedar_request_status_updated_at || new Date().toISOString();
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(9);
+  doc.setTextColor(MUTED);
+  doc.text(`Issued ${fmtDateTime(issuedAt)}`, MARGIN, y);
+  y += 14;
+
+  // Amount stripe
+  const ccy = quote.currency || "USD";
+  const amt = parseFloat(quote.amount || 0);
+  doc.setFillColor(EMERALD);
+  doc.roundedRect(MARGIN, y, CONTENT_W, 26, 3, 3, "F");
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(8.5);
+  doc.setTextColor("#d1fae5");
+  doc.text("AMOUNT SENT TO YOU", MARGIN + 6, y + 8);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(20);
+  doc.setTextColor("#ffffff");
+  doc.text(fmtMoney(amt, ccy), MARGIN + 6, y + 19);
+  doc.setFont("courier", "normal");
+  doc.setFontSize(9);
+  doc.setTextColor("#d1fae5");
+  doc.text(`PAID · ${fmtDate(issuedAt)}`, PAGE_W - MARGIN - 6, y + 19, { align: "right" });
+  y += 34;
+
+  // From / To columns
+  const colW = (CONTENT_W - 8) / 2;
+  const recipientName = recipient?.full_name || recipient?.legal_business_name || quote.beneficiary || "Recipient";
+  const senderName = quote.customer_name || "Customer";
+  const operatorName = quote.bdc_name || "XaeccoX";
+  drawLabelValue(doc, "Paid by", senderName, MARGIN, y);
+  drawLabelValue(doc, "Paid to", recipientName, MARGIN + colW + 8, y);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(8);
+  doc.setTextColor(MUTED);
+  doc.text(`via ${operatorName} (XaePay)`, MARGIN, y + 11);
+  if (recipient?.bank_name || recipient?.bank_account_number) {
+    const bankLine = [recipient.bank_name, recipient.bank_account_number ? `· ${recipient.bank_account_number.slice(-4).padStart(recipient.bank_account_number.length, "•")}` : ""].filter(Boolean).join(" ");
+    doc.text(bankLine, MARGIN + colW + 8, y + 11, { maxWidth: colW });
+  }
+  y += 22;
+
+  doc.setDrawColor(LINE);
+  doc.line(MARGIN, y, PAGE_W - MARGIN, y);
+  y += 8;
+
+  // Payment details
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(10);
+  doc.setTextColor(INK);
+  doc.text("Payment details", MARGIN, y);
+  y += 7;
+
+  const detailRow = (label, value) => {
+    if (!value) return;
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(9);
+    doc.setTextColor(MUTED);
+    doc.text(label, MARGIN, y);
+    doc.setFont("courier", "normal");
+    doc.setTextColor(INK);
+    const lines = doc.splitTextToSize(String(value), CONTENT_W - 70);
+    doc.text(lines, PAGE_W - MARGIN, y, { align: "right" });
+    y += Math.max(lines.length * 5, 6);
+  };
+  detailRow("Reference", ref);
+  detailRow("Transaction ID", quote.id || null);
+  if (quote.cedar_business_request_id) detailRow("Partner reference", quote.cedar_business_request_id);
+  detailRow("Sender", senderName);
+  detailRow("Recipient", recipientName);
+  if (recipient?.bank_name) detailRow("Bank", recipient.bank_name);
+  if (recipient?.bank_account_number) detailRow("Account", recipient.bank_account_number);
+  if (quote.purpose_note) detailRow("Purpose", quote.purpose_note);
+  detailRow("Settled", fmtDateTime(issuedAt));
+  y += 6;
+
+  // Status pill
+  doc.setFillColor("#d1fae5");
+  doc.roundedRect(MARGIN, y, 36, 7, 2, 2, "F");
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(8);
+  doc.setTextColor("#065f46");
+  doc.text("PAYMENT SETTLED", MARGIN + 18, y + 4.7, { align: "center" });
+
+  // Footer
+  const noteY = PAGE_H - 30;
+  doc.setDrawColor(LINE);
+  doc.line(MARGIN, noteY, PAGE_W - MARGIN, noteY);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(8);
+  doc.setTextColor(MUTED);
+  doc.text(`This confirms that ${senderName} has sent the amount above to ${recipientName} via ${operatorName} on XaePay. Keep this document for your records.`, MARGIN, noteY + 5, { maxWidth: CONTENT_W });
+  doc.text("Issued via XaePay · Operator-confirmed payout · Not a tax document.", MARGIN, noteY + 13, { maxWidth: CONTENT_W });
+}
+
+export function generateRecipientReceiptPdf({ quote, recipient }) {
+  const doc = new jsPDF({ unit: "mm", format: "a4" });
+  buildRecipientReceiptPage(doc, quote, recipient || {});
+  drawFooter(doc, doc.internal.getNumberOfPages(), 0);
+  return doc;
+}
+
+export function downloadRecipientReceiptPdf(doc, quote) {
+  const id = (quote?.id || "receipt").slice(0, 8);
+  doc.save(`payout-${id}-R-XaePay.pdf`);
+}
+
 export const _refForFilename = ref;
