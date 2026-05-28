@@ -4806,6 +4806,7 @@ function CreateInvoiceModal({ open, onClose, onCreated }) {
   const empty = {
     customerId: "",
     customerName: "",
+    customerBusinessName: "",     // populated when customerType === 'business'
     customerEmail: "",
     customerPhone: "",
     customerType: "individual",  // 'individual' | 'business' — only used when creating a new customer inline
@@ -4852,7 +4853,11 @@ function CreateInvoiceModal({ open, onClose, onCreated }) {
   const subtotal = data.items.reduce((s, it) => s + (parseFloat(it.quantity) || 0) * (parseFloat(it.unit_price) || 0), 0);
   const total = subtotal;
   const validItems = data.items.filter((it) => it.description && parseFloat(it.unit_price) > 0);
-  const canSubmit = !!data.customerName && validItems.length > 0 && !saving;
+  // For business customers, business name is the primary required field (the
+  // contact person is optional). For individuals, the customer name is required.
+  const hasCustomerIdentity = data.customerId
+    || (data.customerType === "business" ? !!data.customerBusinessName : !!data.customerName);
+  const canSubmit = hasCustomerIdentity && validItems.length > 0 && !saving;
 
   const submit = async (sendNow) => {
     if (!canSubmit) return;
@@ -4868,12 +4873,21 @@ function CreateInvoiceModal({ open, onClose, onCreated }) {
     // discoverable in the Customers tab and shows up in their CustomerPortal
     // when they sign in with the captured email. KYC defaults to pending_review
     // — the operator can complete the full KYC flow later.
+    // The display name we use on the invoice: business name for businesses,
+    // person name for individuals. The customers row keeps both so the dashboard
+    // can show "Acme Ltd · Contact: Adekunle Okafor" once we add that to the UI.
+    const isBusiness = data.customerType === "business";
+    const effectiveCustomerName = isBusiness
+      ? (data.customerBusinessName || data.customerName)
+      : data.customerName;
+
     let resolvedCustomerId = data.customerId || null;
-    if (!resolvedCustomerId && data.customerName) {
+    if (!resolvedCustomerId && hasCustomerIdentity) {
       const { data: newCust, error: custErr } = await supabase.from("customers").insert({
         bdc_user_id: auth.user.id,
         bdc_name: operatorName,
-        name: data.customerName,
+        name: effectiveCustomerName,
+        business_name: isBusiness ? (data.customerBusinessName || null) : null,
         email: data.customerEmail || null,
         phone: data.customerPhone || null,
         type: data.customerType || "individual",
@@ -4918,7 +4932,7 @@ function CreateInvoiceModal({ open, onClose, onCreated }) {
       operator_user_id: auth.user.id,
       operator_name: operatorName,
       customer_id: resolvedCustomerId,
-      customer_name: data.customerName,
+      customer_name: effectiveCustomerName,
       customer_email: data.customerEmail || null,
       customer_phone: data.customerPhone || null,
       currency: data.currency,
@@ -5000,16 +5014,21 @@ function CreateInvoiceModal({ open, onClose, onCreated }) {
           </Field>
           {!data.customerId && (
             <>
-              <Field label="Customer name"><Input value={data.customerName} onChange={(e) => setData({ ...data, customerName: e.target.value })} placeholder="Adekunle Imports Ltd" /></Field>
-              <Field label="Customer email"><Input type="email" value={data.customerEmail} onChange={(e) => setData({ ...data, customerEmail: e.target.value })} placeholder="ops@adekunle.ng" /></Field>
-              <Field label="Customer WhatsApp"><Input value={data.customerPhone} onChange={(e) => setData({ ...data, customerPhone: e.target.value })} placeholder="+234 803 123 4567" /></Field>
               <Field label="Customer type">
                 <Select value={data.customerType} onChange={(e) => setData({ ...data, customerType: e.target.value })}>
                   <option value="individual">Individual</option>
                   <option value="business">Business</option>
                 </Select>
               </Field>
-              <Field label="Photo ID (optional)" full>
+              {data.customerType === "business" && (
+                <Field label="Business name"><Input value={data.customerBusinessName} onChange={(e) => setData({ ...data, customerBusinessName: e.target.value })} placeholder="Adekunle Imports Ltd" /></Field>
+              )}
+              <Field label={data.customerType === "business" ? "Contact person name" : "Customer name"}>
+                <Input value={data.customerName} onChange={(e) => setData({ ...data, customerName: e.target.value })} placeholder={data.customerType === "business" ? "Adekunle Okafor" : "Chinedu Okafor"} />
+              </Field>
+              <Field label="Customer email"><Input type="email" value={data.customerEmail} onChange={(e) => setData({ ...data, customerEmail: e.target.value })} placeholder="ops@adekunle.ng" /></Field>
+              <Field label="Customer WhatsApp"><Input value={data.customerPhone} onChange={(e) => setData({ ...data, customerPhone: e.target.value })} placeholder="+234 803 123 4567" /></Field>
+              <Field label={data.customerType === "business" ? "Contact's photo ID (optional)" : "Photo ID (optional)"} full>
                 <Input type="file" accept="image/*,application/pdf" onChange={(e) => setData({ ...data, customerPhotoId: e.target.files?.[0] || null })} />
                 <div className="text-[10px] mt-1 font-mono" style={{ color: "var(--muted)" }}>
                   {data.customerPhotoId
