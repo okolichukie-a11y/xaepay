@@ -5733,7 +5733,6 @@ function BDCProviders() {
                       <div className="rounded-lg p-2 text-xs flex flex-wrap gap-4" style={{ background: "white", border: "1px solid var(--line)" }}>
                         {p.fx_margin_bps != null && <div><span style={{ color: "var(--muted)" }}>FX margin:</span> <span className="font-mono font-semibold">{(p.fx_margin_bps / 100).toFixed(2)}%</span></div>}
                         {p.fixed_fee_minor != null && <div><span style={{ color: "var(--muted)" }}>Fixed fee:</span> <span className="font-mono font-semibold">${(p.fixed_fee_minor / 100).toFixed(2)}</span></div>}
-                        <div><span style={{ color: "var(--muted)" }}>XaePay fee:</span> <span className="font-mono font-semibold">{(p.xaepay_fee_bps / 100).toFixed(2)}%</span></div>
                       </div>
                     )}
                     {p.onboarded_at && (
@@ -5749,7 +5748,7 @@ function BDCProviders() {
 
       <div className="rounded-xl p-4 text-xs" style={{ background: "rgba(15,95,63,0.05)", border: "1px solid rgba(15,95,63,0.15)" }}>
         <div className="font-mono text-[10px] uppercase tracking-wider mb-1" style={{ color: "var(--emerald)" }}>How routing works today</div>
-        <p style={{ color: "var(--muted)" }}>Right now Cedar is the default rail for all cross-border quotes. As more providers come online, XaePay will pick the best-fit provider per quote based on corridor coverage, pricing, and speed. Providers pay XaePay <strong style={{ color: "var(--ink)" }}>0.2%</strong> on routed volume.</p>
+        <p style={{ color: "var(--muted)" }}>Right now Cedar is the default rail for all cross-border quotes. As more providers come online, XaePay will pick the best-fit provider per quote based on corridor coverage, pricing, and speed.</p>
       </div>
     </div>
   );
