@@ -4747,6 +4747,7 @@ function ProviderPortal({ session, memberships }) {
     { id: "dashboard", label: "Dashboard", icon: BarChart3 },
     { id: "transactions", label: "Transactions", icon: Receipt },
     { id: "kyc", label: "KYC queue", icon: ShieldCheck },
+    { id: "billing", label: "Billing", icon: Wallet },
     { id: "settings", label: "Settings", icon: Layers },
   ];
 
@@ -4788,6 +4789,7 @@ function ProviderPortal({ session, memberships }) {
         {tab === "dashboard"    && <ProviderDashboard provider={provider} />}
         {tab === "transactions" && <ProviderTransactions provider={provider} />}
         {tab === "kyc"          && <ProviderKYCQueue provider={provider} />}
+        {tab === "billing"      && <ProviderBilling provider={provider} />}
         {tab === "settings"     && <ProviderSettings provider={provider} />}
       </div>
     </div>
@@ -5231,6 +5233,119 @@ function ProviderKYCReviewDrawer({ item, onClose, onChanged }) {
         </div>
       </div>
     </Drawer>
+  );
+}
+
+// =============================================================================
+// Provider Billing — read-only ledger view. Shows what they owe XaePay (0.2%
+// of routed volume), grouped by status (accrued / invoiced / settled).
+// XaePay sends monthly invoices that flip lines from "accrued" → "invoiced".
+// =============================================================================
+
+const PROVIDER_FEE_STATUS_PILL = {
+  accrued:  { label: "Accrued",  bg: "#fef3c7", color: "#92400e" },
+  invoiced: { label: "Invoiced", bg: "rgba(15,95,63,0.10)", color: "var(--emerald)" },
+  settled:  { label: "Settled",  bg: "#d1fae5", color: "#065f46" },
+  waived:   { label: "Waived",   bg: "#f3f4f6", color: "#6b7280" },
+};
+
+function ProviderBilling({ provider }) {
+  const auth = useAuth();
+  const [entries, setEntries] = useState([]);
+  const [loading, setLoading] = useState(false);
+
+  const fetch = async () => {
+    if (!auth.user) return;
+    setLoading(true);
+    const { data } = await supabase
+      .from("provider_fee_ledger")
+      .select("*, quote:quotes(id, customer_name, beneficiary, destination, currency)")
+      .eq("service_provider_id", provider.id)
+      .order("accrued_at", { ascending: false })
+      .limit(500);
+    setEntries(data || []);
+    setLoading(false);
+  };
+  useEffect(() => { fetch(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [provider.id, auth.user?.id]);
+
+  // Aggregate by status. Fee_currency is uniform per ledger entry; if a
+  // provider deals in mixed currencies the total ends up summed as a
+  // proxy figure — fine for V3.4a, refined when we add FX in V3.4b.
+  const sums = entries.reduce((acc, e) => {
+    const amt = parseFloat(e.fee_amount || 0);
+    acc.all += amt;
+    acc[e.status] = (acc[e.status] || 0) + amt;
+    return acc;
+  }, { all: 0 });
+  const now = new Date();
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+  const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1).getTime();
+  const thisMonth = entries.filter((e) => new Date(e.accrued_at).getTime() >= monthStart).reduce((s, e) => s + parseFloat(e.fee_amount || 0), 0);
+  const lastMonth = entries.filter((e) => {
+    const t = new Date(e.accrued_at).getTime();
+    return t >= lastMonthStart && t < monthStart;
+  }).reduce((s, e) => s + parseFloat(e.fee_amount || 0), 0);
+
+  const feeCcy = entries[0]?.fee_currency || "USD";
+
+  return (
+    <div className="space-y-6">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <StatCard label="Outstanding (accrued)" value={`${feeCcy} ${(sums.accrued || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}`} sub="Awaiting XaePay invoice" />
+        <StatCard label="On invoice" value={`${feeCcy} ${(sums.invoiced || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}`} sub="Billed, awaiting payment" />
+        <StatCard label="This month" value={`${feeCcy} ${thisMonth.toLocaleString(undefined, { minimumFractionDigits: 2 })}`} sub="Fees accrued MTD" />
+        <StatCard label="Last month" value={`${feeCcy} ${lastMonth.toLocaleString(undefined, { minimumFractionDigits: 2 })}`} sub="Fees accrued" />
+      </div>
+
+      <div className="rounded-xl p-4 text-xs" style={{ background: "rgba(15,95,63,0.05)", border: "1px solid rgba(15,95,63,0.15)" }}>
+        <div className="font-mono text-[10px] uppercase tracking-wider mb-1" style={{ color: "var(--emerald)" }}>How fees work</div>
+        <p style={{ color: "var(--muted)" }}>
+          XaePay charges <strong style={{ color: "var(--ink)" }}>{(provider.xaepay_fee_bps / 100).toFixed(2)}%</strong> on the source amount of every settled transaction routed through {provider.display_name}. Fees accrue automatically when a transaction settles. XaePay issues a monthly invoice consolidating all accrued lines into a single bill payable by wire or ACH.
+        </p>
+      </div>
+
+      <Card padding="none">
+        <div className="flex items-center justify-between p-4 flex-wrap gap-2" style={{ borderBottom: "1px solid var(--line)" }}>
+          <div className="font-semibold text-sm">{loading ? "Loading…" : `${entries.length} ledger entries`}</div>
+          <SecondaryBtn onClick={fetch} disabled={loading}><RefreshCw size={14} className={loading ? "animate-spin" : ""} /> Refresh</SecondaryBtn>
+        </div>
+        {entries.length === 0 ? (
+          <div className="p-12 text-center">
+            <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full" style={{ background: "var(--bone-2)" }}><Wallet size={20} style={{ color: "var(--muted)" }} /></div>
+            <h3 className="font-display text-lg font-semibold">No fees accrued yet</h3>
+            <p className="mt-1.5 text-sm" style={{ color: "var(--muted)" }}>Fee lines appear here automatically once transactions routed through you settle.</p>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr style={{ background: "var(--bone)", borderBottom: "1px solid var(--line)" }}>
+                  {["When", "Quote", "Recipient", "Source amount", "Fee", "Rate", "Status"].map((h) => (
+                    <th key={h} className="px-4 py-3 text-left font-mono text-[10px] font-semibold uppercase tracking-wider" style={{ color: "var(--muted)" }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {entries.map((e) => {
+                  const pill = PROVIDER_FEE_STATUS_PILL[e.status] || PROVIDER_FEE_STATUS_PILL.accrued;
+                  return (
+                    <tr key={e.id} style={{ borderBottom: "1px solid var(--line)" }}>
+                      <td className="px-4 py-3 font-mono text-xs" style={{ color: "var(--muted)" }}>{relativeTime(e.accrued_at)}</td>
+                      <td className="px-4 py-3 font-mono text-xs">QU-{(e.quote_id || "").slice(0, 4).toUpperCase()}</td>
+                      <td className="px-4 py-3">{e.quote?.beneficiary || "—"}</td>
+                      <td className="px-4 py-3 font-mono">{e.source_currency} {parseFloat(e.source_amount || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                      <td className="px-4 py-3 font-mono font-semibold">{e.fee_currency} {parseFloat(e.fee_amount || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                      <td className="px-4 py-3 font-mono text-xs" style={{ color: "var(--muted)" }}>{(e.fee_bps / 100).toFixed(2)}%</td>
+                      <td className="px-4 py-3"><span className="rounded-full px-2 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-wider" style={{ background: pill.bg, color: pill.color }}>{pill.label}</span></td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Card>
+    </div>
   );
 }
 
