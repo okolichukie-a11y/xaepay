@@ -326,6 +326,26 @@ export async function uploadInvoicePdf(invoiceId, doc) {
   }
 }
 
+// Upload an operator-issued receipt PDF for an invoice. Same bucket/policy as
+// invoice PDFs — kept private behind a 90-day signed URL.
+export async function uploadReceiptPdf(invoiceId, doc) {
+  try {
+    const blob = doc.output("blob");
+    const path = `receipts/${invoiceId}/${Date.now()}.pdf`;
+    const { error: upErr } = await supabase.storage
+      .from("quote-pdfs")
+      .upload(path, blob, { contentType: "application/pdf", upsert: false });
+    if (upErr) return { ok: false, error: upErr.message || "Upload failed" };
+    const { data: signed, error: signErr } = await supabase.storage
+      .from("quote-pdfs")
+      .createSignedUrl(path, 60 * 60 * 24 * 90);
+    if (signErr) return { ok: false, error: signErr.message };
+    return { ok: true, url: signed.signedUrl, path };
+  } catch (err) {
+    return { ok: false, error: err?.message || String(err) };
+  }
+}
+
 // Upload a customer's payment-proof file (image or PDF) for a specific invoice.
 // Reuses the private quote-pdfs bucket; path is namespaced under `invoice-proofs/`
 // so policies on that bucket apply only to people who can read the invoice.

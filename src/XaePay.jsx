@@ -7,9 +7,9 @@ import {
   ArrowLeft, ArrowLeftRight, Loader2, Layers, TrendingUp, Wallet, DollarSign, Mail,
   RefreshCw, ShieldCheck, Paperclip,
 } from "lucide-react";
-import { supabase, sendWhatsAppText, sendWhatsAppTemplate, fetchCedarRate, submitCustomerToCedar, submitRecipientToCedar, submitReceiverAccountToCedar, submitCedarTransaction, approveCedarQuote, confirmCedarDeposit, cancelCedarTransaction, uploadCedarFile, uploadFileBoth, uploadInvoicePdf, uploadInvoicePaymentProof, runComplianceReview, runComplianceWatchman, submitDocumentToCedar, sendEmail, safeUrl, logAuditEvent } from "./lib/supabase.js";
+import { supabase, sendWhatsAppText, sendWhatsAppTemplate, fetchCedarRate, submitCustomerToCedar, submitRecipientToCedar, submitReceiverAccountToCedar, submitCedarTransaction, approveCedarQuote, confirmCedarDeposit, cancelCedarTransaction, uploadCedarFile, uploadFileBoth, uploadInvoicePdf, uploadInvoicePaymentProof, uploadReceiptPdf, runComplianceReview, runComplianceWatchman, submitDocumentToCedar, sendEmail, safeUrl, logAuditEvent } from "./lib/supabase.js";
 import { generateQuotePdf, uploadQuotePdf, downloadQuotePdf } from "./lib/pdf.js";
-import { generateCompliancePackPdf, downloadCompliancePackPdf, generateTransactionConfirmationPdf, downloadTransactionConfirmationPdf, generateInvoicePdf, downloadInvoicePdf } from "./lib/pdf-doc.js";
+import { generateCompliancePackPdf, downloadCompliancePackPdf, generateTransactionConfirmationPdf, downloadTransactionConfirmationPdf, generateInvoicePdf, downloadInvoicePdf, generateReceiptPdf, downloadReceiptPdf } from "./lib/pdf-doc.js";
 import { useAuth } from "./lib/auth.js";
 
 // ─── Editable in one place ────────────────────────────────────────────────
@@ -4022,8 +4022,24 @@ function CustomerInvoiceDrawer({ invoice, customer, onClose, onPaid }) {
           </div>
         )}
 
+        {invoice.status === "paid" && invoice.receipt_pdf_url && (
+          <div>
+            <Label>Your receipt</Label>
+            <a href={safeUrl(invoice.receipt_pdf_url)} target="_blank" rel="noreferrer" className="rounded-xl p-3 text-xs flex items-center justify-between transition hover:bg-emerald-50" style={{ background: "rgba(15,95,63,0.06)", border: "1px solid rgba(15,95,63,0.2)" }}>
+              <div className="flex items-center gap-2" style={{ color: "var(--emerald)" }}>
+                <FileText size={14} />
+                <span className="font-medium">Payment receipt · {invoice.invoice_number}/R</span>
+              </div>
+              <Download size={12} style={{ color: "var(--emerald)" }} />
+            </a>
+          </div>
+        )}
+
         <div className="flex flex-wrap gap-2 pt-2">
-          <SecondaryBtn onClick={downloadPdf}><Download size={12} /> PDF</SecondaryBtn>
+          <SecondaryBtn onClick={downloadPdf}><Download size={12} /> Invoice PDF</SecondaryBtn>
+          {invoice.receipt_pdf_url && (
+            <SecondaryBtn onClick={() => window.open(safeUrl(invoice.receipt_pdf_url), "_blank")}><Download size={12} /> Receipt PDF</SecondaryBtn>
+          )}
         </div>
       </div>
     </Drawer>
@@ -4792,6 +4808,8 @@ function CreateInvoiceModal({ open, onClose, onCreated }) {
     customerName: "",
     customerEmail: "",
     customerPhone: "",
+    customerType: "individual",  // 'individual' | 'business' — only used when creating a new customer inline
+    customerPhotoId: null,        // optional File for the new customer's photo ID
     currency: "USD",
     dueDate: "",
     notes: "",
@@ -4844,10 +4862,62 @@ function CreateInvoiceModal({ open, onClose, onCreated }) {
     // crossborder is allowed without instructions because the rate-quote flow
     // provides its own walkthrough.
     const cleanedMethods = data.paymentMethods.filter((m) => m.type === "crossborder" || (m.instructions || "").trim().length > 0);
+
+    // Inline customer onboarding: if the operator typed details manually (no
+    // customerId picked), persist a customers row right now so this person is
+    // discoverable in the Customers tab and shows up in their CustomerPortal
+    // when they sign in with the captured email. KYC defaults to pending_review
+    // — the operator can complete the full KYC flow later.
+    let resolvedCustomerId = data.customerId || null;
+    if (!resolvedCustomerId && data.customerName) {
+      const { data: newCust, error: custErr } = await supabase.from("customers").insert({
+        bdc_user_id: auth.user.id,
+        bdc_name: operatorName,
+        name: data.customerName,
+        email: data.customerEmail || null,
+        phone: data.customerPhone || null,
+        type: data.customerType || "individual",
+        kyc_status: "pending_review",
+        kyc_tier: 0,
+      }).select("id").single();
+      if (custErr) {
+        setSaving(false);
+        push(`Couldn't create customer: ${custErr.message}`, "warn");
+        return;
+      }
+      resolvedCustomerId = newCust.id;
+
+      // If a photo ID was attached, upload it and log a customer_documents row.
+      // Best-effort — failures don't block the invoice from being created.
+      if (data.customerPhotoId) {
+        try {
+          const file = data.customerPhotoId;
+          const ext = (file.name.split(".").pop() || "bin").toLowerCase();
+          const path = `${resolvedCustomerId}/id_front-${Date.now()}.${ext}`;
+          const { error: upErr } = await supabase.storage.from("kyc-docs").upload(path, file, { contentType: file.type, upsert: false });
+          if (!upErr) {
+            await supabase.from("customer_documents").insert({
+              customer_id: resolvedCustomerId,
+              doc_type: "id_front",
+              storage_path: path,
+              file_name: file.name,
+              size_bytes: file.size,
+              mime_type: file.type,
+              issued_at: new Date().toISOString(),
+              uploaded_by: auth.user?.id || null,
+            });
+          }
+        } catch (uerr) {
+          // eslint-disable-next-line no-console
+          console.error("Photo ID upload during inline customer add failed:", uerr);
+        }
+      }
+    }
+
     const { data: inv, error: invErr } = await supabase.from("invoices").insert({
       operator_user_id: auth.user.id,
       operator_name: operatorName,
-      customer_id: data.customerId || null,
+      customer_id: resolvedCustomerId,
       customer_name: data.customerName,
       customer_email: data.customerEmail || null,
       customer_phone: data.customerPhone || null,
@@ -4933,6 +5003,20 @@ function CreateInvoiceModal({ open, onClose, onCreated }) {
               <Field label="Customer name"><Input value={data.customerName} onChange={(e) => setData({ ...data, customerName: e.target.value })} placeholder="Adekunle Imports Ltd" /></Field>
               <Field label="Customer email"><Input type="email" value={data.customerEmail} onChange={(e) => setData({ ...data, customerEmail: e.target.value })} placeholder="ops@adekunle.ng" /></Field>
               <Field label="Customer WhatsApp"><Input value={data.customerPhone} onChange={(e) => setData({ ...data, customerPhone: e.target.value })} placeholder="+234 803 123 4567" /></Field>
+              <Field label="Customer type">
+                <Select value={data.customerType} onChange={(e) => setData({ ...data, customerType: e.target.value })}>
+                  <option value="individual">Individual</option>
+                  <option value="business">Business</option>
+                </Select>
+              </Field>
+              <Field label="Photo ID (optional)" full>
+                <Input type="file" accept="image/*,application/pdf" onChange={(e) => setData({ ...data, customerPhotoId: e.target.files?.[0] || null })} />
+                <div className="text-[10px] mt-1 font-mono" style={{ color: "var(--muted)" }}>
+                  {data.customerPhotoId
+                    ? `${data.customerPhotoId.name} · ${(data.customerPhotoId.size / 1024).toFixed(0)} KB`
+                    : "Saved to this customer's KYC record. You can finish full KYC later from the Customers tab."}
+                </div>
+              </Field>
             </>
           )}
           {data.customerId && (
@@ -4957,16 +5041,22 @@ function CreateInvoiceModal({ open, onClose, onCreated }) {
             <Label>Line items</Label>
             <SecondaryBtn onClick={addItem}><Plus size={12} /> Add item</SecondaryBtn>
           </div>
-          <div className="space-y-2">
+          <div className="space-y-3 sm:space-y-2">
             {data.items.map((it, idx) => (
-              <div key={idx} className="grid gap-2" style={{ gridTemplateColumns: "1fr 70px 110px 110px auto" }}>
+              // Mobile: stack description on top, then qty / unit / amount / delete on row 2.
+              // Desktop (≥sm): the inner div uses `sm:contents` so its children flow into
+              // the outer 5-column grid, preserving the original single-row layout.
+              <div key={idx} className="rounded-lg p-3 space-y-2 sm:p-0 sm:rounded-none sm:space-y-0 sm:grid sm:gap-2 sm:items-center"
+                style={{ background: "var(--bone)", border: "1px solid var(--line)", gridTemplateColumns: "1fr 70px 110px 110px auto" }}>
                 <Input value={it.description} onChange={(e) => updateItem(idx, "description", e.target.value)} placeholder="What are you billing for?" />
-                <Input type="number" step="0.01" value={it.quantity} onChange={(e) => updateItem(idx, "quantity", e.target.value)} placeholder="Qty" />
-                <Input type="number" step="0.01" value={it.unit_price} onChange={(e) => updateItem(idx, "unit_price", e.target.value)} placeholder="Unit price" />
-                <div className="flex items-center px-2 font-mono text-sm justify-end" style={{ color: "var(--muted)" }}>
-                  {data.currency} {((parseFloat(it.quantity) || 0) * (parseFloat(it.unit_price) || 0)).toFixed(2)}
+                <div className="grid grid-cols-[1fr_1fr_1fr_auto] items-center gap-2 sm:contents">
+                  <Input type="number" step="0.01" value={it.quantity} onChange={(e) => updateItem(idx, "quantity", e.target.value)} placeholder="Qty" />
+                  <Input type="number" step="0.01" value={it.unit_price} onChange={(e) => updateItem(idx, "unit_price", e.target.value)} placeholder="Unit price" />
+                  <div className="flex items-center font-mono text-sm justify-end whitespace-nowrap" style={{ color: "var(--muted)" }}>
+                    {data.currency} {((parseFloat(it.quantity) || 0) * (parseFloat(it.unit_price) || 0)).toFixed(2)}
+                  </div>
+                  <button type="button" onClick={() => removeItem(idx)} disabled={data.items.length === 1} className="text-stone-400 hover:text-red-600 disabled:opacity-30 px-2" aria-label="Remove item"><X size={14} /></button>
                 </div>
-                <button type="button" onClick={() => removeItem(idx)} disabled={data.items.length === 1} className="text-stone-400 hover:text-red-600 disabled:opacity-30 px-2"><X size={14} /></button>
               </div>
             ))}
           </div>
@@ -5059,6 +5149,26 @@ function InvoiceDrawer({ invoice, onClose, onChanged }) {
     supabase.from("invoice_payments").select("*").eq("invoice_id", invoice.id).order("claimed_at", { ascending: false }).then(({ data }) => setClaims(data || []));
   }, [invoice?.id]);
 
+  // Lazy receipt: paid invoices that come through the cross-border Cedar trigger
+  // never get a UI-driven generation moment. When the operator opens the drawer
+  // on such an invoice, generate + persist the receipt PDF on first view so the
+  // customer can download it.
+  useEffect(() => {
+    if (!invoice?.id) return;
+    if (invoice.status !== "paid") return;
+    if (invoice.receipt_pdf_url) return;
+    let cancelled = false;
+    (async () => {
+      // Find the confirming claim (if any) so the receipt cites the method.
+      const { data: paymentRow } = await supabase.from("invoice_payments").select("*").eq("invoice_id", invoice.id).eq("status", "confirmed").order("confirmed_at", { ascending: false }).limit(1).maybeSingle();
+      if (cancelled) return;
+      await generateAndPersistReceipt(invoice, paymentRow || (invoice.related_quote_id ? { method_type: "crossborder", method_label: `QU-${invoice.related_quote_id.slice(0, 4).toUpperCase()}`, amount: invoice.total, currency: invoice.currency, confirmed_at: invoice.paid_at } : null));
+      onChanged && onChanged();
+    })();
+    return () => { cancelled = true; };
+    /* eslint-disable-next-line react-hooks/exhaustive-deps */
+  }, [invoice?.id, invoice?.status, invoice?.receipt_pdf_url]);
+
   // Realtime: when the customer submits a payment claim, surface it without a refresh.
   useEffect(() => {
     if (!invoice?.id) return;
@@ -5071,17 +5181,54 @@ function InvoiceDrawer({ invoice, onClose, onChanged }) {
     return () => { supabase.removeChannel(channel); };
   }, [invoice?.id]);
 
+  // Generate, upload, and persist a receipt PDF for this invoice. Called both
+  // when the operator confirms a payment claim AND lazily when the drawer
+  // opens on a paid invoice that doesn't have a receipt yet (e.g. the
+  // cross-border path that auto-pays via the DB trigger).
+  const generateAndPersistReceipt = async (invoiceRow, paymentRow) => {
+    try {
+      const { data: latestItems } = await supabase.from("invoice_items").select("*").eq("invoice_id", invoiceRow.id).order("position");
+      const issuedAt = new Date().toISOString();
+      const enrichedInvoice = { ...invoiceRow, paid_at: invoiceRow.paid_at || paymentRow?.confirmed_at || issuedAt, receipt_issued_at: issuedAt };
+      const doc = generateReceiptPdf({ invoice: enrichedInvoice, items: latestItems || [], payment: paymentRow });
+      const up = await uploadReceiptPdf(invoiceRow.id, doc);
+      if (up.ok) {
+        await supabase.from("invoices").update({
+          receipt_pdf_url: up.url,
+          receipt_pdf_path: up.path,
+          receipt_issued_at: issuedAt,
+        }).eq("id", invoiceRow.id);
+        // Email the customer a copy if we have their address. Best-effort.
+        if (invoiceRow.customer_email) {
+          const ccy = invoiceRow.currency || "USD";
+          const amtText = `${ccy} ${parseFloat(paymentRow?.amount || invoiceRow.total || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
+          const html = `<!doctype html><html><body style="font-family:system-ui,sans-serif;background:#fcfbf7;margin:0;padding:24px;"><div style="max-width:560px;margin:0 auto;background:white;border:1px solid #e5e7eb;border-radius:16px;padding:32px;"><h2 style="margin:0 0 8px;font-size:22px;color:#0a0b0d;">Payment received</h2><p style="color:#6b7280;font-size:14px;margin:0 0 20px;">${invoiceRow.operator_name || "Your operator"} has confirmed receipt of your payment for invoice ${invoiceRow.invoice_number}.</p><div style="background:#0f5f3f;color:white;border-radius:12px;padding:20px;margin-bottom:20px;"><div style="font-size:11px;text-transform:uppercase;letter-spacing:0.05em;color:#d1fae5;">Amount received</div><div style="font-size:30px;font-weight:600;margin-top:6px;">${amtText}</div></div><p style="text-align:center;margin:24px 0 8px;"><a href="${safeUrl(up.url)}" style="display:inline-block;background:#0a0b0d;color:#d4f570;padding:12px 28px;border-radius:12px;text-decoration:none;font-weight:600;font-size:14px;">Download receipt PDF</a></p><p style="color:#9ca3af;font-size:11px;text-align:center;margin:20px 0 0;">Receipt issued via XaePay · Keep this for your records</p></div></body></html>`;
+          sendEmail({ to: invoiceRow.customer_email, subject: `Receipt for invoice ${invoiceRow.invoice_number}`, html, text: `Payment received for invoice ${invoiceRow.invoice_number}.\nAmount: ${amtText}\nDownload receipt: ${up.url}` }).catch(() => {});
+        }
+      }
+      return up;
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error("Receipt generation failed:", err);
+      return { ok: false, error: err?.message || String(err) };
+    }
+  };
+
   const confirmClaim = async (claim) => {
     if (busy) return;
     setBusy(true);
     try {
+      const confirmedAt = new Date().toISOString();
       const { error } = await supabase.from("invoice_payments").update({
         status: "confirmed",
-        confirmed_at: new Date().toISOString(),
+        confirmed_at: confirmedAt,
         confirmed_by: (await supabase.auth.getUser()).data?.user?.id || null,
       }).eq("id", claim.id);
       if (error) throw error;
-      push("Payment confirmed — invoice marked paid", "success");
+      // Generate receipt now while we have the freshest invoice + claim data.
+      // The DB trigger will have flipped invoices.status='paid' synchronously.
+      await generateAndPersistReceipt(invoice, { ...claim, status: "confirmed", confirmed_at: confirmedAt });
+      push("Payment confirmed · receipt issued to customer", "success");
       onChanged && onChanged();
     } catch (err) {
       push(`Couldn't confirm: ${err?.message || err}`, "warn");
@@ -5266,8 +5413,24 @@ function InvoiceDrawer({ invoice, onClose, onChanged }) {
             </div>
           </div>
         )}
+        {invoice.status === "paid" && invoice.receipt_pdf_url && (
+          <div>
+            <Label>Receipt issued</Label>
+            <a href={safeUrl(invoice.receipt_pdf_url)} target="_blank" rel="noreferrer" className="rounded-xl p-3 text-xs flex items-center justify-between transition hover:bg-emerald-50" style={{ background: "rgba(15,95,63,0.06)", border: "1px solid rgba(15,95,63,0.2)" }}>
+              <div className="flex items-center gap-2" style={{ color: "var(--emerald)" }}>
+                <FileText size={14} />
+                <span className="font-medium">{invoice.invoice_number}/R</span>
+                <span className="font-mono text-[10px]" style={{ color: "var(--muted)" }}>{invoice.receipt_issued_at ? relativeTime(invoice.receipt_issued_at) : ""}</span>
+              </div>
+              <Download size={12} style={{ color: "var(--emerald)" }} />
+            </a>
+          </div>
+        )}
         <div className="flex flex-wrap gap-2 pt-2">
-          <SecondaryBtn onClick={downloadPdf}><Download size={12} /> PDF</SecondaryBtn>
+          <SecondaryBtn onClick={downloadPdf}><Download size={12} /> Invoice PDF</SecondaryBtn>
+          {invoice.receipt_pdf_url && (
+            <SecondaryBtn onClick={() => window.open(safeUrl(invoice.receipt_pdf_url), "_blank")}><Download size={12} /> Receipt PDF</SecondaryBtn>
+          )}
           {invoice.status !== "paid" && invoice.status !== "void" && (
             <SecondaryBtn onClick={voidInvoice}><X size={12} /> Void</SecondaryBtn>
           )}

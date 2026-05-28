@@ -934,4 +934,157 @@ export function downloadInvoicePdf(doc, invoice) {
   doc.save(`${num}-XaePay.pdf`);
 }
 
+// =============================================================================
+// Receipt — auto-generated when an invoice is marked paid. Acts as the
+// operator's proof-of-receipt to the customer. Receipt number is derived from
+// the invoice number (INV-XXXX → INV-XXXX/R) so we don't need a new sequence.
+// `payment` is the confirmed invoice_payments row (or a synthesized object for
+// cross-border quotes that auto-pay through the Cedar trigger).
+// =============================================================================
+
+const RECEIPT_METHOD_LABELS = {
+  zelle: "Zelle", ach: "ACH transfer", wire_us: "Domestic wire (US)", apple_pay: "Apple Pay / Cash App",
+  check: "Certified check", card_link: "Card payment", bank_ngn: "Nigerian bank transfer",
+  ussd: "USSD", crossborder: "International (XaePay)", other: "Other",
+};
+
+function buildReceiptPdfPage(doc, invoice, items, payment) {
+  drawHeader(doc, "Receipt");
+
+  let y = 38;
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(22);
+  doc.setTextColor(INK);
+  doc.text("Receipt", MARGIN, y);
+
+  const receiptNum = `${invoice.invoice_number || "INV"}/R`;
+  doc.setFont("courier", "normal");
+  doc.setFontSize(12);
+  doc.setTextColor(MUTED);
+  doc.text(receiptNum, PAGE_W - MARGIN, y, { align: "right" });
+  y += 7;
+
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(9);
+  doc.setTextColor(MUTED);
+  const issuedAt = invoice.receipt_issued_at || invoice.paid_at || new Date().toISOString();
+  doc.text(`Issued ${fmtDateTime(issuedAt)}`, MARGIN, y);
+  y += 14;
+
+  // Big paid amount stripe
+  const ccy = invoice.currency || payment?.currency || "USD";
+  const paidAmt = parseFloat(payment?.amount || invoice.total || 0);
+  doc.setFillColor(EMERALD);
+  doc.roundedRect(MARGIN, y, CONTENT_W, 26, 3, 3, "F");
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(8.5);
+  doc.setTextColor("#d1fae5");
+  doc.text("AMOUNT RECEIVED", MARGIN + 6, y + 8);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(20);
+  doc.setTextColor("#ffffff");
+  doc.text(fmtMoney(paidAmt, ccy), MARGIN + 6, y + 19);
+  doc.setFont("courier", "normal");
+  doc.setFontSize(9);
+  doc.setTextColor("#d1fae5");
+  doc.text(`PAID · ${fmtDate(invoice.paid_at || issuedAt)}`, PAGE_W - MARGIN - 6, y + 19, { align: "right" });
+  y += 34;
+
+  // Issued by / Issued to
+  const colW = (CONTENT_W - 8) / 2;
+  drawLabelValue(doc, "Received from", invoice.customer_name || "Customer", MARGIN, y);
+  drawLabelValue(doc, "Received by", invoice.operator_name || "Operator", MARGIN + colW + 8, y);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(8);
+  doc.setTextColor(MUTED);
+  doc.text([invoice.customer_phone, invoice.customer_email].filter(Boolean).join("  ·  ") || "—", MARGIN, y + 11, { maxWidth: colW });
+  doc.text("Via XaePay", MARGIN + colW + 8, y + 11);
+  y += 22;
+
+  doc.setDrawColor(LINE);
+  doc.line(MARGIN, y, PAGE_W - MARGIN, y);
+  y += 8;
+
+  // Payment details
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(10);
+  doc.setTextColor(INK);
+  doc.text("Payment details", MARGIN, y);
+  y += 7;
+  const methodLabel = payment?.method_type ? (RECEIPT_METHOD_LABELS[payment.method_type] || payment.method_type) : "—";
+  const detailRow = (label, value) => {
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(9);
+    doc.setTextColor(MUTED);
+    doc.text(label, MARGIN, y);
+    doc.setFont("courier", "normal");
+    doc.setTextColor(INK);
+    doc.text(value || "—", PAGE_W - MARGIN, y, { align: "right" });
+    y += 6;
+  };
+  detailRow("Method", methodLabel + (payment?.method_label ? ` · ${payment.method_label}` : ""));
+  if (payment?.reference) detailRow("Reference", payment.reference);
+  detailRow("Invoice", invoice.invoice_number || "—");
+  if (invoice.issue_date) detailRow("Invoice issued", fmtDate(invoice.issue_date));
+  detailRow("Payment confirmed", fmtDateTime(invoice.paid_at || issuedAt));
+  y += 4;
+
+  // Itemized recap so the receipt is self-contained
+  if (Array.isArray(items) && items.length > 0) {
+    doc.setDrawColor(LINE);
+    doc.line(MARGIN, y, PAGE_W - MARGIN, y);
+    y += 8;
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(10);
+    doc.setTextColor(INK);
+    doc.text("What this covers", MARGIN, y);
+    y += 7;
+    const sortedItems = [...items].sort((a, b) => (a.position || 0) - (b.position || 0));
+    sortedItems.forEach((it) => {
+      if (y > PAGE_H - 50) { drawFooter(doc, doc.internal.getNumberOfPages(), 0); doc.addPage(); drawHeader(doc, "Receipt (cont.)"); y = 38; }
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(9.5);
+      doc.setTextColor(INK);
+      const descLines = doc.splitTextToSize(it.description || "—", CONTENT_W - 40);
+      doc.text(descLines, MARGIN, y);
+      doc.setFont("courier", "bold");
+      doc.setFontSize(9);
+      doc.text(fmtMoney(parseFloat(it.amount || 0), ccy), PAGE_W - MARGIN, y, { align: "right" });
+      y += Math.max(descLines.length * 4, 6) + 2;
+    });
+  }
+
+  // Status confirmation
+  y += 4;
+  doc.setFillColor("#d1fae5");
+  doc.roundedRect(MARGIN, y, 36, 7, 2, 2, "F");
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(8);
+  doc.setTextColor("#065f46");
+  doc.text("RECEIPT ISSUED", MARGIN + 18, y + 4.7, { align: "center" });
+
+  // Footer
+  const noteY = PAGE_H - 30;
+  doc.setDrawColor(LINE);
+  doc.line(MARGIN, noteY, PAGE_W - MARGIN, noteY);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(8);
+  doc.setTextColor(MUTED);
+  doc.text(`This receipt acknowledges that ${invoice.operator_name || "the operator"} has received payment for invoice ${invoice.invoice_number || ""}. Keep this document for your records.`, MARGIN, noteY + 5, { maxWidth: CONTENT_W });
+  doc.text("Issued via XaePay · Operator-confirmed receipt · Not a tax document.", MARGIN, noteY + 13, { maxWidth: CONTENT_W });
+}
+
+export function generateReceiptPdf({ invoice, items, payment }) {
+  const doc = new jsPDF({ unit: "mm", format: "a4" });
+  buildReceiptPdfPage(doc, invoice, items, payment);
+  drawFooter(doc, doc.internal.getNumberOfPages(), 0);
+  return doc;
+}
+
+export function downloadReceiptPdf(doc, invoice) {
+  const num = (invoice?.invoice_number || "receipt").replace(/[^\w-]+/g, "_");
+  doc.save(`${num}-R-XaePay.pdf`);
+}
+
 export const _refForFilename = ref;
