@@ -5252,18 +5252,27 @@ const PROVIDER_FEE_STATUS_PILL = {
 function ProviderBilling({ provider }) {
   const auth = useAuth();
   const [entries, setEntries] = useState([]);
+  const [invoices, setInvoices] = useState([]);
   const [loading, setLoading] = useState(false);
 
   const fetch = async () => {
     if (!auth.user) return;
     setLoading(true);
-    const { data } = await supabase
-      .from("provider_fee_ledger")
-      .select("*, quote:quotes(id, customer_name, beneficiary, destination, currency)")
-      .eq("service_provider_id", provider.id)
-      .order("accrued_at", { ascending: false })
-      .limit(500);
-    setEntries(data || []);
+    const [{ data: ledger }, { data: invs }] = await Promise.all([
+      supabase
+        .from("provider_fee_ledger")
+        .select("*, quote:quotes(id, customer_name, beneficiary, destination, currency)")
+        .eq("service_provider_id", provider.id)
+        .order("accrued_at", { ascending: false })
+        .limit(500),
+      supabase
+        .from("invoices")
+        .select("id, invoice_number, currency, total, status, issue_date, due_date, paid_at, sent_at, pdf_url, notes")
+        .eq("service_provider_id", provider.id)
+        .order("issue_date", { ascending: false }),
+    ]);
+    setEntries(ledger || []);
+    setInvoices(invs || []);
     setLoading(false);
   };
   useEffect(() => { fetch(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [provider.id, auth.user?.id]);
@@ -5303,6 +5312,46 @@ function ProviderBilling({ provider }) {
           XaePay charges <strong style={{ color: "var(--ink)" }}>{(provider.xaepay_fee_bps / 100).toFixed(2)}%</strong> on the source amount of every settled transaction routed through {provider.display_name}. Fees accrue automatically when a transaction settles. XaePay issues a monthly invoice consolidating all accrued lines into a single bill payable by wire or ACH.
         </p>
       </div>
+
+      {/* XaePay-issued invoices to this provider. Generated monthly by XaePay
+          admin via the generate_provider_invoices() SQL function. */}
+      <Card padding="none">
+        <div className="flex items-center justify-between p-4 flex-wrap gap-2" style={{ borderBottom: "1px solid var(--line)" }}>
+          <div className="font-semibold text-sm">Invoices from XaePay {invoices.length > 0 ? `· ${invoices.length}` : ""}</div>
+        </div>
+        {invoices.length === 0 ? (
+          <div className="p-8 text-center">
+            <p className="text-xs" style={{ color: "var(--muted)" }}>No invoices issued yet. The first monthly statement will appear here once XaePay closes the billing period.</p>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr style={{ background: "var(--bone)", borderBottom: "1px solid var(--line)" }}>
+                  {["Invoice #", "Issued", "Due", "Amount", "Status", "PDF"].map((h) => (
+                    <th key={h} className="px-4 py-3 text-left font-mono text-[10px] font-semibold uppercase tracking-wider" style={{ color: "var(--muted)" }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {invoices.map((inv) => {
+                  const pill = INVOICE_STATUS_PILL[inv.status] || INVOICE_STATUS_PILL.sent;
+                  return (
+                    <tr key={inv.id} style={{ borderBottom: "1px solid var(--line)" }}>
+                      <td className="px-4 py-3 font-mono text-xs font-semibold">{inv.invoice_number}</td>
+                      <td className="px-4 py-3 font-mono text-xs" style={{ color: "var(--muted)" }}>{inv.issue_date ? new Date(inv.issue_date).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }) : "—"}</td>
+                      <td className="px-4 py-3 font-mono text-xs" style={{ color: "var(--muted)" }}>{inv.due_date ? new Date(inv.due_date).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }) : "—"}</td>
+                      <td className="px-4 py-3 font-mono font-semibold">{inv.currency} {parseFloat(inv.total || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                      <td className="px-4 py-3"><span className="rounded-full px-2 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-wider" style={{ background: pill.bg, color: pill.color }}>{pill.label}</span></td>
+                      <td className="px-4 py-3">{inv.pdf_url ? <a href={safeUrl(inv.pdf_url)} target="_blank" rel="noreferrer" className="underline font-mono text-xs" style={{ color: "var(--emerald)" }}>View</a> : <span className="text-xs" style={{ color: "var(--muted)" }}>—</span>}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Card>
 
       <Card padding="none">
         <div className="flex items-center justify-between p-4 flex-wrap gap-2" style={{ borderBottom: "1px solid var(--line)" }}>
