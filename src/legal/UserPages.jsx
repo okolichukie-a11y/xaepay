@@ -1,0 +1,335 @@
+import React from "react";
+import {
+  ArrowRight, ArrowLeftRight, CheckCircle2, FileText, Shield, ShieldCheck,
+  Wallet, MessageCircle, Send, TrendingUp, Sparkles, Briefcase, Layers, Zap, Receipt,
+} from "lucide-react";
+import { TIERS } from "../XaePay.jsx";
+
+// =============================================================================
+// XaePay user-focused sub-pages — each pitched to one audience.
+//
+// Routed at xaepay.com/?p=operators, /?p=customers, /?p=providers. Lighter
+// than the main homepage; designed to convert visitors who already know
+// roughly which role they fit and want the direct value proposition.
+// =============================================================================
+
+const WHATSAPP_URL = "https://wa.me/15717245894";
+
+function PageShell({ eyebrow, title, lede, primaryCta, secondaryCta, children }) {
+  return (
+    <div className="min-h-screen font-ui" style={{ background: "var(--paper)", color: "var(--ink)" }}>
+      <div className="relative z-[60] w-full px-4 py-2 text-center text-xs sm:text-sm" style={{ background: "var(--ink)", color: "var(--bone)", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
+        <span className="font-mono text-[10px] uppercase tracking-wider mr-2" style={{ color: "var(--lime)" }}>Private beta</span>
+        <span style={{ color: "rgba(247,245,240,0.85)" }}>Get invited when we open up. </span>
+        <a href="/" className="font-semibold underline underline-offset-2" style={{ color: "var(--lime)" }}>Main site →</a>
+      </div>
+
+      <section className="relative overflow-hidden hero-mesh" style={{ color: "var(--bone)" }}>
+        <div className="absolute inset-0 hero-grid" />
+        <div className="relative mx-auto max-w-5xl px-4 py-20 sm:px-6 lg:px-8">
+          <a href="/" className="font-mono text-[11px] uppercase tracking-wider underline" style={{ color: "rgba(247,245,240,0.5)" }}>← xaepay.com</a>
+          <div className="rise mt-6 inline-flex items-center gap-2 rounded-full border px-3 py-1" style={{ borderColor: "rgba(197,242,74,0.3)", background: "rgba(197,242,74,0.05)" }}>
+            <div className="h-1.5 w-1.5 rounded-full pulse-dot" style={{ background: "var(--lime)", boxShadow: "0 0 8px var(--lime)" }} />
+            <span className="font-mono text-[10px] font-medium uppercase tracking-[0.12em]" style={{ color: "var(--lime)" }}>{eyebrow}</span>
+          </div>
+          <h1 className="rise mt-6 font-display text-[44px] font-[450] leading-[1.05] tracking-tight sm:text-6xl">{title}</h1>
+          <p className="rise mt-6 max-w-2xl text-base leading-relaxed sm:text-lg" style={{ color: "rgba(247,245,240,0.65)" }}>{lede}</p>
+          <div className="rise mt-10 flex flex-col gap-3 sm:flex-row">
+            {primaryCta && (
+              <a href={primaryCta.href} className="glow-lime inline-flex items-center justify-center gap-2 rounded-xl px-6 py-3.5 text-sm font-semibold transition" style={{ background: "var(--lime)", color: "var(--ink)" }}>
+                {primaryCta.label} <ArrowRight size={16} />
+              </a>
+            )}
+            {secondaryCta && (
+              <a href={secondaryCta.href} target={secondaryCta.external ? "_blank" : undefined} rel={secondaryCta.external ? "noreferrer" : undefined} className="inline-flex items-center justify-center gap-2 rounded-xl px-6 py-3.5 text-sm font-semibold transition hover:bg-white/5" style={{ border: "1px solid rgba(255,255,255,0.15)", color: "var(--bone)" }}>
+                {secondaryCta.icon === "wa" && <MessageCircle size={16} />}
+                {secondaryCta.label}
+              </a>
+            )}
+          </div>
+        </div>
+      </section>
+
+      <div className="mx-auto max-w-5xl px-4 py-16 sm:px-6 lg:px-8">{children}</div>
+
+      <footer className="border-t" style={{ borderColor: "var(--line)", background: "var(--bone)" }}>
+        <div className="mx-auto max-w-5xl px-4 py-8 sm:px-6 lg:px-8 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between font-mono text-[10px] uppercase tracking-wider" style={{ color: "var(--muted)" }}>
+          <div>© 2026 XaePay · Lagos · Los Angeles</div>
+          <div className="flex gap-5">
+            <a href="/?p=terms" style={{ color: "inherit" }} className="underline">Terms</a>
+            <a href="/?p=privacy" style={{ color: "inherit" }} className="underline">Privacy</a>
+            <a href="/?p=refunds" style={{ color: "inherit" }} className="underline">Refunds</a>
+            <a href="/" style={{ color: "inherit" }} className="underline">Home</a>
+          </div>
+        </div>
+      </footer>
+    </div>
+  );
+}
+
+function Section({ eyebrow, title, lede, children }) {
+  return (
+    <section className="mb-16">
+      <div className="font-mono text-[10px] uppercase tracking-wider" style={{ color: "var(--emerald)" }}>{eyebrow}</div>
+      <h2 className="font-display mt-3 text-3xl font-[450] tracking-tight sm:text-4xl">{title}</h2>
+      {lede && <p className="mt-4 max-w-2xl text-base leading-relaxed" style={{ color: "var(--muted)" }}>{lede}</p>}
+      <div className="mt-8">{children}</div>
+    </section>
+  );
+}
+
+function Step({ n, title, body, footer }) {
+  return (
+    <div className="card-soft rounded-2xl bg-white p-6" style={{ border: "1px solid var(--line)" }}>
+      <div className="font-mono text-[11px] font-medium" style={{ color: "var(--emerald)" }}>{n}</div>
+      <h3 className="font-display mt-3 text-lg font-semibold">{title}</h3>
+      <p className="mt-2 text-sm leading-relaxed" style={{ color: "var(--muted)" }}>{body}</p>
+      {footer && <div className="mt-4 pt-3 font-mono text-[10px] uppercase tracking-wider" style={{ borderTop: "1px solid var(--line)", color: "var(--muted)" }}>{footer}</div>}
+    </div>
+  );
+}
+
+function Faq({ q, a }) {
+  return (
+    <details className="rounded-xl bg-white p-4" style={{ border: "1px solid var(--line)" }}>
+      <summary className="cursor-pointer font-semibold text-sm">{q}</summary>
+      <p className="mt-2 text-sm leading-relaxed" style={{ color: "var(--muted)" }}>{a}</p>
+    </details>
+  );
+}
+
+// =============================================================================
+// Operators
+// =============================================================================
+
+export function OperatorsPage() {
+  return (
+    <PageShell
+      eyebrow="For agent operators"
+      title={<>Earn on every cross-border<br/><span className="italic" style={{ color: "var(--lime)" }}>transaction you route.</span></>}
+      lede="Bring your customer relationships and the compliance know-how of your wrapper. XaePay handles documentation, KYC orchestration, and provider routing. You set the rate, keep up to 70% of the markup."
+      primaryCta={{ label: "Become an operator", href: "/" }}
+      secondaryCta={{ label: "Talk on WhatsApp", href: WHATSAPP_URL, external: true, icon: "wa" }}
+    >
+      <Section eyebrow="What you get" title="The work XaePay takes off your desk">
+        <div className="grid gap-4 sm:grid-cols-2">
+          {[
+            { icon: FileText, title: "Invoice + supporting-doc capture", body: "Customers upload their supplier invoice and trade docs in their portal. XaePay parses and pre-validates before you see the quote." },
+            { icon: ShieldCheck, title: "KYC + compliance orchestration", body: "We assemble the document bundle each provider needs and push it through. You see the status without chasing it." },
+            { icon: Layers, title: "Multi-provider routing", body: "Cedar is the default rail today. As more providers come online, XaePay picks the best-fit per transaction based on corridor + price." },
+            { icon: Receipt, title: "Receipts + audit packs", body: "Customer receipts on payment; quarterly compliance packs assembled automatically per the tier you picked. No more scrambling at audit time." },
+          ].map((f) => (
+            <div key={f.title} className="rounded-xl p-5" style={{ background: "white", border: "1px solid var(--line)" }}>
+              <div className="flex h-10 w-10 items-center justify-center rounded-lg" style={{ background: "var(--bone-2)", color: "var(--emerald)" }}><f.icon size={18} /></div>
+              <h3 className="font-display mt-4 text-base font-semibold">{f.title}</h3>
+              <p className="mt-2 text-sm" style={{ color: "var(--muted)" }}>{f.body}</p>
+            </div>
+          ))}
+        </div>
+      </Section>
+
+      <Section eyebrow="Tier economics" title="Pick your tier per transaction" lede="You set your customer-facing markup above the tier minimum. Your share of that markup depends on how much compliance work you want XaePay doing.">
+        <div className="overflow-x-auto rounded-2xl" style={{ border: "1px solid var(--line)" }}>
+          <table className="w-full text-sm">
+            <thead style={{ background: "var(--bone)" }}>
+              <tr>
+                {["Tier", "Min markup", "Your share", "XaePay does"].map((h) => (
+                  <th key={h} className="px-4 py-3 text-left font-mono text-[10px] font-semibold uppercase tracking-wider" style={{ color: "var(--muted)" }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {Object.values(TIERS).map((t) => (
+                <tr key={t.id} style={{ borderTop: "1px solid var(--line)", background: "white" }}>
+                  <td className="px-4 py-3 font-semibold">{t.name}</td>
+                  <td className="px-4 py-3 font-mono">₦{t.minMarkup.toFixed(2)}/$</td>
+                  <td className="px-4 py-3 font-mono">{(t.operatorShare * 100).toFixed(0)}%</td>
+                  <td className="px-4 py-3 text-xs" style={{ color: "var(--muted)" }}>{t.tagline}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <p className="mt-4 text-xs" style={{ color: "var(--muted)" }}>Higher tiers shift compliance work to XaePay and the share with it. Same transaction, different tier — your judgment per deal.</p>
+      </Section>
+
+      <Section eyebrow="How it works" title="Onboard once, transact forever">
+        <div className="grid gap-4 sm:grid-cols-3">
+          <Step n="01" title="Apply" body="Five-step onboarding: license wrapper, business details, partner letter, risk disclosure. We verify and confirm within 1–3 business days." footer="One-time" />
+          <Step n="02" title="Refer your first customer" body="Customer's KYC routes through XaePay to a licensed provider. Approval timelines: 5–15 business days." footer="Per customer · first-time" />
+          <Step n="03" title="Quote, collect, settle" body="Customer messages you with a payment. You forward to XaePay, pick a tier, set your markup. They confirm, deposit NGN, provider settles." footer="Per transaction" />
+        </div>
+      </Section>
+
+      <Section eyebrow="FAQ" title="Common operator questions">
+        <div className="space-y-3">
+          <Faq q="Do I need to be a BDC?" a="No. Operators can be BDCs, IMTOs, MSBs, freight forwarders, customs agents, or independent agents operating under a licensed partner. The eligibility check during onboarding will surface the documentation needed for your specific setup." />
+          <Faq q="Who holds the money?" a="XaePay never custodies funds. Customer NGN goes to a licensed provider's collection account; the provider executes the wire abroad. XaePay handles documentation, KYC orchestration, and routing — not custody." />
+          <Faq q="How am I paid out?" a="Earnings accrue per transaction and are paid biweekly to the Nigerian bank account you provide during onboarding. Statements are downloadable from your operator dashboard." />
+          <Faq q="What about CBN / SCUML / NFIU reporting?" a="Those obligations are yours. XaePay generates the documentation that supports your filings (audit packs, transaction logs, customer KYC trails) — you remain the regulated entity from your authorities' perspective." />
+        </div>
+      </Section>
+
+      <div className="rounded-3xl p-8 text-center" style={{ background: "var(--ink)", color: "var(--bone)" }}>
+        <h2 className="font-display text-3xl font-[450] tracking-tight">Ready to plug in?</h2>
+        <p className="mt-3 text-sm" style={{ color: "rgba(247,245,240,0.7)" }}>Sign up in 4 minutes. Refer your first customer this week.</p>
+        <a href="/" className="mt-6 inline-flex items-center justify-center gap-2 rounded-xl px-6 py-3 text-sm font-semibold transition" style={{ background: "var(--lime)", color: "var(--ink)" }}>Become an operator <ArrowRight size={14} /></a>
+      </div>
+    </PageShell>
+  );
+}
+
+// =============================================================================
+// Customers
+// =============================================================================
+
+export function CustomersPage() {
+  return (
+    <PageShell
+      eyebrow="For customers"
+      title={<>Pay foreign suppliers,<br/><span className="italic" style={{ color: "var(--lime)" }}>cleanly and transparently.</span></>}
+      lede="Send to your suppliers in China, US, UK, Europe, India, UAE, or anywhere your business takes you — through a vetted operator and a licensed payment provider. Locked rates, full documentation, receipt for every payment."
+      primaryCta={{ label: "Send a payment", href: "/" }}
+      secondaryCta={{ label: "Talk on WhatsApp", href: WHATSAPP_URL, external: true, icon: "wa" }}
+    >
+      <Section eyebrow="Why XaePay" title="What you actually get">
+        <div className="grid gap-4 sm:grid-cols-2">
+          {[
+            { icon: Wallet, title: "Locked-rate quotes", body: "Your operator sets a rate; you have 4 minutes to confirm at exactly that rate. No moving target, no surprise spread." },
+            { icon: Shield, title: "Vetted operator + licensed provider", body: "Every Nigerian operator on the platform is verified. Every cross-border execution goes through a licensed payment provider, not an informal channel." },
+            { icon: Receipt, title: "Receipts you can show", body: "Every paid invoice, every transaction, every confirmed payment generates a receipt PDF you can forward to your supplier, your bank, or your auditor." },
+            { icon: FileText, title: "Compliance documentation handled", body: "Your supplier invoice, supporting trade docs, Form M references, and BOL — captured once, packaged correctly, kept on file." },
+          ].map((f) => (
+            <div key={f.title} className="rounded-xl p-5" style={{ background: "white", border: "1px solid var(--line)" }}>
+              <div className="flex h-10 w-10 items-center justify-center rounded-lg" style={{ background: "var(--bone-2)", color: "var(--emerald)" }}><f.icon size={18} /></div>
+              <h3 className="font-display mt-4 text-base font-semibold">{f.title}</h3>
+              <p className="mt-2 text-sm" style={{ color: "var(--muted)" }}>{f.body}</p>
+            </div>
+          ))}
+        </div>
+      </Section>
+
+      <Section eyebrow="How it works" title="Three steps">
+        <div className="grid gap-4 sm:grid-cols-3">
+          <Step n="01" title="Get matched with an operator" body="Tell us who you are and what you need to pay. We connect you with a vetted operator. Your operator handles KYC + onboarding with the payment provider." footer="One-time" />
+          <Step n="02" title="Request a quote" body="In your portal, request a quote with the amount, recipient details, and (if you have one) the supplier's invoice. Your operator prices it and sends back a quote you have 4 minutes to approve." footer="Per transaction" />
+          <Step n="03" title="Pay, receive proof" body="Deposit NGN to the funding instructions. The licensed provider executes the wire. You get a receipt + payment confirmation — forwardable to your supplier directly." footer="Same-day execution" />
+        </div>
+      </Section>
+
+      <Section eyebrow="Local invoices" title="More than just cross-border" lede="Operators also use XaePay to bill you for local services and goods. Pay them via Zelle, ACH, wire, bank transfer, USSD, card link, or international wire — all from one invoice with a single 'I've paid' button.">
+        <div className="rounded-2xl p-6" style={{ background: "var(--bone)", border: "1px solid var(--line)" }}>
+          <div className="grid gap-3 sm:grid-cols-3">
+            {[
+              { title: "Local payment methods", body: "Zelle, ACH, bank transfer, USSD, card link. Whichever your operator accepts." },
+              { title: "Cross-border", body: "International wire via a licensed payment provider, with locked rates and trade documentation." },
+              { title: "Proof of payment", body: "Upload your transfer receipt. Your operator confirms and you get a formal invoice receipt." },
+            ].map((m) => (
+              <div key={m.title}>
+                <div className="font-display text-sm font-semibold">{m.title}</div>
+                <div className="mt-1 text-xs" style={{ color: "var(--muted)" }}>{m.body}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </Section>
+
+      <Section eyebrow="FAQ" title="Common customer questions">
+        <div className="space-y-3">
+          <Faq q="Who actually moves my money?" a="A licensed payment provider executes the wire on your behalf. XaePay is the software layer that documents, validates, and routes. We never touch your funds." />
+          <Faq q="How long does it take?" a="KYC onboarding is 5–15 business days for first-time customers (compliance review on the provider side). Once you're approved, transactions typically settle same-day after deposit." />
+          <Faq q="What happens if the rate moves?" a="The rate your operator quotes is locked for 4 minutes once you approve. Confirm within the window or the quote expires and you get a fresh quote at the then-current rate." />
+          <Faq q="Can I cancel a payment?" a="Before deposit, yes — just don't fund the quote. After deposit, your operator will work with the provider to attempt a recall, but it's not guaranteed once the wire is in flight." />
+          <Faq q="Where can I read the legal terms?" a={<>The <a href="/?p=terms" className="underline" style={{ color: "var(--emerald)" }}>Terms of Service</a>, <a href="/?p=privacy" className="underline" style={{ color: "var(--emerald)" }}>Privacy Policy</a>, and <a href="/?p=refunds" className="underline" style={{ color: "var(--emerald)" }}>Refund Policy</a> are all linked in the footer.</>} />
+        </div>
+      </Section>
+
+      <div className="rounded-3xl p-8 text-center" style={{ background: "var(--ink)", color: "var(--bone)" }}>
+        <h2 className="font-display text-3xl font-[450] tracking-tight">Ready to send your first payment?</h2>
+        <p className="mt-3 text-sm" style={{ color: "rgba(247,245,240,0.7)" }}>Join the waitlist — we'll match you with an operator when we open up.</p>
+        <a href="/" className="mt-6 inline-flex items-center justify-center gap-2 rounded-xl px-6 py-3 text-sm font-semibold transition" style={{ background: "var(--lime)", color: "var(--ink)" }}>Send a payment <ArrowRight size={14} /></a>
+      </div>
+    </PageShell>
+  );
+}
+
+// =============================================================================
+// Providers
+// =============================================================================
+
+export function ProvidersPage() {
+  return (
+    <PageShell
+      eyebrow="For licensed providers"
+      title={<>Clean compliance packages<br/><span className="italic" style={{ color: "var(--lime)" }}>routed to your desk.</span></>}
+      lede="Receive pre-screened KYC packages with the documents your regulators expect, the customer's stated purpose, and the operator's audit trail attached. Settle the leg; XaePay handles the orchestration and the audit pack."
+      primaryCta={{ label: "Onboard as a provider", href: "/" }}
+      secondaryCta={{ label: "Read the MSA", href: "/?p=msa" }}
+    >
+      <Section eyebrow="What we deliver" title="Pre-screened, fully documented transactions">
+        <div className="grid gap-4 sm:grid-cols-2">
+          {[
+            { icon: ShieldCheck, title: "Standardized KYC bundle", body: "Identity docs, business registration, supporting trade documents, sanctions pre-screen — formatted to the schema you specify during onboarding." },
+            { icon: FileText, title: "Trade documentation captured upfront", body: "Customer's supplier invoice, BOL, customs declaration, and (where relevant) Form M reference, attached before the transaction reaches you." },
+            { icon: Layers, title: "Choose your integration depth", body: "Full API integration with webhooks, or a manual portal flow for OTC providers — same package format, your call on the tech." },
+            { icon: TrendingUp, title: "Volume + corridor controls", body: "Set your supported source and destination countries, supported currencies, daily caps. The routing engine respects all of them." },
+          ].map((f) => (
+            <div key={f.title} className="rounded-xl p-5" style={{ background: "white", border: "1px solid var(--line)" }}>
+              <div className="flex h-10 w-10 items-center justify-center rounded-lg" style={{ background: "var(--bone-2)", color: "var(--emerald)" }}><f.icon size={18} /></div>
+              <h3 className="font-display mt-4 text-base font-semibold">{f.title}</h3>
+              <p className="mt-2 text-sm" style={{ color: "var(--muted)" }}>{f.body}</p>
+            </div>
+          ))}
+        </div>
+      </Section>
+
+      <Section eyebrow="Provider portal" title="The dashboard you'll work in">
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div className="rounded-xl p-5" style={{ background: "var(--bone)", border: "1px solid var(--line)" }}>
+            <Sparkles size={16} style={{ color: "var(--emerald)" }} />
+            <h3 className="font-display mt-2 text-base font-semibold">Dashboard</h3>
+            <p className="mt-1 text-sm" style={{ color: "var(--muted)" }}>Daily volume, pending KYC count, recent transactions feed. See what's flowing through you at a glance.</p>
+          </div>
+          <div className="rounded-xl p-5" style={{ background: "var(--bone)", border: "1px solid var(--line)" }}>
+            <ShieldCheck size={16} style={{ color: "var(--emerald)" }} />
+            <h3 className="font-display mt-2 text-base font-semibold">KYC queue</h3>
+            <p className="mt-1 text-sm" style={{ color: "var(--muted)" }}>Customers + recipients waiting for your review. Approve or reject with a reason; verdict is pushed back to the operator.</p>
+          </div>
+          <div className="rounded-xl p-5" style={{ background: "var(--bone)", border: "1px solid var(--line)" }}>
+            <Wallet size={16} style={{ color: "var(--emerald)" }} />
+            <h3 className="font-display mt-2 text-base font-semibold">Billing</h3>
+            <p className="mt-1 text-sm" style={{ color: "var(--muted)" }}>Monthly statements consolidating routed-volume fees. Payable by wire, ACH, or bank transfer. Full ledger transparency.</p>
+          </div>
+          <div className="rounded-xl p-5" style={{ background: "var(--bone)", border: "1px solid var(--line)" }}>
+            <Briefcase size={16} style={{ color: "var(--emerald)" }} />
+            <h3 className="font-display mt-2 text-base font-semibold">Team</h3>
+            <p className="mt-1 text-sm" style={{ color: "var(--muted)" }}>Invite your team by email with admin / member / viewer roles. They sign in once and they're in.</p>
+          </div>
+        </div>
+      </Section>
+
+      <Section eyebrow="How it works" title="Three steps to start receiving routed flow">
+        <div className="grid gap-4 sm:grid-cols-3">
+          <Step n="01" title="Onboarding diligence" body="Share your licenses, supported corridors, and integration profile. We confirm fit and reserve your slot in the routing pool." footer="One-time" />
+          <Step n="02" title="Counterpart signed" body="Master Service Agreement, service levels, and pricing schedule signed by both parties. API keys / portal access provisioned." footer="One-time" />
+          <Step n="03" title="Receive routed flow" body="Operators' transactions start arriving in your queue, fully documented. You review KYC, execute the leg, and statuses sync back to the operator." footer="Per transaction" />
+        </div>
+      </Section>
+
+      <Section eyebrow="FAQ" title="Common provider questions">
+        <div className="space-y-3">
+          <Faq q="Do I need an API?" a="No. Providers without API capability work entirely from the portal — same KYC bundle, same status workflow, no integration build. Most OTC providers operate this way." />
+          <Faq q="How are fees calculated?" a="A small routing fee on the source amount of each settled transaction, snapshotted at settlement. The headline rate and billing mechanics are described in the Master Service Agreement template." />
+          <Faq q="What corridors and currencies do you support?" a="Globally configurable. You set your own coverage map during onboarding (source countries, destination countries, currencies). The routing engine only sends you transactions that fit." />
+          <Faq q="Where can I read the agreement?" a={<>The <a href="/?p=msa" className="underline" style={{ color: "var(--emerald)" }}>Master Service Agreement template</a> is posted publicly so you can review the terms before serious onboarding conversations.</>} />
+        </div>
+      </Section>
+
+      <div className="rounded-3xl p-8 text-center" style={{ background: "var(--ink)", color: "var(--bone)" }}>
+        <h2 className="font-display text-3xl font-[450] tracking-tight">Interested in being a provider?</h2>
+        <p className="mt-3 text-sm" style={{ color: "rgba(247,245,240,0.7)" }}>Write to us with your license details and corridor coverage. We onboard providers individually.</p>
+        <a href="mailto:legal@xaepay.com?subject=Provider%20onboarding" className="mt-6 inline-flex items-center justify-center gap-2 rounded-xl px-6 py-3 text-sm font-semibold transition" style={{ background: "var(--lime)", color: "var(--ink)" }}>Email provider onboarding <ArrowRight size={14} /></a>
+      </div>
+    </PageShell>
+  );
+}

@@ -325,3 +325,241 @@ export function PrivacyPolicy() {
     </LegalLayout>
   );
 }
+
+// =============================================================================
+// Data Deletion
+// =============================================================================
+
+export function DataDeletion() {
+  return (
+    <LegalLayout title="Data Deletion" kind="Policy">
+      <P>
+        This page explains how to request deletion of personal data {COMPANY_BRAND} holds about you, what we can and cannot delete, and the timeline you should expect. It supplements our <a href="/?p=privacy" className="underline" style={{ color: "var(--emerald)" }}>Privacy Policy</a>.
+      </P>
+
+      <H2>How to request deletion</H2>
+      <P>
+        Email <a href={`mailto:${PRIVACY_EMAIL}`} className="underline" style={{ color: "var(--emerald)" }}>{PRIVACY_EMAIL}</a> from the email address associated with your account. Include the word "Deletion" in the subject line and describe the data you want removed. If you have multiple roles on the Platform (for example, both an Operator and a Customer), tell us which one(s) the request applies to.
+      </P>
+      <P>
+        We may ask you to verify your identity before acting on a deletion request, particularly if the email comes from an address different from the one on file. Verification helps prevent fraudulent deletion of someone else's data.
+      </P>
+
+      <H2>What gets deleted</H2>
+      <UL>
+        <li>Your account profile, including name, email, phone, and login credentials.</li>
+        <li>Documents you have uploaded that are not subject to a regulatory retention requirement.</li>
+        <li>Operational data tied to your account (notes, preferences, in-product activity).</li>
+      </UL>
+
+      <H2>What we cannot delete on request</H2>
+      <P>
+        Some information must be retained to meet our own legal obligations or those of the licensed Service Providers we route transactions through. Specifically:
+      </P>
+      <UL>
+        <li><strong>KYC and transaction records</strong> tied to completed or attempted cross-border payments are retained for seven (7) years from the transaction date to comply with anti-money-laundering and tax-record obligations under U.S. and Nigerian law.</li>
+        <li><strong>Records held by Service Providers</strong> are governed by the Service Provider's own retention policy and applicable financial regulations. We will pass your request on but cannot guarantee deletion in their systems.</li>
+        <li><strong>Records we are required to keep</strong> by valid legal process (subpoenas, court orders, regulatory directions).</li>
+      </UL>
+      <P>
+        Where we cannot delete, we will, where possible, restrict access to the data so it is used only for the legal or compliance purpose that requires its retention.
+      </P>
+
+      <H2>Timeline</H2>
+      <P>
+        We aim to act on verified deletion requests within thirty (30) calendar days. Complex requests, requests involving multiple Service Providers, or requests requiring further verification may take longer; we'll keep you updated.
+      </P>
+
+      <H2>Account deactivation vs. deletion</H2>
+      <P>
+        If you don't need full deletion and just want to stop using the Platform, you can ask us to deactivate your account. Deactivation prevents future logins and stops outbound communications, but data is preserved (subject to the retention rules above). To deactivate, email <a href={`mailto:${PRIVACY_EMAIL}`} className="underline" style={{ color: "var(--emerald)" }}>{PRIVACY_EMAIL}</a> with "Deactivation" in the subject line.
+      </P>
+
+      <H2>Questions</H2>
+      <P>
+        For anything about this policy, email <a href={`mailto:${PRIVACY_EMAIL}`} className="underline" style={{ color: "var(--emerald)" }}>{PRIVACY_EMAIL}</a>.
+      </P>
+    </LegalLayout>
+  );
+}
+
+// =============================================================================
+// Refund Policy
+// =============================================================================
+
+export function RefundPolicy() {
+  return (
+    <LegalLayout title="Refund Policy" kind="Policy">
+      <P>
+        Because {COMPANY_BRAND} is a software platform and does not custody funds, refunds work differently than they do at a bank or payment processor. This policy explains the two scenarios in which a refund may be possible and how to request one.
+      </P>
+
+      <H2>Scenario 1: Transaction refunds (money already moving)</H2>
+      <P>
+        Funds you send through the Platform are received and disbursed by the licensed Service Provider routing your transaction. {COMPANY_BRAND} does not hold or release these funds.
+      </P>
+      <P>
+        If a transaction has not yet settled and you need it stopped or reversed, contact your Operator as soon as possible. Your Operator will work with the Service Provider to attempt a stop or recall. Whether a recall is possible depends on the stage the transaction has reached and the Service Provider's operational policies — once funds have left the Service Provider's account, recall is rarely possible.
+      </P>
+      <P>
+        Once a transaction has settled at the destination, refunds are governed by the Service Provider's terms and by applicable law. {COMPANY_BRAND} can assist with documentation and communication but cannot order or guarantee a refund.
+      </P>
+
+      <H2>Scenario 2: Platform fees paid to {COMPANY_BRAND}</H2>
+      <P>
+        Operators pay {COMPANY_BRAND} a share of the markup on each transaction; Service Providers pay {COMPANY_BRAND} a routing fee. Customers do not pay {COMPANY_BRAND} directly.
+      </P>
+      <P>
+        Where a transaction is reversed, recalled, or fails entirely after a fee has been booked, the corresponding fee owed to {COMPANY_BRAND} will be waived or, if already invoiced, credited against the next billing cycle. We do not issue cash refunds for platform fees outside this scenario.
+      </P>
+
+      <H2>How to request</H2>
+      <P>
+        Send the request to <a href={`mailto:${COMPANY_EMAIL}`} className="underline" style={{ color: "var(--emerald)" }}>{COMPANY_EMAIL}</a> with the transaction reference, the amount in question, and the reason. Where the request relates to a transaction routed via a Service Provider, copy your Operator on the message — they have the relationship with the Service Provider and will be the ones progressing it.
+      </P>
+
+      <H2>Timeline</H2>
+      <P>
+        Platform-fee waivers or credits are typically processed within seven (7) business days of confirmation that the underlying transaction was reversed. Transaction-level refunds depend on the Service Provider and can range from a few days to several weeks; the Service Provider sets the pace.
+      </P>
+
+      <H2>Chargebacks and disputes</H2>
+      <P>
+        If you initiate a chargeback or dispute with your bank, card issuer, or any other payment processor for a transaction you initiated on the Platform, we may suspend your account pending resolution and may share documentation about the transaction with the disputing institution to support the response.
+      </P>
+
+      <H2>Questions</H2>
+      <P>
+        Email <a href={`mailto:${COMPANY_EMAIL}`} className="underline" style={{ color: "var(--emerald)" }}>{COMPANY_EMAIL}</a> with the subject line "Refund question".
+      </P>
+    </LegalLayout>
+  );
+}
+
+// =============================================================================
+// MSA — Master Service Agreement template for Service Providers
+//
+// This is a *template*. It is not intended to be self-executing — Service
+// Providers should sign an executed counterpart that has been reviewed by both
+// parties' counsel. Posting it here lets prospective providers see the terms
+// up front before entering serious onboarding conversations.
+// =============================================================================
+
+export function ServiceProviderMSA() {
+  return (
+    <LegalLayout title="Master Service Agreement (Service Providers)" kind="Template">
+      <div className="rounded-xl p-4 text-xs mb-6" style={{ background: "rgba(212,168,44,0.08)", border: "1px solid rgba(212,168,44,0.25)", color: "var(--ink)" }}>
+        <strong>Template.</strong> This is a template Master Service Agreement that {COMPANY_BRAND} uses as the starting point for arrangements with licensed payment Service Providers. It is shared here for transparency. The version executed between {COMPANY_BRAND} and any specific Service Provider may differ. Nothing on this page is itself a binding contract; binding terms apply only after a counterpart is executed by both parties.
+      </div>
+
+      <P>
+        This Master Service Agreement ("<strong>Agreement</strong>") is entered into between {COMPANY_LEGAL_NAME} ("<strong>{COMPANY_BRAND}</strong>") and the licensed payment provider that countersigns this Agreement (the "<strong>Service Provider</strong>"). It governs the routing of transactions from {COMPANY_BRAND}'s Platform to the Service Provider for regulated execution.
+      </P>
+
+      <H2>1. Definitions</H2>
+      <UL>
+        <li><strong>Platform</strong> — the {COMPANY_BRAND} software platform, including the operator dashboard, customer portal, provider portal, and supporting APIs.</li>
+        <li><strong>Operator</strong> — a User of the Platform who introduces Customers and routes transactions.</li>
+        <li><strong>Customer</strong> — a User of the Platform who initiates payments to a Recipient.</li>
+        <li><strong>Recipient</strong> — the ultimate beneficiary of a payment.</li>
+        <li><strong>KYC Package</strong> — the bundle of identity and compliance documents assembled by the Platform and made available to the Service Provider for a Customer or Recipient.</li>
+        <li><strong>Routing Fee</strong> — the fee owed by the Service Provider to {COMPANY_BRAND} for transactions routed through it, as defined in Section 4.</li>
+      </UL>
+
+      <H2>2. Services {COMPANY_BRAND} provides</H2>
+      <UL>
+        <li>Software access to the provider portal, including a transactions feed, KYC queue, billing ledger, and team-management tools.</li>
+        <li>Assembly and delivery of KYC Packages and supporting compliance documentation for each Customer and Recipient the Service Provider receives.</li>
+        <li>Programmatic access via API (where the Service Provider has API capability) or manual order delivery via portal (for OTC providers without an API).</li>
+        <li>Audit-log access and exportable reports.</li>
+        <li>Coordination with Operators on amendments, cancellations, and exception handling.</li>
+      </UL>
+
+      <H2>3. Services the Service Provider provides</H2>
+      <UL>
+        <li>Regulated execution of payment transactions routed via the Platform, in accordance with the Service Provider's licenses and applicable law.</li>
+        <li>Acceptance, review, and verdict on KYC Packages presented for routed Customers and Recipients, within the timeframes specified in the Service Level Schedule (Schedule A).</li>
+        <li>Status updates back to the Platform (whether via API webhook or manual portal update) reflecting key transaction milestones.</li>
+        <li>Independent compliance with sanctions, anti-money-laundering, and reporting obligations to the regulators that license it.</li>
+      </UL>
+
+      <H2>4. Routing Fee</H2>
+      <P>
+        The Service Provider shall pay {COMPANY_BRAND} a Routing Fee equal to 0.2% (twenty basis points) of the source amount of each transaction routed through the Service Provider and settled. The applicable rate is recorded against each fee accrual at the time of settlement and is not affected by subsequent changes to the headline rate.
+      </P>
+      <P>
+        Fees accrue automatically in {COMPANY_BRAND}'s ledger at the moment a transaction reaches a settled state. {COMPANY_BRAND} consolidates all accrued lines for a calendar month into a single invoice issued to the Service Provider in the first ten (10) business days of the following month, payable within thirty (30) days of issue by wire, ACH, or bank transfer.
+      </P>
+      <P>
+        Late payments accrue interest at the lesser of 1.0% per month or the maximum permitted by applicable law. {COMPANY_BRAND} may suspend routing if an invoice is more than sixty (60) days past due.
+      </P>
+
+      <H2>5. Data sharing and privacy</H2>
+      <P>
+        {COMPANY_BRAND} shares KYC Packages, transaction details, and supporting documentation with the Service Provider strictly to enable the Service Provider to fulfill its regulated obligations. The Service Provider shall (i) handle this data in accordance with applicable data-protection laws (including NDPA, GDPR, CCPA, where relevant); (ii) implement reasonable technical and organizational measures to protect it; and (iii) not use it for any purpose other than executing routed transactions and meeting its own compliance and reporting obligations.
+      </P>
+      <P>
+        Where a User exercises a data-subject right (access, deletion, etc.) and the Service Provider holds responsive data, the parties will cooperate to respond within the timeframes required by law.
+      </P>
+
+      <H2>6. Service Levels</H2>
+      <P>
+        Specific service-level commitments (KYC review turnaround, transaction status reporting, API uptime if applicable) are set out in Schedule A to the executed counterpart. Repeated or material breaches of Schedule A are grounds for termination under Section 11.
+      </P>
+
+      <H2>7. Confidentiality</H2>
+      <P>
+        Each party may receive non-public information from the other ("<strong>Confidential Information</strong>"). The receiving party will (i) use Confidential Information only to perform under this Agreement; (ii) not disclose it to third parties without the disclosing party's prior written consent (other than to professional advisors bound by confidentiality); and (iii) protect it with at least the same care it uses for its own confidential information.
+      </P>
+
+      <H2>8. Intellectual Property</H2>
+      <P>
+        {COMPANY_BRAND} retains all rights, title, and interest in the Platform, including all software, designs, and trademarks. The Service Provider receives only the limited right to use the Platform during the term of this Agreement, solely for routed-transaction servicing.
+      </P>
+      <P>
+        Any data, documents, or compliance artifacts the Service Provider generates and shares back via the Platform are owned by the Service Provider, with {COMPANY_BRAND} receiving a license to store, route, and display them to the relevant Operator and Customer.
+      </P>
+
+      <H2>9. Representations and warranties</H2>
+      <UL>
+        <li>The Service Provider represents that it holds, and shall maintain throughout the term, all licenses required to perform the payment services it executes via routing under this Agreement.</li>
+        <li>{COMPANY_BRAND} represents that it has the right to make the Platform available and to deliver KYC Packages as described.</li>
+        <li>Each party represents that it has full authority to enter and perform under this Agreement.</li>
+      </UL>
+
+      <H2>10. Indemnification</H2>
+      <P>
+        Each party shall indemnify and hold the other harmless from third-party claims arising from (i) its own breach of this Agreement, (ii) its own violation of law, or (iii) its own gross negligence or wilful misconduct. The indemnifying party shall control the defense, provided that no settlement requiring an admission of liability by the indemnified party shall be entered without that party's prior written consent.
+      </P>
+
+      <H2>11. Limitation of liability</H2>
+      <P>
+        Except for breaches of confidentiality or indemnification obligations, neither party shall be liable to the other for indirect, incidental, special, consequential, or punitive damages, or for lost profits or lost data, arising from this Agreement. Each party's aggregate liability for any other claim shall not exceed the total Routing Fees paid or payable under this Agreement in the twelve (12) months preceding the event giving rise to the claim.
+      </P>
+
+      <H2>12. Term and termination</H2>
+      <P>
+        This Agreement begins on the date the counterpart is countersigned and continues until terminated. Either party may terminate (i) on ninety (90) days' written notice for convenience; (ii) immediately for material breach not cured within thirty (30) days of written notice; or (iii) immediately if the other party becomes insolvent, files for bankruptcy, or has its licenses suspended or revoked. On termination, all accrued amounts become due, and confidentiality, indemnification, IP, and limitation-of-liability provisions survive.
+      </P>
+
+      <H2>13. Governing law and disputes</H2>
+      <P>
+        This Agreement is governed by the laws of the State of Delaware, USA, without regard to its conflict-of-laws principles. Disputes shall be resolved by binding arbitration administered by the American Arbitration Association under its Commercial Arbitration Rules, seated in Wilmington, Delaware. Either party may seek injunctive relief in any court of competent jurisdiction to protect its IP or Confidential Information.
+      </P>
+
+      <H2>14. General</H2>
+      <UL>
+        <li><strong>Assignment.</strong> Neither party may assign this Agreement without the other's prior written consent, except to a successor in connection with a merger, acquisition, or sale of substantially all assets.</li>
+        <li><strong>Independent contractors.</strong> The parties are independent contractors; nothing in this Agreement creates a partnership, joint venture, agency, or employment relationship.</li>
+        <li><strong>Force majeure.</strong> Neither party is liable for delays caused by events beyond its reasonable control, including natural disasters, outages of third-party services, and acts of government.</li>
+        <li><strong>Entire agreement.</strong> This Agreement, together with any executed schedules, constitutes the entire agreement between the parties on its subject matter and supersedes prior discussions and writings.</li>
+        <li><strong>Notices.</strong> Notices under this Agreement must be in writing and sent to the email or postal address on the cover page of the executed counterpart.</li>
+      </UL>
+
+      <H2>Contact for prospective Service Providers</H2>
+      <P>
+        If you are a licensed payment provider interested in onboarding, write to <a href={`mailto:${COMPANY_EMAIL}`} className="underline" style={{ color: "var(--emerald)" }}>{COMPANY_EMAIL}</a> with "Provider onboarding" in the subject line. We will share the executable counterpart with the corporate schedule (cover page, Schedule A service levels, Schedule B pricing addendum) once initial diligence has been completed.
+      </P>
+    </LegalLayout>
+  );
+}

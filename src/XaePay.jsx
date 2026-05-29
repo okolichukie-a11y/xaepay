@@ -10,7 +10,8 @@ import {
 import { supabase, sendWhatsAppText, sendWhatsAppTemplate, fetchCedarRate, submitCustomerToCedar, submitRecipientToCedar, submitReceiverAccountToCedar, submitCedarTransaction, approveCedarQuote, confirmCedarDeposit, cancelCedarTransaction, uploadCedarFile, uploadFileBoth, uploadInvoicePdf, uploadInvoicePaymentProof, uploadReceiptPdf, uploadRecipientReceiptPdf, pickServiceProviderForQuote, runComplianceReview, runComplianceWatchman, submitDocumentToCedar, sendEmail, safeUrl, logAuditEvent } from "./lib/supabase.js";
 import { generateQuotePdf, uploadQuotePdf, downloadQuotePdf } from "./lib/pdf.js";
 import { generateCompliancePackPdf, downloadCompliancePackPdf, generateTransactionConfirmationPdf, downloadTransactionConfirmationPdf, generateInvoicePdf, downloadInvoicePdf, generateReceiptPdf, downloadReceiptPdf, generateRecipientReceiptPdf, downloadRecipientReceiptPdf } from "./lib/pdf-doc.js";
-import { TermsOfService, PrivacyPolicy } from "./legal/LegalPages.jsx";
+import { TermsOfService, PrivacyPolicy, DataDeletion, RefundPolicy, ServiceProviderMSA } from "./legal/LegalPages.jsx";
+import { OperatorsPage, CustomersPage, ProvidersPage } from "./legal/UserPages.jsx";
 import { useAuth } from "./lib/auth.js";
 
 // ─── Editable in one place ────────────────────────────────────────────────
@@ -31,7 +32,7 @@ const PARTNER_DISPLAY_NAME = "Licensed payment provider";
 // between the operator and XaePay. The operator picks a tier on each quote — lower tiers
 // leave more validation work to the operator (and pay them more), higher tiers shift work
 // (and a larger margin share) to XaePay.
-const TIERS = {
+export const TIERS = {
   basic:      { id: "basic",      name: "Basic",          minMarkup: 1.00, operatorShare: 0.70, xaepayShare: 0.30, tagline: "Light send · for small / price-competitive transactions",       monthlyFloor: 10000,  monthlyCeiling: 25000 },
   standard:   { id: "standard",   name: "Standard",       minMarkup: 2.00, operatorShare: 0.60, xaepayShare: 0.40, tagline: "You validate invoices · we execute",                          monthlyFloor: 25000,  monthlyCeiling: 50000 },
   verified:   { id: "verified",   name: "Verified",       minMarkup: 3.00, operatorShare: 0.50, xaepayShare: 0.50, tagline: "We check invoices · reject + reason for fixes",               monthlyFloor: 50000,  monthlyCeiling: 200000 },
@@ -312,13 +313,15 @@ function AppShell() {
     const t = new URLSearchParams(window.location.search).get("onboard");
     return t ? decodeQuoteToken(t) : null;
   });
-  // Top-level legal pages: ?p=terms or ?p=privacy. These bypass the rest of
-  // the app entirely so footers / external links can deep-link to them without
+  // Top-level static pages: legal docs (?p=terms/privacy/refunds/data-deletion/msa)
+  // and audience-focused sub-landings (?p=operators/customers/providers). These
+  // bypass the rest of the app so footers + external deep-links work without
   // hitting the splash gate or sign-in flow.
+  const STATIC_PAGES = ["terms", "privacy", "refunds", "data-deletion", "msa", "operators", "customers", "providers"];
   const [legalRoute] = useState(() => {
     if (typeof window === "undefined") return null;
     const p = new URLSearchParams(window.location.search).get("p");
-    return p === "terms" || p === "privacy" ? p : null;
+    return STATIC_PAGES.includes(p) ? p : null;
   });
   // Deep-link from email reminders (?customer=<uuid>) — operator lands on the
   // customers tab with that customer's drawer auto-opened. Cleared from the URL
@@ -454,8 +457,14 @@ function AppShell() {
   }, []);
 
   // After all hooks: now we can branch.
-  if (legalRoute === "terms") return <TermsOfService />;
-  if (legalRoute === "privacy") return <PrivacyPolicy />;
+  if (legalRoute === "terms")          return <TermsOfService />;
+  if (legalRoute === "privacy")        return <PrivacyPolicy />;
+  if (legalRoute === "refunds")        return <RefundPolicy />;
+  if (legalRoute === "data-deletion")  return <DataDeletion />;
+  if (legalRoute === "msa")            return <ServiceProviderMSA />;
+  if (legalRoute === "operators")      return <OperatorsPage />;
+  if (legalRoute === "customers")      return <CustomersPage />;
+  if (legalRoute === "providers")      return <ProvidersPage />;
   if (quoteRoute) return <QuoteApprovalPage quote={quoteRoute} />;
   if (onboardRoute) return <CustomerOnboardPage invite={onboardRoute} />;
 
@@ -3135,10 +3144,15 @@ function Footer({ onWaitlist }) {
         </div>
         <div className="mt-12 flex flex-col items-start justify-between gap-3 pt-8 sm:flex-row sm:items-center" style={{ borderTop: "1px solid rgba(255,255,255,0.08)" }}>
           <div className="font-mono text-[10px] uppercase tracking-wider" style={{ color: "rgba(247,245,240,0.4)" }}>© 2026 XaePay · Lagos · Los Angeles</div>
-          <div className="flex gap-5 font-mono text-[10px] uppercase tracking-wider" style={{ color: "rgba(247,245,240,0.4)" }}>
+          <div className="flex flex-wrap gap-5 font-mono text-[10px] uppercase tracking-wider" style={{ color: "rgba(247,245,240,0.4)" }}>
+            <a href="/?p=operators" className="hover:text-white transition" style={{ color: "inherit" }}>For operators</a>
+            <a href="/?p=customers" className="hover:text-white transition" style={{ color: "inherit" }}>For customers</a>
+            <a href="/?p=providers" className="hover:text-white transition" style={{ color: "inherit" }}>For providers</a>
             <a href="/?p=terms" className="hover:text-white transition" style={{ color: "inherit" }}>Terms</a>
             <a href="/?p=privacy" className="hover:text-white transition" style={{ color: "inherit" }}>Privacy</a>
-            <a href="/data-deletion.html" className="hover:text-white transition" style={{ color: "inherit" }}>Data deletion</a>
+            <a href="/?p=refunds" className="hover:text-white transition" style={{ color: "inherit" }}>Refunds</a>
+            <a href="/?p=data-deletion" className="hover:text-white transition" style={{ color: "inherit" }}>Data deletion</a>
+            <a href="/?p=msa" className="hover:text-white transition" style={{ color: "inherit" }}>Provider MSA</a>
           </div>
         </div>
       </div>
