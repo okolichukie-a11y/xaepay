@@ -31,11 +31,11 @@ const PARTNER_DISPLAY_NAME = "Licensed payment partner";
 // leave more validation work to the operator (and pay them more), higher tiers shift work
 // (and a larger margin share) to XaePay.
 const TIERS = {
-  basic:      { id: "basic",      name: "Basic",          minMarkup: 1.00, operatorShare: 0.75, xaepayShare: 0.25, tagline: "Light send · for small / price-competitive transactions",       monthlyFloor: 10000,  monthlyCeiling: 25000 },
-  standard:   { id: "standard",   name: "Standard",       minMarkup: 2.00, operatorShare: 0.70, xaepayShare: 0.30, tagline: "You validate invoices · we execute",                          monthlyFloor: 25000,  monthlyCeiling: 50000 },
-  verified:   { id: "verified",   name: "Verified",       minMarkup: 3.00, operatorShare: 0.65, xaepayShare: 0.35, tagline: "We check invoices · reject + reason for fixes",               monthlyFloor: 50000,  monthlyCeiling: 200000 },
-  documented: { id: "documented", name: "Documented",     minMarkup: 4.00, operatorShare: 0.60, xaepayShare: 0.40, tagline: "Full validation + audit pack per transaction",                monthlyFloor: 200000, monthlyCeiling: 500000 },
-  pro:        { id: "pro",        name: "Compliance Pro", minMarkup: 5.00, operatorShare: 0.55, xaepayShare: 0.45, tagline: "Deep validation + quarterly compliance pack",                  monthlyFloor: 500000, monthlyCeiling: null },
+  basic:      { id: "basic",      name: "Basic",          minMarkup: 1.00, operatorShare: 0.70, xaepayShare: 0.30, tagline: "Light send · for small / price-competitive transactions",       monthlyFloor: 10000,  monthlyCeiling: 25000 },
+  standard:   { id: "standard",   name: "Standard",       minMarkup: 2.00, operatorShare: 0.60, xaepayShare: 0.40, tagline: "You validate invoices · we execute",                          monthlyFloor: 25000,  monthlyCeiling: 50000 },
+  verified:   { id: "verified",   name: "Verified",       minMarkup: 3.00, operatorShare: 0.50, xaepayShare: 0.50, tagline: "We check invoices · reject + reason for fixes",               monthlyFloor: 50000,  monthlyCeiling: 200000 },
+  documented: { id: "documented", name: "Documented",     minMarkup: 4.00, operatorShare: 0.40, xaepayShare: 0.60, tagline: "Full validation + audit pack per transaction",                monthlyFloor: 200000, monthlyCeiling: 500000 },
+  pro:        { id: "pro",        name: "Compliance Pro", minMarkup: 5.00, operatorShare: 0.30, xaepayShare: 0.70, tagline: "Deep validation + quarterly compliance pack",                  monthlyFloor: 500000, monthlyCeiling: null },
 };
 
 function SplashScreen() {
@@ -330,6 +330,7 @@ function AppShell() {
   const [becomePartnerOpen, setBecomePartnerOpen] = useState(false); // MVP 4-step partner onboarding
   const [signInOpen, setSignInOpen] = useState(false);
   const [waitlistOpen, setWaitlistOpen] = useState(false);
+  const [waitlistIntent, setWaitlistIntent] = useState({ intent: "general", role: "business" });
   const [onboardingOpen, setOnboardingOpen] = useState(false);
   const [onboardingType, setOnboardingType] = useState(null);
   const [session, setSession] = useState({ type: null, tier: 0, name: null, company: null });
@@ -502,9 +503,20 @@ function AppShell() {
 
   return (
     <div className="min-h-screen font-ui" style={{ background: "var(--paper)", color: "var(--ink)" }}>
-      <PreviewBanner onWaitlist={() => setWaitlistOpen(true)} />
-      <TopBar view={view} setView={setView} mobileOpen={mobileOpen} setMobileOpen={setMobileOpen} onSignIn={() => setSignInOpen(true)} onRequestAccess={() => setBecomePartnerOpen(true)} onWaitlist={() => setWaitlistOpen(true)} session={session} authUser={auth.user} onSignOut={async () => { await auth.signOut(); setSession({ type: null, tier: 0, name: null, company: null }); setView("landing"); }} mfaEnrolled={mfaEnrolled} onSetup2FA={auth.user ? () => setTwoFactorOpen(true) : null} />
-      {view === "landing" && <Landing setView={setView} onRequestAccess={() => setBecomePartnerOpen(true)} onWaitlist={() => setWaitlistOpen(true)} />}
+      <PreviewBanner onWaitlist={() => { setWaitlistIntent({ intent: "general", role: "business" }); setWaitlistOpen(true); }} />
+      <TopBar
+        view={view} setView={setView}
+        mobileOpen={mobileOpen} setMobileOpen={setMobileOpen}
+        onSignIn={() => setSignInOpen(true)}
+        onRequestAccess={() => setBecomePartnerOpen(true)}
+        onCustomerSignup={() => { setWaitlistIntent({ intent: "customer", role: "business" }); setWaitlistOpen(true); }}
+        onWaitlist={() => { setWaitlistIntent({ intent: "general", role: "business" }); setWaitlistOpen(true); }}
+        session={session} authUser={auth.user}
+        onSignOut={async () => { await auth.signOut(); setSession({ type: null, tier: 0, name: null, company: null }); setView("landing"); }}
+        mfaEnrolled={mfaEnrolled}
+        onSetup2FA={auth.user ? () => setTwoFactorOpen(true) : null}
+      />
+      {view === "landing" && <Landing setView={setView} onRequestAccess={() => setBecomePartnerOpen(true)} onCustomerSignup={() => { setWaitlistIntent({ intent: "customer", role: "business" }); setWaitlistOpen(true); }} onWaitlist={() => { setWaitlistIntent({ intent: "general", role: "business" }); setWaitlistOpen(true); }} />}
       {view === "customer" && <CustomerApp session={session} />}
       {view === "customer-portal" && <CustomerPortal session={session} customerRows={customerRows || []} />}
       {view === "provider-portal" && <ProviderPortal session={session} memberships={providerMemberships || []} />}
@@ -514,7 +526,7 @@ function AppShell() {
       <SignInModal open={signInOpen} onClose={() => setSignInOpen(false)} />
       <BecomePartnerModal open={becomePartnerOpen} onClose={() => setBecomePartnerOpen(false)} onComplete={(data) => { setBecomePartnerOpen(false); completeOnboarding(data); }} />
       <RequestAccessModal open={accessOpen} onClose={() => setAccessOpen(false)} onChoose={startOnboarding} onWaitlist={() => { setAccessOpen(false); setWaitlistOpen(true); }} />
-      <WaitlistModal open={waitlistOpen} onClose={() => setWaitlistOpen(false)} />
+      <WaitlistModal open={waitlistOpen} onClose={() => setWaitlistOpen(false)} defaultRole={waitlistIntent.role} intent={waitlistIntent.intent} />
       {onboardingOpen && <OnboardingFlow type={onboardingType} onClose={() => setOnboardingOpen(false)} onComplete={completeOnboarding} onSwitchType={(t) => setOnboardingType(t)} />}
       <TwoFactorSetupModal open={twoFactorOpen} onClose={() => setTwoFactorOpen(false)} onEnrolled={async () => { await refreshMfaState(); }} />
     </div>
@@ -881,17 +893,18 @@ function CustomerOnboardPage({ invite }) {
 function PreviewBanner({ onWaitlist }) {
   return (
     <div className="relative z-[60] w-full px-4 py-2 text-center text-xs sm:text-sm" style={{ background: "var(--ink)", color: "var(--bone)", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
-      <span className="font-mono text-[10px] uppercase tracking-wider mr-2" style={{ color: "var(--lime)" }}>Preview</span>
-      <span style={{ color: "rgba(247,245,240,0.85)" }}>This is a live preview — please do not enter real BVN, NIN, or banking details. </span>
+      <span className="font-mono text-[10px] uppercase tracking-wider mr-2" style={{ color: "var(--lime)" }}>Private beta</span>
+      <span style={{ color: "rgba(247,245,240,0.85)" }}>Get invited when we open up. </span>
       <button onClick={onWaitlist} className="font-semibold underline underline-offset-2" style={{ color: "var(--lime)" }}>Join the waitlist →</button>
     </div>
   );
 }
 
-function WaitlistModal({ open, onClose }) {
+function WaitlistModal({ open, onClose, defaultRole = "business", intent }) {
   const [email, setEmail] = useState("");
   const [name, setName] = useState("");
-  const [role, setRole] = useState("business");
+  const [role, setRole] = useState(defaultRole);
+  useEffect(() => { if (open) setRole(defaultRole); }, [open, defaultRole]);
   const [submitted, setSubmitted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
@@ -923,7 +936,7 @@ function WaitlistModal({ open, onClose }) {
     }
   };
 
-  const reset = () => { setEmail(""); setName(""); setRole("business"); setSubmitted(false); setError(""); };
+  const reset = () => { setEmail(""); setName(""); setRole(defaultRole); setSubmitted(false); setError(""); };
   const closeAndReset = () => { reset(); onClose(); };
 
   if (submitted) {
@@ -944,9 +957,15 @@ function WaitlistModal({ open, onClose }) {
   }
 
   return (
-    <Modal open={open} onClose={closeAndReset} title="Join the XaePay waitlist" size="sm">
+    <Modal open={open} onClose={closeAndReset} title={intent === "customer" ? "Get early access" : intent === "provider" ? "Onboard as a service provider" : "Join the XaePay waitlist"} size="sm">
       <form onSubmit={submit} className="space-y-4">
-        <p className="text-sm" style={{ color: "var(--muted)" }}>We'll let you know the moment your tier opens. No spam — just one email when it's live.</p>
+        <p className="text-sm" style={{ color: "var(--muted)" }}>{
+          intent === "customer"
+            ? "Pay your foreign suppliers, send to family abroad, or receive international payments — through a vetted operator. We'll match you when we open up."
+            : intent === "provider"
+              ? "If you're a licensed cross-border payment provider, get clean compliance + KYC packages routed to you. We onboard providers individually."
+              : "We'll let you know the moment your tier opens. No spam — just one email when it's live."
+        }</p>
         <div><Label>Name</Label><Input required value={name} onChange={(e) => setName(e.target.value)} placeholder="Your name" /></div>
         <div><Label>Email</Label><Input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" /></div>
         <div>
@@ -971,7 +990,7 @@ function WaitlistModal({ open, onClose }) {
   );
 }
 
-function TopBar({ view, setView, mobileOpen, setMobileOpen, onSignIn, onRequestAccess, onWaitlist, session, authUser, onSignOut, mfaEnrolled, onSetup2FA }) {
+function TopBar({ view, setView, mobileOpen, setMobileOpen, onSignIn, onRequestAccess, onCustomerSignup, onWaitlist, session, authUser, onSignOut, mfaEnrolled, onSetup2FA }) {
   const onLanding = view === "landing";
   return (
     <div className="sticky top-0 z-50 backdrop-blur-xl safe-top" style={{ background: onLanding ? "rgba(10,11,13,0.72)" : "rgba(252,251,247,0.85)", borderBottom: `1px solid ${onLanding ? "rgba(255,255,255,0.06)" : "var(--line)"}`, color: onLanding ? "var(--bone)" : "var(--ink)" }}>
@@ -1015,6 +1034,7 @@ function TopBar({ view, setView, mobileOpen, setMobileOpen, onSignIn, onRequestA
             ) : (
               <>
                 <button onClick={onSignIn} className={`rounded-lg px-3 py-1.5 text-sm font-medium transition ${onLanding ? "text-stone-300 hover:text-white" : "text-stone-600 hover:text-stone-900"}`}>Sign in</button>
+                <button onClick={onCustomerSignup} className={`rounded-lg px-3 py-1.5 text-sm font-medium transition ${onLanding ? "text-stone-300 hover:text-white" : "text-stone-600 hover:text-stone-900"}`}>Send a payment</button>
                 <button onClick={onRequestAccess} className="rounded-lg px-4 py-1.5 text-sm font-medium transition" style={onLanding ? { background: "var(--lime)", color: "var(--ink)" } : { background: "var(--ink)", color: "var(--bone)" }}>Become an operator</button>
               </>
             )}
@@ -1041,6 +1061,7 @@ function TopBar({ view, setView, mobileOpen, setMobileOpen, onSignIn, onRequestA
             ) : (
               <div className="flex flex-col gap-2">
                 <button onClick={() => { onSignIn(); setMobileOpen(false); }} className="w-full rounded-lg px-4 py-2.5 text-sm font-medium" style={{ border: `1px solid ${onLanding ? "rgba(255,255,255,0.1)" : "var(--line)"}`, color: onLanding ? "var(--bone)" : "var(--ink)" }}>Sign in</button>
+                <button onClick={() => { onCustomerSignup(); setMobileOpen(false); }} className="w-full rounded-lg px-4 py-2.5 text-sm font-medium" style={{ border: `1px solid ${onLanding ? "rgba(255,255,255,0.1)" : "var(--line)"}`, color: onLanding ? "var(--bone)" : "var(--ink)" }}>Send a payment</button>
                 <button onClick={() => { onRequestAccess(); setMobileOpen(false); }} className="w-full rounded-lg px-4 py-2.5 text-sm font-medium" style={onLanding ? { background: "var(--lime)", color: "var(--ink)" } : { background: "var(--ink)", color: "var(--bone)" }}>Become an operator</button>
               </div>
             )}
@@ -1390,7 +1411,7 @@ function BecomePartnerModal({ open, onClose, onComplete }) {
           </div>
           <div className="space-y-3">
             <PartnerTerm icon={DollarSign} title="You set your customer's rate">You quote your customer whatever rate you want. We give you our wholesale rate plus a small XaePay infrastructure fee. You add your markup on top.</PartnerTerm>
-            <PartnerTerm icon={TrendingUp} title="You earn 55–75% of every transaction's margin">Every dollar of markup you charge above our minimum is split between you and XaePay based on the tier you pick per transaction. Recurring on every transaction, forever.</PartnerTerm>
+            <PartnerTerm icon={TrendingUp} title="You earn 30–70% of every transaction's margin">Every dollar of markup you charge above our minimum is split between you and XaePay based on the tier you pick per transaction. Lower tiers reward operators who handle the compliance work themselves; higher tiers shift that work (and a bigger share) to XaePay.</PartnerTerm>
             <PartnerTerm icon={Layers} title="Five service tiers, you pick per transaction">Basic (₦0.50/$ minimum), Standard (₦1.50/$), Verified (₦2.50/$), Documented (₦3.50/$), Compliance Pro (₦4.50/$). Each unlocks more validation work XaePay does for that transaction.</PartnerTerm>
             <PartnerTerm icon={MessageCircle} title="Everything happens on WhatsApp">Your customer messages you. You forward to XaePay. We handle quotes, KYC, compliance, execution, documents. Your customer never has to download anything.</PartnerTerm>
             <PartnerTerm icon={Shield} title="No license risk, no fund handling">You don't sell FX, hold money, or quote rates. You introduce customers; XaePay onboards them with our licensed payment partner; the partner executes the regulated payment.</PartnerTerm>
@@ -2311,14 +2332,14 @@ function LPOnboarding({ onComplete }) {
   );
 }
 
-function Landing({ setView, onRequestAccess, onWaitlist }) {
+function Landing({ setView, onRequestAccess, onCustomerSignup, onWaitlist }) {
   return (
     <div>
-      <Hero onGetStarted={onRequestAccess} />
+      <Hero onGetStarted={onRequestAccess} onCustomerSignup={onCustomerSignup} />
       <HowItWorks />
       <FourTiers onGetStarted={onRequestAccess} />
       <PartnerEconomics onGetStarted={onRequestAccess} />
-      <CTA onGetStarted={onRequestAccess} />
+      <CTA onGetStarted={onRequestAccess} onCustomerSignup={onCustomerSignup} />
       <Footer onWaitlist={onWaitlist} />
     </div>
   );
@@ -2361,7 +2382,7 @@ function StructureSection() {
   );
 }
 
-function Hero({ onGetStarted }) {
+function Hero({ onGetStarted, onCustomerSignup }) {
   return (
     <section className="relative overflow-hidden hero-mesh" style={{ color: "var(--bone)" }}>
       <div className="absolute inset-0 hero-grid" />
@@ -2370,18 +2391,21 @@ function Hero({ onGetStarted }) {
           <div className="lg:col-span-7">
             <div className="rise inline-flex items-center gap-2 rounded-full border px-3 py-1 mb-6" style={{ borderColor: "rgba(197,242,74,0.3)", background: "rgba(197,242,74,0.05)" }}>
               <div className="h-1.5 w-1.5 rounded-full pulse-dot" style={{ background: "var(--lime)", boxShadow: "0 0 8px var(--lime)" }} />
-              <span className="font-mono text-[10px] font-medium uppercase tracking-[0.12em]" style={{ color: "var(--lime)" }}>For Nigerian Agent Operators</span>
+              <span className="font-mono text-[10px] font-medium uppercase tracking-[0.12em]" style={{ color: "var(--lime)" }}>The cross-border OS for operators + customers</span>
             </div>
             <h1 className="rise font-display text-[44px] font-[450] leading-[1.02] tracking-tight sm:text-6xl lg:text-[72px]">Cross-border FX<br /><span className="italic" style={{ color: "var(--lime)" }}>businesses run on.</span></h1>
-            <p className="rise mt-8 max-w-xl text-base leading-relaxed sm:text-lg" style={{ color: "rgba(247,245,240,0.65)", animationDelay: "0.16s" }}>24hr settlement. Locked rates. Complete trade documentation. The infrastructure operators leverage to move business funds — <span className="font-semibold" style={{ color: "var(--bone)" }}>to and from Nigeria</span> — without the friction that comes with it.</p>
+            <p className="rise mt-8 max-w-xl text-base leading-relaxed sm:text-lg" style={{ color: "rgba(247,245,240,0.65)", animationDelay: "0.16s" }}>Invoicing, compliance documentation, and routing — across licensed payment providers — for businesses paying foreign suppliers and operators serving them. <span className="font-semibold" style={{ color: "var(--bone)" }}>Software, not custody.</span></p>
             <div className="rise mt-10 flex flex-col gap-3 sm:flex-row" style={{ animationDelay: "0.24s" }}>
               <button onClick={onGetStarted} className="glow-lime inline-flex items-center justify-center gap-2 rounded-xl px-6 py-3.5 text-sm font-semibold transition" style={{ background: "var(--lime)", color: "var(--ink)" }}>Become an operator <ArrowRight size={16} /></button>
+              {onCustomerSignup && (
+                <button onClick={onCustomerSignup} className="inline-flex items-center justify-center gap-2 rounded-xl px-6 py-3.5 text-sm font-semibold transition hover:bg-white/5" style={{ border: "1px solid rgba(255,255,255,0.15)", color: "var(--bone)" }}>Send a payment <ArrowRight size={16} /></button>
+              )}
               <a href={WHATSAPP_URL} target="_blank" rel="noreferrer" className="inline-flex items-center justify-center gap-2 rounded-xl px-6 py-3.5 text-sm font-semibold transition hover:bg-white/5" style={{ border: "1px solid rgba(255,255,255,0.15)", color: "var(--bone)" }}><MessageCircle size={16} /> Talk on WhatsApp</a>
             </div>
             <div className="rise mt-12 flex flex-wrap gap-x-8 gap-y-3" style={{ animationDelay: "0.32s" }}>
               <div>
-                <div className="font-mono text-[10px] uppercase tracking-wider" style={{ color: "rgba(247,245,240,0.45)" }}>Your share</div>
-                <div className="font-display text-lg font-semibold mt-0.5">55–75% of margin</div>
+                <div className="font-mono text-[10px] uppercase tracking-wider" style={{ color: "rgba(247,245,240,0.45)" }}>Operator share</div>
+                <div className="font-display text-lg font-semibold mt-0.5">30–70% of margin</div>
               </div>
               <div>
                 <div className="font-mono text-[10px] uppercase tracking-wider" style={{ color: "rgba(247,245,240,0.45)" }}>Direction</div>
@@ -2588,7 +2612,7 @@ function PartnerEconomics({ onGetStarted }) {
       <div className="grid gap-12 lg:grid-cols-12 lg:gap-16">
         <div className="lg:col-span-5">
           <SectionEyebrow>Your economics</SectionEyebrow>
-          <h2 className="font-display mt-4 text-4xl font-[450] leading-[1.05] tracking-tight sm:text-5xl">You keep <span className="italic" style={{ color: "var(--emerald)" }}>55–75%</span><br />based on tier.</h2>
+          <h2 className="font-display mt-4 text-4xl font-[450] leading-[1.05] tracking-tight sm:text-5xl">You keep <span className="italic" style={{ color: "var(--emerald)" }}>30–70%</span><br />based on tier.</h2>
           <p className="mt-6 text-base leading-relaxed" style={{ color: "var(--muted)" }}>Your share of the markup depends on which tier you pick for each transaction. Lower tiers leave more work to you and your share is higher. Higher tiers have us doing more work, so our share grows. Both sides win at every tier.</p>
           <button onClick={onGetStarted} className="mt-7 inline-flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold transition" style={{ background: "var(--ink)", color: "var(--bone)" }}>Become an operator <ArrowRight size={14} /></button>
         </div>
@@ -2627,15 +2651,18 @@ function PartnerEconomics({ onGetStarted }) {
   );
 }
 
-function CTA({ onGetStarted }) {
+function CTA({ onGetStarted, onCustomerSignup }) {
   return (
     <section className="border-t" style={{ borderColor: "var(--line)", background: "var(--bone)" }}>
       <div className="mx-auto max-w-7xl px-4 py-20 sm:px-6 lg:px-8 lg:py-24">
         <div className="text-center max-w-2xl mx-auto">
           <h2 className="font-display text-4xl font-[450] leading-[1.05] tracking-tight sm:text-5xl">Ready to plug in?</h2>
-          <p className="mt-5 text-base leading-relaxed" style={{ color: "var(--muted)" }}>Sign up in 4 minutes. Refer your first customer this week. Get them transacting in 5–10 business days. Earnings start with their first payment.</p>
+          <p className="mt-5 text-base leading-relaxed" style={{ color: "var(--muted)" }}>Operators get paid for routing customers + handling compliance. Customers get a vetted operator, clean documentation, and the option to pay locally or cross-border on the same platform.</p>
           <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:justify-center">
             <button onClick={onGetStarted} className="inline-flex items-center justify-center gap-2 rounded-xl px-6 py-3.5 text-sm font-semibold transition" style={{ background: "var(--ink)", color: "var(--bone)" }}>Become an operator <ArrowRight size={16} /></button>
+            {onCustomerSignup && (
+              <button onClick={onCustomerSignup} className="inline-flex items-center justify-center gap-2 rounded-xl px-6 py-3.5 text-sm font-semibold transition hover:bg-white" style={{ border: "1px solid var(--line)", color: "var(--ink)" }}>Send a payment <ArrowRight size={16} /></button>
+            )}
             <a href={WHATSAPP_URL} target="_blank" rel="noreferrer" className="inline-flex items-center justify-center gap-2 rounded-xl px-6 py-3.5 text-sm font-semibold transition hover:bg-white" style={{ border: "1px solid var(--line)", color: "var(--ink)" }}><MessageCircle size={16} /> Ask questions</a>
           </div>
         </div>
