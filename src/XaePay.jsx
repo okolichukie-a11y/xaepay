@@ -3138,7 +3138,7 @@ function Footer({ onWaitlist }) {
 function CustomerApp({ session }) {
   const [step, setStep] = useState(1);
   const [historyOpen, setHistoryOpen] = useState(false);
-  const [formData, setFormData] = useState({ amount: "47500", supplier: "Shenzhen Electronics Co., Ltd", country: "China", bdc: "Corporate Exchange BDC", invoiceUploaded: false, rail: "auto" });
+  const [formData, setFormData] = useState({ amount: "47500", supplier: "Shenzhen Electronics Co., Ltd", country: "China", bdc: "XaeccoX", invoiceUploaded: false, rail: "auto" });
   const userTier = session.tier ?? 0;
   const isIndividual = session.type === "individual";
   return (
@@ -4471,7 +4471,7 @@ function StepIntake({ data, setData, onNext, userTier, isIndividual }) {
         </Field>
         <Field label="Destination country"><Select value={data.country} onChange={(e) => setData({ ...data, country: e.target.value })}><option>China</option><option>United States</option><option>United Kingdom</option><option>UAE</option><option>Germany</option></Select></Field>
         <Field label="Supplier name" full><Input value={data.supplier} onChange={(e) => setData({ ...data, supplier: e.target.value })} /></Field>
-        <Field label="Routing BDC" full><Select value={data.bdc} onChange={(e) => setData({ ...data, bdc: e.target.value })}><option>Corporate Exchange BDC</option><option>Dula Global BDC (Tier 1)</option><option>Sevenlocks BDC</option><option>Bergpoint BDC</option></Select></Field>
+        <Field label="Routing operator" full><Select value={data.bdc} onChange={(e) => setData({ ...data, bdc: e.target.value })}><option>XaeccoX</option><option>Dula Global (Tier 1)</option><option>Sevenlocks</option><option>Bergpoint</option></Select></Field>
       </div>
       <div className="mt-6">
         <Label>Rail preference</Label>
@@ -12045,7 +12045,7 @@ function DiasporaStepReview({ data, onNext, onBack }) {
           <div className="flex-1 text-xs">
             <div className="font-mono uppercase tracking-wider" style={{ color: "rgba(247,245,240,0.6)" }}>Selected rail</div>
             <div className="font-display text-base font-semibold mt-0.5">{railName}</div>
-            <p className="mt-1 leading-relaxed" style={{ color: "rgba(247,245,240,0.65)" }}>{data.sendCurrency} → USDT on Cedar → BDC (Corporate Exchange) → ₦ credited directly to {data.recipientName} at {data.recipientBank}.</p>
+            <p className="mt-1 leading-relaxed" style={{ color: "rgba(247,245,240,0.65)" }}>{data.sendCurrency} → licensed payment provider → your operator → ₦ credited directly to {data.recipientName} at {data.recipientBank}.</p>
           </div>
         </div>
       </div>
