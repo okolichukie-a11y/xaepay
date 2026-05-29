@@ -24,7 +24,7 @@ const WHATSAPP_URL_US = `https://wa.me/${WHATSAPP_NUMBER_US}`;
 // renders only the Cedar rail (named generically) and the funding-method selector is
 // hidden. The Triple-A code paths still compute — flip this to true to bring it back.
 const SHOW_TRIPLE_A = false;
-const PARTNER_DISPLAY_NAME = "Licensed payment partner";
+const PARTNER_DISPLAY_NAME = "Licensed payment provider";
 
 // Per-transaction service tiers. Each tier sets a minimum markup (₦/$) and a margin split
 // between the operator and XaePay. The operator picks a tier on each quote — lower tiers
@@ -748,7 +748,7 @@ function QuoteApprovalPage({ quote: initialQuote }) {
         <div className="mt-10 rounded-xl p-4 text-xs" style={{ background: "var(--bone)", border: "1px solid var(--line)", color: "var(--muted)" }}>
           <div className="flex items-start gap-2">
             <Shield size={14} className="mt-0.5 flex-shrink-0" style={{ color: "var(--emerald)" }} />
-            <p>XaePay is a software and compliance layer. The actual payment is executed by {quote.bdcName || "your licensed operator"} via our licensed payment partner. XaePay does not custody your funds.</p>
+            <p>XaePay is a software and compliance layer. The actual payment is executed by {quote.bdcName || "your licensed operator"} via our licensed payment provider. XaePay does not custody your funds.</p>
           </div>
         </div>
       </main>
@@ -1355,7 +1355,7 @@ function BecomePartnerModal({ open, onClose, onComplete }) {
         <div className="space-y-5">
           <div>
             <h3 className="font-display text-lg font-semibold mb-2">Tell us about your business</h3>
-            <p className="text-sm" style={{ color: "var(--muted)" }}>Anyone qualified can run as an agent operator — registered businesses (BDCs, IMTOs, MSBs, freight forwarders, customs agents) and independent agents with the right licensing wrapper. You facilitate the payment; XaePay's licensed payment partner executes the wire.</p>
+            <p className="text-sm" style={{ color: "var(--muted)" }}>Anyone qualified can run as an agent operator — registered businesses (BDCs, IMTOs, MSBs, freight forwarders, customs agents) and independent agents with the right licensing wrapper. You facilitate the payment; XaePay's licensed payment provider executes the wire.</p>
           </div>
           <div className="grid gap-4 sm:grid-cols-2">
             <Field label="Business name (or your name if individual)" full><Input value={data.company} onChange={(e) => setData({ ...data, company: e.target.value })} placeholder="Acme Trade Co · Olusegun Adeyemi" /></Field>
@@ -1371,7 +1371,7 @@ function BecomePartnerModal({ open, onClose, onComplete }) {
         <div className="space-y-5">
           <div>
             <h3 className="font-display text-lg font-semibold mb-2">Regulatory wrapper</h3>
-            <p className="text-sm" style={{ color: "var(--muted)" }}>You're not selling FX. Your customers send payment requests, you forward them to XaePay, our licensed payment partner executes the wire. We just need to know how you're set up.</p>
+            <p className="text-sm" style={{ color: "var(--muted)" }}>You're not selling FX. Your customers send payment requests, you forward them to XaePay, our licensed payment provider executes the wire. We just need to know how you're set up.</p>
           </div>
           <div className="space-y-2">
             <div className="font-mono text-[10px] uppercase tracking-wider mb-1" style={{ color: "var(--muted)" }}>Nigerian wrappers</div>
@@ -1414,7 +1414,7 @@ function BecomePartnerModal({ open, onClose, onComplete }) {
             <PartnerTerm icon={TrendingUp} title="You earn 30–70% of every transaction's margin">Every dollar of markup you charge above our minimum is split between you and XaePay based on the tier you pick per transaction. Lower tiers reward operators who handle the compliance work themselves; higher tiers shift that work (and a bigger share) to XaePay.</PartnerTerm>
             <PartnerTerm icon={Layers} title="Five service tiers, you pick per transaction">Basic (₦0.50/$ minimum), Standard (₦1.50/$), Verified (₦2.50/$), Documented (₦3.50/$), Compliance Pro (₦4.50/$). Each unlocks more validation work XaePay does for that transaction.</PartnerTerm>
             <PartnerTerm icon={MessageCircle} title="Everything happens on WhatsApp">Your customer messages you. You forward to XaePay. We handle quotes, KYC, compliance, execution, documents. Your customer never has to download anything.</PartnerTerm>
-            <PartnerTerm icon={Shield} title="No license risk, no fund handling">You don't sell FX, hold money, or quote rates. You introduce customers; XaePay onboards them with our licensed payment partner; the partner executes the regulated payment.</PartnerTerm>
+            <PartnerTerm icon={Shield} title="No license risk, no fund handling">You don't sell FX, hold money, or quote rates. You introduce customers; XaePay onboards them with our licensed payment provider; the partner executes the regulated payment.</PartnerTerm>
           </div>
           <div className="flex justify-between pt-2">
             <SecondaryBtn onClick={back}>Back</SecondaryBtn>
@@ -1432,7 +1432,7 @@ function BecomePartnerModal({ open, onClose, onComplete }) {
           <p className="text-sm max-w-md mx-auto mb-6" style={{ color: "var(--muted)" }}>We'll send your operator agreement to <span className="font-semibold" style={{ color: "var(--ink)" }}>{data.email || "your email"}</span> and connect your WhatsApp number to ours within 24 hours.</p>
           <div className="rounded-xl p-4 max-w-md mx-auto mb-6" style={{ background: "var(--bone)", border: "1px solid var(--line)" }}>
             <div className="text-xs font-mono uppercase tracking-wider mb-2" style={{ color: "var(--muted)" }}>Next step</div>
-            <p className="text-sm">Refer your first customer. We'll handle their KYC with our compliance partner and have them transacting in 5–10 business days.</p>
+            <p className="text-sm">Refer your first customer. We'll handle their KYC with our compliance provider and have them transacting in 5–10 business days.</p>
           </div>
           <PrimaryBtn onClick={finish}>Open dashboard <ArrowRight size={14} /></PrimaryBtn>
         </div>
@@ -2088,7 +2088,7 @@ function BDCOnboarding({ onComplete }) {
     <div className="rise">
       <SectionEyebrow>Agent operator onboarding</SectionEyebrow>
       <h1 className="font-display mt-3 text-3xl font-[450] tracking-tight sm:text-4xl">Set up your agent operator account.</h1>
-      <p className="mt-2 text-sm" style={{ color: "var(--muted)" }}>Five steps. Includes licensed payment partner intake at the end.</p>
+      <p className="mt-2 text-sm" style={{ color: "var(--muted)" }}>Five steps. Includes licensed payment provider intake at the end.</p>
       <div className="mt-8"><OnboardingStepper step={step} steps={["Wrapper", "Principal", "Compliance", "Banking", "Partners"]} /></div>
       <div className="mt-6">
         {step === 1 && (
@@ -2214,11 +2214,11 @@ function BDCOnboarding({ onComplete }) {
         {step === 5 && (
           <Card>
             <h2 className="font-display text-xl font-semibold">Payment partner intake</h2>
-            <p className="mt-1 text-sm" style={{ color: "var(--muted)" }}>Quick partnership questionnaire so our licensed payment partner can onboard your operation.</p>
+            <p className="mt-1 text-sm" style={{ color: "var(--muted)" }}>Quick partnership questionnaire so our licensed payment provider can onboard your operation.</p>
             <button onClick={() => { setData({ ...data, partnerQ: { ...data.partnerQ, cedar: !data.partnerQ.cedar } }); push(data.partnerQ.cedar ? "Partner intake skipped" : "Partner intake complete", "success"); }} className="mt-6 w-full rounded-xl p-5 text-left transition" style={data.partnerQ.cedar ? { background: "var(--ink)", color: "var(--bone)", border: "1px solid var(--ink)" } : { background: "white", border: "1px solid var(--line)" }}>
               <div className="flex items-start justify-between">
                 <div>
-                  <div className="font-display text-base font-semibold">Licensed payment partner</div>
+                  <div className="font-display text-base font-semibold">Licensed payment provider</div>
                   <div className="font-mono text-[10px] uppercase tracking-wider mt-0.5" style={data.partnerQ.cedar ? { color: "rgba(247,245,240,0.6)" } : { color: "var(--muted)" }}>Regulated cross-border payment infrastructure</div>
                 </div>
                 {data.partnerQ.cedar && <CheckCircle2 size={16} style={{ color: "var(--lime)" }} />}
@@ -2347,7 +2347,7 @@ function Landing({ setView, onRequestAccess, onCustomerSignup, onWaitlist }) {
 
 function StructureSection() {
   const points = [
-    { n: "01", title: "We never custody funds", body: "Customer money goes directly to your licensed agent operator's account. Foreign-currency wires are executed by our licensed payment partners, regulated where they operate. XaePay never touches funds, never pools client money, never holds digital assets." },
+    { n: "01", title: "We never custody funds", body: "Customer money goes directly to your licensed agent operator's account. Foreign-currency wires are executed by our licensed payment providers, regulated where they operate. XaePay never touches funds, never pools client money, never holds digital assets." },
     { n: "02", title: "We never act as counterparty", body: "Every transaction is between named parties — customer, agent operator, payment partner, beneficiary — disclosed at every step. XaePay is the software layer, not a party to the trade." },
     { n: "03", title: "We never quote FX", body: "Our payment partner provides the wholesale rate. The agent operator sets the customer rate. XaePay surfaces the math and disclosures — but the spread belongs to the licensed operator." },
   ];
@@ -2417,7 +2417,7 @@ function Hero({ onGetStarted, onCustomerSignup }) {
               </div>
               <div>
                 <div className="font-mono text-[10px] uppercase tracking-wider" style={{ color: "rgba(247,245,240,0.45)" }}>Powered by</div>
-                <div className="font-display text-lg font-semibold mt-0.5">Licensed partners</div>
+                <div className="font-display text-lg font-semibold mt-0.5">Licensed providers</div>
               </div>
             </div>
           </div>
@@ -2480,11 +2480,11 @@ function HowItWorks() {
       <div className="mb-14 max-w-2xl">
         <SectionEyebrow>How it works</SectionEyebrow>
         <h2 className="font-display mt-4 text-4xl font-[450] leading-[1.05] tracking-tight sm:text-5xl">Three stages. <span className="italic" style={{ color: "var(--emerald)" }}>One platform.</span></h2>
-        <p className="mt-5 max-w-xl text-base leading-relaxed" style={{ color: "var(--muted)" }}>Everything starts with onboarding your customer through our compliance partner's KYC. Once approved (5–15 days), they can transact through you indefinitely.</p>
+        <p className="mt-5 max-w-xl text-base leading-relaxed" style={{ color: "var(--muted)" }}>Everything starts with onboarding your customer through our compliance provider's KYC. Once approved (5–15 days), they can transact through you indefinitely.</p>
       </div>
       <div className="grid gap-5 lg:grid-cols-3">
         {[
-          { n: "01", title: "Customer KYC onboarding", body: "You forward your customer's details to XaePay. We submit to our licensed payment partner's compliance team. They review and approve (5–15 business days). Customer becomes 'Approved' status. Only approved customers can transact.", footer: "First-time only · per customer" },
+          { n: "01", title: "Customer KYC onboarding", body: "You forward your customer's details to XaePay. We submit to our licensed payment provider's compliance team. They review and approve (5–15 business days). Customer becomes 'Approved' status. Only approved customers can transact.", footer: "First-time only · per customer" },
           { n: "02", title: "Per-transaction quote", body: "Customer messages you with payment details. You forward to XaePay. We quote five tiers, you pick one and set your markup. Customer confirms, gets funding instructions, deposits NGN. Our licensed partner executes the wire same day.", footer: "Every transaction" },
           { n: "03", title: "Documentation + earnings", body: "XaePay handles invoice validation, BOL collection, audit pack assembly per the tier you selected. Earnings calculated on each transaction. Bi-weekly payouts to your Nigerian bank account.", footer: "Automatic · ongoing" },
         ].map((s) => (
@@ -2500,7 +2500,7 @@ function HowItWorks() {
         <div className="flex items-start gap-3">
           <Shield size={16} className="mt-0.5 flex-shrink-0" style={{ color: "var(--emerald)" }} />
           <div className="text-sm" style={{ color: "var(--ink)" }}>
-            <span className="font-semibold">Why customer KYC is the gating step.</span> Our licensed payment partner is the regulated entity executing every wire. Their AML obligations require KYC approval before any customer can transact, regardless of how the customer was introduced. XaePay handles the submission and chases approval, but the timeline (5–15 days) sits with the partner's compliance team. Plan for it as the first conversation with any new customer — not a barrier you discover after they're ready to send.
+            <span className="font-semibold">Why customer KYC is the gating step.</span> Our licensed payment provider is the regulated entity executing every wire. Their AML obligations require KYC approval before any customer can transact, regardless of how the customer was introduced. XaePay handles the submission and chases approval, but the timeline (5–15 days) sits with the partner's compliance team. Plan for it as the first conversation with any new customer — not a barrier you discover after they're ready to send.
           </div>
         </div>
       </div>
@@ -2562,20 +2562,20 @@ function FourTiers({ onGetStarted }) {
 // focused on numeric pricing fields; copy lives here so it's easy to edit.
 const TIER_FEATURES = {
   basic: [
-    "Same-day wire execution via licensed partner",
+    "Same-day wire execution via licensed provider",
     "Light invoice + sanctions check",
     "Best for small ($10K–$25K) or price-competitive transactions",
     "Operator handles customer comms",
     "Transaction receipt + MT103 reference",
-    "75% to you · 25% to XaePay",
+    "70% to you · 30% to XaePay",
   ],
   standard: [
-    "Same-day wire execution via licensed partner",
+    "Same-day wire execution via licensed provider",
     "Agent self-validates customer invoices",
     "Sanctions screening (OFAC, UN, EU)",
     "Supplier KYB pre-screen",
     "Transaction receipt + MT103 reference",
-    "70% to you · 30% to XaePay",
+    "60% to you · 40% to XaePay",
   ],
   verified: [
     "Everything in Standard",
@@ -2583,7 +2583,7 @@ const TIER_FEATURES = {
     "Reject + reason sent back if invoice fails",
     "Customer fixes and resubmits via you",
     "Saves you from invoice review work",
-    "65% to you · 35% to XaePay",
+    "50% to you · 50% to XaePay",
   ],
   documented: [
     "Everything in Verified",
@@ -2592,7 +2592,7 @@ const TIER_FEATURES = {
     "BOL + customs + delivery follow-up agent",
     "Per-transaction audit pack",
     "Document archive (multi-year)",
-    "60% to you · 40% to XaePay",
+    "40% to you · 60% to XaePay",
   ],
   pro: [
     "Everything in Documented",
@@ -2602,7 +2602,7 @@ const TIER_FEATURES = {
     "Regulatory inquiry response service",
     "Priority compliance review",
     "Dedicated documentation officer",
-    "55% to you · 45% to XaePay",
+    "30% to you · 70% to XaePay",
   ],
 };
 
@@ -2715,7 +2715,7 @@ function Ticker() {
     { label: "EUR / NGN", value: "1,602.00", delta: "Operator quote" },
     { label: "USDT / NGN", value: "1,388.40", delta: "LP match" },
     { label: "Corridors", value: "NGN ↔ USD, GBP, EUR, CNY, AED + diaspora inbound", delta: "" },
-    { label: "Rails", value: "Licensed payment partner network", delta: "" },
+    { label: "Rails", value: "Licensed payment provider network", delta: "" },
     { label: "Rejection rate", value: "0.3%", delta: "vs 7% industry" },
   ];
   return (
@@ -2740,7 +2740,7 @@ function ProblemSection() {
     { icon: FileText, title: "Stale invoices", body: "90-day-old invoices that receiving banks reject on review." },
     { icon: AlertTriangle, title: "Payer-name mismatch", body: "CBN rules require the payer on invoice to match sending account." },
     { icon: Receipt, title: "Amount reconciliation", body: "Partial payments without documentation get flagged and held." },
-    { icon: Shield, title: "Quarterly partner reviews", body: "Audit evidence packs prepared and delivered to our licensed payment partner each quarter. Missing docs risks rail access." },
+    { icon: Shield, title: "Quarterly partner reviews", body: "Audit evidence packs prepared and delivered to our licensed payment provider each quarter. Missing docs risks rail access." },
   ];
   return (
     <section className="mx-auto max-w-7xl px-4 py-20 sm:px-6 lg:px-8 lg:py-28">
@@ -2975,7 +2975,7 @@ function BDCPricing({ onRequestAccess }) {
     <div>
       <div className="grid gap-5 lg:grid-cols-3">
         <PriceCard tier="Operator" subtitle="Under $2M/mo volume" price="$500" priceSuffix="/ month"
-          features={["Full compliance dashboard", "Agent-powered transaction processing", "CBN reporting automation", "Customer KYB management", "Licensed payment partner access", "25% rev-share on end-user fees"]}
+          features={["Full compliance dashboard", "Agent-powered transaction processing", "CBN reporting automation", "Customer KYB management", "Licensed payment provider access", "25% rev-share on end-user fees"]}
           min="3-month minimum commitment" onSelect={onRequestAccess} />
         <PriceCard tier="Scale" subtitle="$2M – $10M/mo volume" price="$2,000" priceSuffix="/ month"
           features={["Everything in Operator", "USDT Liquidity Marketplace access", "Payment Agent tooling for individuals", "Quarterly partner evidence packs", "Priority compliance support", "25% rev-share on end-user fees"]}
@@ -2999,7 +2999,7 @@ function PaymentAgentPricing({ onRequestAccess }) {
     <div>
       <div className="grid gap-5 lg:grid-cols-3">
         <PriceCard tier="Operator" subtitle="Under $5M/mo volume" price="$750" priceSuffix="/ month"
-          features={["Full compliance dashboard", "Agent-powered transaction processing", "Regulatory reporting (CBN, SCUML, HMRC, FinCEN as applicable)", "Customer KYB management", "Licensed payment partner access", "25% rev-share on end-user fees"]}
+          features={["Full compliance dashboard", "Agent-powered transaction processing", "Regulatory reporting (CBN, SCUML, HMRC, FinCEN as applicable)", "Customer KYB management", "Licensed payment provider access", "25% rev-share on end-user fees"]}
           min="3-month minimum commitment" onSelect={onRequestAccess} />
         <PriceCard tier="Scale" subtitle="$5M – $25M/mo volume" price="$2,500" priceSuffix="/ month"
           features={["Everything in Operator", "USDT Liquidity Marketplace access", "Multi-wrapper reporting automation", "Quarterly partner evidence packs", "Priority compliance support", "25% rev-share on end-user fees"]}
@@ -3109,7 +3109,7 @@ function Footer({ onWaitlist }) {
               </div>
               <span className="font-display text-2xl font-semibold tracking-tight">XaePay</span>
             </div>
-            <p className="mt-5 max-w-sm text-sm leading-relaxed" style={{ color: "rgba(247,245,240,0.6)" }}>The cross-border payment infrastructure for Nigerian agent operators. Powered by licensed payment partners.</p>
+            <p className="mt-5 max-w-sm text-sm leading-relaxed" style={{ color: "rgba(247,245,240,0.6)" }}>The cross-border payment infrastructure for Nigerian agent operators. Powered by licensed payment providers.</p>
             {onWaitlist && (
               <div className="mt-6 flex flex-wrap gap-3">
                 <button onClick={onWaitlist} className="inline-flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold transition" style={{ background: "var(--lime)", color: "var(--ink)" }}><Mail size={14} /> Join waitlist</button>
@@ -4527,7 +4527,7 @@ function StepReview({ data, onNext, onBack, isIndividual }) {
   const xaeFee = Math.max(25, amount * 0.005);
   const bdcSpread = amount * 0.018;
   const total = amount + xaeFee + bdcSpread;
-  const railName = !SHOW_TRIPLE_A ? "Licensed payment partner" : (data.rail === "fiat" ? "Triple-A direct USD" : "Cedar USDT corridor");
+  const railName = !SHOW_TRIPLE_A ? "Licensed payment provider" : (data.rail === "fiat" ? "Triple-A direct USD" : "Cedar USDT corridor");
   return (
     <Card>
       <h2 className="font-display text-xl font-semibold">Review & confirm</h2>
@@ -4535,7 +4535,7 @@ function StepReview({ data, onNext, onBack, isIndividual }) {
       <div className="mt-6 rounded-xl p-4" style={{ background: "var(--ink)", color: "var(--bone)" }}>
         <div className="flex items-start gap-3"><Layers size={16} className="mt-0.5 flex-shrink-0" style={{ color: "var(--lime)" }} />
           <div className="flex-1 text-xs"><div className="font-mono uppercase tracking-wider" style={{ color: "rgba(247,245,240,0.6)" }}>Selected rail</div><div className="font-display text-base font-semibold mt-0.5">{railName}</div>
-            <p className="mt-1 leading-relaxed" style={{ color: "rgba(247,245,240,0.65)" }}>{isIndividual ? `${data.bdc} routes via our licensed payment partner → wires to ${data.supplier}.` : `Routed via ${data.bdc} → our licensed payment partner → MT103 wire to ${data.supplier}.`}</p>
+            <p className="mt-1 leading-relaxed" style={{ color: "rgba(247,245,240,0.65)" }}>{isIndividual ? `${data.bdc} routes via our licensed payment provider → wires to ${data.supplier}.` : `Routed via ${data.bdc} → our licensed payment provider → MT103 wire to ${data.supplier}.`}</p>
           </div>
         </div>
       </div>
@@ -4580,7 +4580,7 @@ function StepConfirmed({ data, onNew, onHistory, isIndividual }) {
         <div className="font-mono text-[10px] uppercase tracking-wider" style={{ color: "rgba(247,245,240,0.6)" }}>Audit trail</div>
         <div className="mt-2 space-y-1.5 text-xs font-mono" style={{ color: "rgba(247,245,240,0.85)" }}>
           <div>1. {isIndividual ? "You → " : ""}{data.bdc} ← ₦{(parseFloat(data.amount) * 1395).toLocaleString()}</div>
-          <div>2. {data.bdc} → Licensed payment partner ← ${parseFloat(data.amount).toLocaleString()}</div>
+          <div>2. {data.bdc} → Licensed payment provider ← ${parseFloat(data.amount).toLocaleString()}</div>
           <div>3. Partner → MT103 → {data.supplier}</div>
         </div>
       </div>
@@ -7482,7 +7482,7 @@ function OperatorQuoteModal({ open, onClose, onCreated }) {
                   </div>
                 </div>
               )}
-              <div className="text-[9px] leading-relaxed" style={{ color: "var(--muted)" }}>Payment execution by licensed payment partner. XaePay is a software and compliance documentation platform. This invoice is generated upon quote confirmation and represents the locked terms of the transaction. Reference number must be included in the wire transfer for proper allocation.</div>
+              <div className="text-[9px] leading-relaxed" style={{ color: "var(--muted)" }}>Payment execution by licensed payment provider. XaePay is a software and compliance documentation platform. This invoice is generated upon quote confirmation and represents the locked terms of the transaction. Reference number must be included in the wire transfer for proper allocation.</div>
             </div>
           </div>
           <div className="grid gap-2 sm:grid-cols-3">
@@ -8081,11 +8081,11 @@ function InvoicePreviewModal({ open, onClose, data }) {
           {isInbound && (
             <div className="rounded-lg p-4 mb-5" style={{ background: "rgba(212,168,44,0.08)", border: "1px solid rgba(212,168,44,0.25)" }}>
               <div className="font-mono text-[9px] uppercase tracking-wider mb-2" style={{ color: "var(--amber)" }}>Inbound — sender funds in foreign currency</div>
-              <p className="text-xs" style={{ color: "var(--ink)" }}>The sender pays our licensed payment partner in {data.currency}. Once cleared, the recipient receives ₦{Math.round(data.ngnTotal).toLocaleString()} to their Nigerian bank account. Operator does not collect NGN on inbound — payment instructions for the foreign side are generated separately at confirmation.</p>
+              <p className="text-xs" style={{ color: "var(--ink)" }}>The sender pays our licensed payment provider in {data.currency}. Once cleared, the recipient receives ₦{Math.round(data.ngnTotal).toLocaleString()} to their Nigerian bank account. Operator does not collect NGN on inbound — payment instructions for the foreign side are generated separately at confirmation.</p>
             </div>
           )}
 
-          <div className="text-[9px] leading-relaxed" style={{ color: "var(--muted)" }}>Payment execution by licensed payment partner. XaePay is a software and compliance documentation platform. This invoice is generated upon quote confirmation and represents the locked terms of the transaction. Reference number must be included in the wire transfer for proper allocation.</div>
+          <div className="text-[9px] leading-relaxed" style={{ color: "var(--muted)" }}>Payment execution by licensed payment provider. XaePay is a software and compliance documentation platform. This invoice is generated upon quote confirmation and represents the locked terms of the transaction. Reference number must be included in the wire transfer for proper allocation.</div>
         </div>
       </div>
 
@@ -9701,7 +9701,7 @@ function BDCCustomers({ addedCustomers = [], onAddCustomer, jumpToCustomerId, on
         <div className="flex items-start gap-3">
           <Shield size={16} className="mt-0.5 flex-shrink-0" style={{ color: "var(--emerald)" }} />
           <div className="text-sm" style={{ color: "var(--ink)" }}>
-            <span className="font-semibold">Stage 1 of the platform: customer KYC.</span> Customers must be <span className="font-semibold" style={{ color: "var(--emerald)" }}>Approved</span> by our licensed payment partner before they can transact. Typical turnaround is 5–15 business days. Onboard new customers here — once approved, they show up as eligible in the quote flow.
+            <span className="font-semibold">Stage 1 of the platform: customer KYC.</span> Customers must be <span className="font-semibold" style={{ color: "var(--emerald)" }}>Approved</span> by our licensed payment provider before they can transact. Typical turnaround is 5–15 business days. Onboard new customers here — once approved, they show up as eligible in the quote flow.
           </div>
         </div>
       </div>
@@ -10576,7 +10576,7 @@ function AddCustomerModal({ open, onClose, onAdded, onAddLocal }) {
         <div className="space-y-5">
           <div>
             <h3 className="font-display text-lg font-semibold mb-2">Stage 1 of the platform: Customer KYC</h3>
-            <p className="text-sm" style={{ color: "var(--muted)" }}>Before your customer can transact, our licensed payment partner's compliance team must approve them. This typically takes 5–15 business days. Submit them here, we'll handle the review process and notify you when they're approved.</p>
+            <p className="text-sm" style={{ color: "var(--muted)" }}>Before your customer can transact, our licensed payment provider's compliance team must approve them. This typically takes 5–15 business days. Submit them here, we'll handle the review process and notify you when they're approved.</p>
           </div>
           <div className="grid gap-4 sm:grid-cols-2">
             <Field label="Business name" full><Input value={data.name} onChange={(e) => setData({ ...data, name: e.target.value })} placeholder="Adekunle Imports Ltd" /></Field>
@@ -10978,7 +10978,7 @@ function CustomerComplianceSection({ customer, docs, onUploaded }) {
 // things:
 //   1. Auto-generated XaePay confirmation PDF (downloadable any time)
 //   2. Bank confirmation docs (MT103 / debit advice) — uploaded by the operator
-//      once they receive them from the licensed payment partner (today ~24h via
+//      once they receive them from the licensed payment provider (today ~24h via
 //      email; future: auto-pulled from Cedar's webhook once their API exposes it)
 function TransactionConfirmationSection({ tx, onChanged, readOnly = false }) {
   const { push } = useToast();
