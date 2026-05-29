@@ -10,6 +10,7 @@ import {
 import { supabase, sendWhatsAppText, sendWhatsAppTemplate, fetchCedarRate, submitCustomerToCedar, submitRecipientToCedar, submitReceiverAccountToCedar, submitCedarTransaction, approveCedarQuote, confirmCedarDeposit, cancelCedarTransaction, uploadCedarFile, uploadFileBoth, uploadInvoicePdf, uploadInvoicePaymentProof, uploadReceiptPdf, uploadRecipientReceiptPdf, pickServiceProviderForQuote, runComplianceReview, runComplianceWatchman, submitDocumentToCedar, sendEmail, safeUrl, logAuditEvent } from "./lib/supabase.js";
 import { generateQuotePdf, uploadQuotePdf, downloadQuotePdf } from "./lib/pdf.js";
 import { generateCompliancePackPdf, downloadCompliancePackPdf, generateTransactionConfirmationPdf, downloadTransactionConfirmationPdf, generateInvoicePdf, downloadInvoicePdf, generateReceiptPdf, downloadReceiptPdf, generateRecipientReceiptPdf, downloadRecipientReceiptPdf } from "./lib/pdf-doc.js";
+import { TermsOfService, PrivacyPolicy } from "./legal/LegalPages.jsx";
 import { useAuth } from "./lib/auth.js";
 
 // ─── Editable in one place ────────────────────────────────────────────────
@@ -311,6 +312,14 @@ function AppShell() {
     const t = new URLSearchParams(window.location.search).get("onboard");
     return t ? decodeQuoteToken(t) : null;
   });
+  // Top-level legal pages: ?p=terms or ?p=privacy. These bypass the rest of
+  // the app entirely so footers / external links can deep-link to them without
+  // hitting the splash gate or sign-in flow.
+  const [legalRoute] = useState(() => {
+    if (typeof window === "undefined") return null;
+    const p = new URLSearchParams(window.location.search).get("p");
+    return p === "terms" || p === "privacy" ? p : null;
+  });
   // Deep-link from email reminders (?customer=<uuid>) — operator lands on the
   // customers tab with that customer's drawer auto-opened. Cleared from the URL
   // immediately after we consume it so back-nav doesn't re-trigger the open.
@@ -445,6 +454,8 @@ function AppShell() {
   }, []);
 
   // After all hooks: now we can branch.
+  if (legalRoute === "terms") return <TermsOfService />;
+  if (legalRoute === "privacy") return <PrivacyPolicy />;
   if (quoteRoute) return <QuoteApprovalPage quote={quoteRoute} />;
   if (onboardRoute) return <CustomerOnboardPage invite={onboardRoute} />;
 
@@ -3125,9 +3136,9 @@ function Footer({ onWaitlist }) {
         <div className="mt-12 flex flex-col items-start justify-between gap-3 pt-8 sm:flex-row sm:items-center" style={{ borderTop: "1px solid rgba(255,255,255,0.08)" }}>
           <div className="font-mono text-[10px] uppercase tracking-wider" style={{ color: "rgba(247,245,240,0.4)" }}>© 2026 XaePay · Lagos · Los Angeles</div>
           <div className="flex gap-5 font-mono text-[10px] uppercase tracking-wider" style={{ color: "rgba(247,245,240,0.4)" }}>
-            <a href="/privacy.html" className="hover:text-white transition" style={{ color: "inherit" }}>Privacy</a>
+            <a href="/?p=terms" className="hover:text-white transition" style={{ color: "inherit" }}>Terms</a>
+            <a href="/?p=privacy" className="hover:text-white transition" style={{ color: "inherit" }}>Privacy</a>
             <a href="/data-deletion.html" className="hover:text-white transition" style={{ color: "inherit" }}>Data deletion</a>
-            <span>Compliance</span>
           </div>
         </div>
       </div>
