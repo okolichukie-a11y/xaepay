@@ -6796,6 +6796,8 @@ const EMPTY_BRAND = {
   brand_logo_path: null,
   brand_accent_color: "#0a0b0d",
   brand_tagline: "",
+  default_outbound_markup: "",  // string in form, parsed to numeric on save
+  default_inbound_markup: "",
 };
 
 function BDCBrandSettings() {
@@ -6826,6 +6828,8 @@ function BDCBrandSettings() {
         brand_logo_path: data.brand_logo_path || null,
         brand_accent_color: data.brand_accent_color || "#0a0b0d",
         brand_tagline: data.brand_tagline || "",
+        default_outbound_markup: data.default_outbound_markup != null ? String(data.default_outbound_markup) : "",
+        default_inbound_markup: data.default_inbound_markup != null ? String(data.default_inbound_markup) : "",
       });
     }
     setLoading(false);
@@ -6859,6 +6863,9 @@ function BDCBrandSettings() {
         brand_logo_path: profile.operator_type === "business" ? profile.brand_logo_path : null,
         brand_accent_color: profile.operator_type === "business" ? (profile.brand_accent_color || null) : null,
         brand_tagline: profile.operator_type === "business" ? (profile.brand_tagline || null) : null,
+        // Pricing defaults apply to all operators regardless of brand type — they're not branding.
+        default_outbound_markup: profile.default_outbound_markup === "" ? null : parseFloat(profile.default_outbound_markup),
+        default_inbound_markup: profile.default_inbound_markup === "" ? null : parseFloat(profile.default_inbound_markup),
         updated_at: new Date().toISOString(),
       };
       const { error } = await supabase.from("operator_profiles").upsert(payload, { onConflict: "auth_user_id" });
@@ -6963,6 +6970,28 @@ function BDCBrandSettings() {
           </div>
         </Card>
       )}
+
+      <Card>
+        <h3 className="font-display text-lg font-semibold mb-1">Pricing defaults</h3>
+        <p className="text-sm mb-4" style={{ color: "var(--muted)" }}>
+          Auto-fill the markup field when you create a new quote, based on direction. Most operators set a tighter spread on outbound (competitive customer pressure) and a wider spread on inbound (diaspora is less price-sensitive). Leave blank to use the tier minimum each time. You can always override the markup per quote.
+        </p>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field label="Default outbound markup (₦/$)">
+            <Input type="number" step="0.10" min="0" value={profile.default_outbound_markup} onChange={(e) => setProfile({ ...profile, default_outbound_markup: e.target.value })} placeholder="e.g. 6.00" />
+            <p className="text-[10px] mt-1 font-mono" style={{ color: "var(--muted)" }}>Added to wholesale rate for NGN → USD / GBP / etc.</p>
+          </Field>
+          <Field label="Default inbound markup (₦/$)">
+            <Input type="number" step="0.10" min="0" value={profile.default_inbound_markup} onChange={(e) => setProfile({ ...profile, default_inbound_markup: e.target.value })} placeholder="e.g. 14.00" />
+            <p className="text-[10px] mt-1 font-mono" style={{ color: "var(--muted)" }}>Subtracted from wholesale rate for USD / GBP / etc. → NGN.</p>
+          </Field>
+        </div>
+        {profile.default_outbound_markup && profile.default_inbound_markup && (
+          <div className="mt-3 rounded-lg p-3 text-xs" style={{ background: "rgba(15,95,63,0.06)", color: "var(--emerald)" }}>
+            Total spread between directions: ₦{(parseFloat(profile.default_outbound_markup) + parseFloat(profile.default_inbound_markup)).toFixed(2)}/$
+          </div>
+        )}
+      </Card>
 
       <div className="flex justify-end">
         <PrimaryBtn onClick={save} disabled={saving || loading}>{saving ? <><Loader2 size={12} className="animate-spin" /> Saving…</> : <>Save brand settings</>}</PrimaryBtn>
@@ -7229,6 +7258,29 @@ function OperatorQuoteModal({ open, onClose, onCreated }) {
   // Falls back to a sane default while loading or if Cedar is unreachable.
   const [cedarRate, setCedarRate] = useState(null);
   const [rateLoading, setRateLoading] = useState(false);
+  // Operator's saved markup defaults (per-direction). Lets the form pre-fill
+  // the markup field with the operator's preferred spread when they switch
+  // direction, rather than always defaulting to tier.minMarkup.
+  const [operatorDefaults, setOperatorDefaults] = useState({ outbound: null, inbound: null });
+  useEffect(() => {
+    if (!open || !auth.user) return;
+    supabase.from("operator_profiles").select("default_outbound_markup, default_inbound_markup").eq("auth_user_id", auth.user.id).maybeSingle().then(({ data }) => {
+      setOperatorDefaults({
+        outbound: data?.default_outbound_markup != null ? parseFloat(data.default_outbound_markup) : null,
+        inbound:  data?.default_inbound_markup  != null ? parseFloat(data.default_inbound_markup)  : null,
+      });
+    });
+  }, [open, auth.user?.id]);
+  // When direction changes, swap markupAmount to that direction's preferred
+  // default. Floor at tier.minMarkup so saved defaults below the floor get
+  // bumped up automatically.
+  useEffect(() => {
+    if (!open) return;
+    const pref = data.direction === "inbound" ? operatorDefaults.inbound : operatorDefaults.outbound;
+    const tierMin = TIERS[data.selectedTier]?.minMarkup ?? 0;
+    if (pref != null) setData((d) => ({ ...d, markupAmount: Math.max(pref, tierMin) }));
+    /* eslint-disable-next-line react-hooks/exhaustive-deps */
+  }, [data.direction, operatorDefaults.outbound, operatorDefaults.inbound, open]);
 
   // Reset on close
   useEffect(() => {
