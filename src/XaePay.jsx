@@ -7210,6 +7210,12 @@ function OperatorQuoteModal({ open, onClose, onCreated }) {
     invoice: false,
     selectedTier: "documented",
     markupAmount: TIERS.documented.minMarkup,
+    // Rate-display perspective. 'outbound' = NGN→USD view (default operator
+    // mental model). 'inbound' = USD→NGN view, showing the rate diaspora
+    // senders or recipients see — typically ~₦20 less due to the spread.
+    // Doesn't change the actual locked rate on the quote; that's still driven
+    // by data.direction.
+    displayDir: "outbound",
   };
   const [step, setStep] = useState(1);
   const [data, setData] = useState(empty);
@@ -7280,7 +7286,15 @@ function OperatorQuoteModal({ open, onClose, onCreated }) {
 
   const tier = TIERS[data.selectedTier];
   const isInbound = data.direction === "inbound";
-  const customerRate = isInbound ? wholesaleRate - data.markupAmount : wholesaleRate + data.markupAmount;
+  // The quote's *locked* rate is determined by the customer's direction. The
+  // operator can however toggle the rate-display orientation to see the other
+  // side of the spread without changing the quote — a frequent "what would
+  // they get on the inverse?" check during pricing.
+  const outboundRate = wholesaleRate + data.markupAmount;
+  const inboundRate  = Math.max(0, wholesaleRate - data.markupAmount);
+  const displayInbound = data.displayDir === "inbound";
+  const displayRate = displayInbound ? inboundRate : outboundRate;
+  const customerRate = isInbound ? inboundRate : outboundRate;
   const amount = parseFloat(data.amount) || 0;
   const ngnTotal = Math.round(amount * customerRate);
   const totalMarginUSD = customerRate > 0 ? (data.markupAmount * amount) / customerRate : 0;
@@ -7610,6 +7624,35 @@ function OperatorQuoteModal({ open, onClose, onCreated }) {
                 <EconRow label="Wholesale rate" value={`₦${wholesaleRate.toFixed(2)}/$`} muted />
                 <EconRow label={isInbound ? "Your spread (subtracted)" : "Your markup (added)"} value={`${isInbound ? "−" : "+"}₦${data.markupAmount.toFixed(2)}/$`} highlight />
                 <EconRow label={isInbound ? "Recipient receives at" : "Customer all-in rate"} value={`₦${customerRate.toFixed(2)}/$`} />
+                {/* Rate-direction toggle. Flips the display orientation between
+                    NGN→USD (outbound rate) and USD→NGN (inbound rate, ~₦20 less
+                    by default). Doesn't change the quote's actual locked rate —
+                    that's still driven by data.direction at the top of the form. */}
+                <div className="rounded-lg p-2.5" style={{ background: "var(--bone)", border: "1px solid var(--line)" }}>
+                  <div className="flex items-center justify-between gap-2 mb-2">
+                    <span className="font-mono text-[10px] uppercase tracking-wider" style={{ color: "var(--muted)" }}>Rate orientation</span>
+                    <div className="flex gap-1 p-0.5 rounded-md" style={{ background: "white", border: "1px solid var(--line)" }}>
+                      <button type="button" onClick={() => setData({ ...data, displayDir: "outbound" })}
+                        className="rounded px-2 py-0.5 text-[10px] font-mono font-semibold transition"
+                        style={!displayInbound ? { background: "var(--ink)", color: "var(--bone)" } : { color: "var(--muted)" }}>
+                        NGN → USD
+                      </button>
+                      <button type="button" onClick={() => setData({ ...data, displayDir: "inbound" })}
+                        className="rounded px-2 py-0.5 text-[10px] font-mono font-semibold transition"
+                        style={displayInbound ? { background: "var(--ink)", color: "var(--bone)" } : { color: "var(--muted)" }}>
+                        USD → NGN
+                      </button>
+                    </div>
+                  </div>
+                  <div className="flex justify-between items-baseline text-xs">
+                    <span style={{ color: "var(--muted)" }}>{displayInbound ? "Inbound rate (USD→NGN)" : "Outbound rate (NGN→USD)"}</span>
+                    <span className="font-mono font-semibold">₦{displayRate.toFixed(2)}/$</span>
+                  </div>
+                  <div className="flex justify-between items-baseline text-[10px] mt-1" style={{ color: "var(--muted)" }}>
+                    <span>Spread between directions</span>
+                    <span className="font-mono">₦{(outboundRate - inboundRate).toFixed(2)}/$</span>
+                  </div>
+                </div>
                 <div className="h-px my-2" style={{ background: "var(--line)" }} />
                 <EconRow label={`Amount: $${amount.toLocaleString()}`} value={`${isInbound ? "Recipient gets " : ""}₦${ngnTotal.toLocaleString()}`} />
                 <EconRow label="Total margin captured" value={`$${totalMarginUSD.toFixed(2)}`} />
