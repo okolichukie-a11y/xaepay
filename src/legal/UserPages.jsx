@@ -254,6 +254,83 @@ export function CustomersPage() {
 }
 
 // =============================================================================
+// Send USD to Nigeria — diaspora-focused entry point
+// Distinct from /?p=customers (which covers the broader business case). This
+// page is for individuals or businesses outside Nigeria holding USD who want
+// to send NGN to a recipient back home.
+// =============================================================================
+
+export function SendUsdToNgnPage() {
+  return (
+    <PageShell
+      eyebrow="USD → NGN corridor"
+      title={<>Send USD to Nigeria,<br/><span className="italic" style={{ color: "var(--lime)" }}>landed in naira same day.</span></>}
+      lede="If you're holding USD anywhere in the world and need to pay NGN to a recipient in Nigeria — family, supplier, contractor, school — XaePay routes you through a vetted operator and a licensed payment provider. Locked rate, transparent fees, full receipt."
+      primaryCta={{ label: "Get started", href: "/" }}
+      secondaryCta={{ label: "Talk on WhatsApp", href: WHATSAPP_URL, external: true, icon: "wa" }}
+    >
+      <Section eyebrow="Who this is for" title="The USD → NGN rail">
+        <div className="grid gap-4 sm:grid-cols-3">
+          {[
+            { title: "Diaspora individuals", body: "You're in the US, UK, Canada, or anywhere abroad, sending family support, school fees, or property payments to Nigeria." },
+            { title: "US-based businesses", body: "You're paying Nigerian suppliers, contractors, or remote staff and need a clean cross-border channel with full documentation." },
+            { title: "USD-holders in Nigeria", body: "You already hold USD (domiciliary account, contractor income) and need to move it to a NGN recipient locally." },
+          ].map((f) => (
+            <div key={f.title} className="rounded-xl p-5" style={{ background: "white", border: "1px solid var(--line)" }}>
+              <h3 className="font-display text-base font-semibold">{f.title}</h3>
+              <p className="mt-2 text-sm" style={{ color: "var(--muted)" }}>{f.body}</p>
+            </div>
+          ))}
+        </div>
+      </Section>
+
+      <Section eyebrow="How it works" title="Four steps to NGN at the destination">
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <Step n="01" title="Sign up" body="Tell us who you are and who you're sending to. KYC takes 5–15 business days the first time; instant after that." footer="One-time per sender" />
+          <Step n="02" title="Quote a payment" body="Pick the USD amount you're sending. Your operator quotes a locked NGN rate within minutes (typically ~₦20 less than the outbound rate)." footer="Per transaction" />
+          <Step n="03" title="Send the USD" body="Wire / ACH / Zelle / card from your US (or other) account to the licensed payment provider's USD collection account. You don't send NGN — that's our problem." footer="Same-day clearing" />
+          <Step n="04" title="Recipient receives NGN" body="Once your USD clears, the licensed provider executes the NGN payout to your recipient's Nigerian bank account. Receipt issued automatically." footer="Same-day landing" />
+        </div>
+      </Section>
+
+      <Section eyebrow="Why XaePay" title="What you actually get">
+        <div className="grid gap-4 sm:grid-cols-2">
+          {[
+            { icon: Wallet, title: "Locked rate, no surprises", body: "The NGN your recipient gets is locked when you confirm. No spread games, no rate creep between submit and settlement." },
+            { icon: Shield, title: "Licensed payment provider, not informal channels", body: "Every USD → NGN execution goes through a licensed provider regulated where they operate. Real wires, real receipts." },
+            { icon: Receipt, title: "Receipt at both ends", body: "You get a sender confirmation PDF. Your recipient gets a payment confirmation. Both are downloadable from the portal." },
+            { icon: FileText, title: "Documentation for both sides", body: "If you're paying a supplier and need an invoice trail, we capture and route the supplier invoice. If you're sending family support, the receipt is enough." },
+          ].map((f) => (
+            <div key={f.title} className="rounded-xl p-5" style={{ background: "white", border: "1px solid var(--line)" }}>
+              <div className="flex h-10 w-10 items-center justify-center rounded-lg" style={{ background: "var(--bone-2)", color: "var(--emerald)" }}><f.icon size={18} /></div>
+              <h3 className="font-display mt-4 text-base font-semibold">{f.title}</h3>
+              <p className="mt-2 text-sm" style={{ color: "var(--muted)" }}>{f.body}</p>
+            </div>
+          ))}
+        </div>
+      </Section>
+
+      <Section eyebrow="FAQ" title="Common questions from senders">
+        <div className="space-y-3">
+          <Faq q="What's the rate I'll get?" a={<>The inbound rate (USD → NGN) is typically ~₦20 less per dollar than the outbound rate (NGN → USD) — that gap is your operator's spread plus the provider's FX margin. It's locked when you confirm a quote, so you know exactly what your recipient gets before you send.</>} />
+          <Faq q="How long does it take?" a="First-time onboarding: 5–15 business days for KYC with the licensed payment provider. Once you're approved, individual transactions typically settle the same business day after your USD clears." />
+          <Faq q="How do I send the USD?" a="Wire, ACH, Zelle, or card to the provider's USD collection account. Funding instructions are delivered to you when you confirm the quote. The operator never holds your USD — funds go directly to the regulated provider." />
+          <Faq q="Can I send to multiple recipients?" a="Yes. Each transaction is its own quote with its own recipient. You can also save recipients to skip re-entering details next time." />
+          <Faq q="What's the operator's role?" a={<>Your operator is your XaePay-side relationship — they vet your recipients, set the rate, handle compliance documentation, and coordinate with the provider. You don't pay them directly; their margin is built into the quote rate. Read more on the <a href="/?p=operators" className="underline" style={{ color: "var(--emerald)" }}>operator page</a>.</>} />
+          <Faq q="Where's the legal stuff?" a={<>The <a href="/?p=terms" className="underline" style={{ color: "var(--emerald)" }}>Terms</a>, <a href="/?p=privacy" className="underline" style={{ color: "var(--emerald)" }}>Privacy Policy</a>, and <a href="/?p=refunds" className="underline" style={{ color: "var(--emerald)" }}>Refund Policy</a> are all linked in the footer.</>} />
+        </div>
+      </Section>
+
+      <div className="rounded-3xl p-8 text-center" style={{ background: "var(--ink)", color: "var(--bone)" }}>
+        <h2 className="font-display text-3xl font-[450] tracking-tight">Send your first USD → NGN payment</h2>
+        <p className="mt-3 text-sm" style={{ color: "rgba(247,245,240,0.7)" }}>Join the waitlist — we'll match you with an operator when we open up.</p>
+        <a href="/" className="mt-6 inline-flex items-center justify-center gap-2 rounded-xl px-6 py-3 text-sm font-semibold transition" style={{ background: "var(--lime)", color: "var(--ink)" }}>Get started <ArrowRight size={14} /></a>
+      </div>
+    </PageShell>
+  );
+}
+
+// =============================================================================
 // Providers
 // =============================================================================
 

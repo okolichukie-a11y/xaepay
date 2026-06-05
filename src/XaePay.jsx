@@ -11,7 +11,7 @@ import { supabase, sendWhatsAppText, sendWhatsAppTemplate, fetchCedarRate, submi
 import { generateQuotePdf, uploadQuotePdf, downloadQuotePdf } from "./lib/pdf.js";
 import { generateCompliancePackPdf, downloadCompliancePackPdf, generateTransactionConfirmationPdf, downloadTransactionConfirmationPdf, generateInvoicePdf, downloadInvoicePdf, generateReceiptPdf, downloadReceiptPdf, generateRecipientReceiptPdf, downloadRecipientReceiptPdf } from "./lib/pdf-doc.js";
 import { TermsOfService, PrivacyPolicy, DataDeletion, RefundPolicy, ServiceProviderMSA } from "./legal/LegalPages.jsx";
-import { OperatorsPage, CustomersPage, ProvidersPage } from "./legal/UserPages.jsx";
+import { OperatorsPage, CustomersPage, ProvidersPage, SendUsdToNgnPage } from "./legal/UserPages.jsx";
 import { useAuth } from "./lib/auth.js";
 
 // ─── Editable in one place ────────────────────────────────────────────────
@@ -317,7 +317,7 @@ function AppShell() {
   // and audience-focused sub-landings (?p=operators/customers/providers). These
   // bypass the rest of the app so footers + external deep-links work without
   // hitting the splash gate or sign-in flow.
-  const STATIC_PAGES = ["terms", "privacy", "refunds", "data-deletion", "msa", "operators", "customers", "providers"];
+  const STATIC_PAGES = ["terms", "privacy", "refunds", "data-deletion", "msa", "operators", "customers", "providers", "send-usd-ngn"];
   const [legalRoute] = useState(() => {
     if (typeof window === "undefined") return null;
     const p = new URLSearchParams(window.location.search).get("p");
@@ -465,6 +465,7 @@ function AppShell() {
   if (legalRoute === "operators")      return <OperatorsPage />;
   if (legalRoute === "customers")      return <CustomersPage />;
   if (legalRoute === "providers")      return <ProvidersPage />;
+  if (legalRoute === "send-usd-ngn")   return <SendUsdToNgnPage />;
   if (quoteRoute) return <QuoteApprovalPage quote={quoteRoute} />;
   if (onboardRoute) return <CustomerOnboardPage invite={onboardRoute} />;
 
@@ -2422,6 +2423,11 @@ function Hero({ onGetStarted, onCustomerSignup }) {
               )}
               <a href={WHATSAPP_URL} target="_blank" rel="noreferrer" className="inline-flex items-center justify-center gap-2 rounded-xl px-6 py-3.5 text-sm font-semibold transition hover:bg-white/5" style={{ border: "1px solid rgba(255,255,255,0.15)", color: "var(--bone)" }}><MessageCircle size={16} /> Talk on WhatsApp</a>
             </div>
+            <div className="rise mt-5" style={{ animationDelay: "0.28s" }}>
+              <a href="/?p=send-usd-ngn" className="inline-flex items-center gap-1.5 font-mono text-[11px] underline" style={{ color: "rgba(247,245,240,0.6)" }}>
+                Sending USD to Nigeria from abroad? <ArrowRight size={11} />
+              </a>
+            </div>
             <div className="rise mt-12 flex flex-wrap gap-x-8 gap-y-3" style={{ animationDelay: "0.32s" }}>
               <div>
                 <div className="font-mono text-[10px] uppercase tracking-wider" style={{ color: "rgba(247,245,240,0.45)" }}>Operator share</div>
@@ -3147,6 +3153,7 @@ function Footer({ onWaitlist }) {
           <div className="flex flex-wrap gap-5 font-mono text-[10px] uppercase tracking-wider" style={{ color: "rgba(247,245,240,0.4)" }}>
             <a href="/?p=operators" className="hover:text-white transition" style={{ color: "inherit" }}>For operators</a>
             <a href="/?p=customers" className="hover:text-white transition" style={{ color: "inherit" }}>For customers</a>
+            <a href="/?p=send-usd-ngn" className="hover:text-white transition" style={{ color: "inherit" }}>Send USD → NGN</a>
             <a href="/?p=providers" className="hover:text-white transition" style={{ color: "inherit" }}>For providers</a>
             <a href="/?p=terms" className="hover:text-white transition" style={{ color: "inherit" }}>Terms</a>
             <a href="/?p=privacy" className="hover:text-white transition" style={{ color: "inherit" }}>Privacy</a>
