@@ -391,6 +391,27 @@ export async function pickServiceProviderForQuote({ sourceName, destName, curren
   return eligible[0]?.id || null;
 }
 
+// Upload an operator's brand logo for use on invoices + emails. Stored in the
+// public cedar-files bucket so logos can be referenced from email HTML and
+// embedded in client-rendered PDFs without a signed-URL fetch. 2 MB cap (logos
+// don't need to be huge; large files bloat every invoice).
+export async function uploadBrandLogo(authUserId, file) {
+  if (!file) return { ok: false, error: "No file selected" };
+  if (file.size > 2 * 1024 * 1024) return { ok: false, error: "Logo too large (max 2 MB)" };
+  try {
+    const ext = (file.name.split(".").pop() || "png").toLowerCase();
+    const path = `brand-logos/${authUserId}-${Date.now()}.${ext}`;
+    const { error: upErr } = await supabase.storage
+      .from("cedar-files")
+      .upload(path, file, { contentType: file.type || "image/png", upsert: true });
+    if (upErr) return { ok: false, error: upErr.message || "Upload failed" };
+    const { data } = supabase.storage.from("cedar-files").getPublicUrl(path);
+    return { ok: true, url: data.publicUrl, path };
+  } catch (err) {
+    return { ok: false, error: err?.message || String(err) };
+  }
+}
+
 // Upload an operator-issued recipient receipt PDF. Stored under
 // recipient-receipts/<quote_id>/ in the same private bucket as invoice
 // receipts. 90-day signed URL.

@@ -32,8 +32,13 @@ const fmtDateTime = (iso) => {
 
 const ref = (id) => "QU-" + String(id || "").slice(0, 4).toUpperCase();
 
-function drawHeader(doc, title) {
-  doc.setFillColor(INK);
+function drawHeader(doc, title, accentColor) {
+  // Branded business invoices tint the header with the operator's accent color
+  // (or fall back to the default INK). The XaePay X-block stays as a small
+  // platform attribution mark — required for the compliance disclosure even
+  // when the operator has their own brand.
+  const headerFill = accentColor && accentColor !== INK ? accentColor : INK;
+  doc.setFillColor(headerFill);
   doc.rect(0, 0, PAGE_W, 24, "F");
 
   doc.setFillColor(LIME);
@@ -740,8 +745,38 @@ export function downloadCompliancePackPdf(doc, customer) {
 // rate-quote flow with the invoice's amount + currency prefilled. PDF is
 // downloadable + emailable.
 
-function buildInvoicePdfPage(doc, invoice, items) {
-  drawHeader(doc, "Invoice");
+// Add a brand logo to the PDF header. jsPDF needs a data URL; we fetch the
+// public URL, convert to data URL, then addImage. Returns true if the logo
+// was actually drawn, false otherwise. Safe to call even if no brand exists.
+async function tryDrawBrandLogo(doc, brand, x, y) {
+  if (!brand?.brand_logo_url) return false;
+  try {
+    const res = await fetch(brand.brand_logo_url);
+    if (!res.ok) return false;
+    const blob = await res.blob();
+    const dataUrl = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(reader.result);
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
+    // Detect format from blob
+    const fmt = (blob.type || "").includes("jpeg") || (blob.type || "").includes("jpg") ? "JPEG" : "PNG";
+    doc.addImage(dataUrl, fmt, x, y, 18, 18);  // 18mm square
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function buildInvoicePdfPage(doc, invoice, items, brand) {
+  // Only business-mode operators with a populated brand get the branded header.
+  // Individual operators (and businesses that haven't set a brand) get the
+  // default XaePay-tinted header.
+  const branded = brand && brand.operator_type === "business" && (brand.business_name || brand.brand_logo_url);
+  const accent = branded && brand.brand_accent_color ? brand.brand_accent_color : INK;
+
+  drawHeader(doc, "Invoice", accent);
 
   let y = 38;
 
@@ -766,12 +801,19 @@ function buildInvoicePdfPage(doc, invoice, items) {
 
   // Issued by / Bill to
   const colW = (CONTENT_W - 8) / 2;
-  drawLabelValue(doc, "Issued by", invoice.operator_name || "Operator", MARGIN, y);
+  const issuerName = branded && brand.business_name ? brand.business_name : (invoice.operator_name || "Operator");
+  drawLabelValue(doc, "Issued by", issuerName, MARGIN, y);
   drawLabelValue(doc, "Bill to", invoice.customer_name || "Customer", MARGIN + colW + 8, y);
   doc.setFont("helvetica", "normal");
   doc.setFontSize(8);
   doc.setTextColor(MUTED);
-  doc.text("Via XaePay", MARGIN, y + 11);
+  // For business operators, show their business contact line; for everyone
+  // else, the legacy "Via XaePay" tag goes here. Either way the footer keeps
+  // the "Issued via XaePay" compliance line.
+  const issuerContact = branded
+    ? [brand.business_phone, brand.business_email, brand.business_address].filter(Boolean).join("  ·  ")
+    : "Via XaePay";
+  doc.text(issuerContact || "Via XaePay", MARGIN, y + 11, { maxWidth: colW });
   doc.text([invoice.customer_phone, invoice.customer_email].filter(Boolean).join("  ·  ") || "—", MARGIN + colW + 8, y + 11, { maxWidth: colW });
   y += 22;
 
@@ -922,9 +964,9 @@ function buildInvoicePdfPage(doc, invoice, items) {
   doc.text("Issued via XaePay · Operator-issued invoice · XaePay does not custody local-rail payments.", MARGIN, noteY + 13, { maxWidth: CONTENT_W });
 }
 
-export function generateInvoicePdf({ invoice, items }) {
+export function generateInvoicePdf({ invoice, items, brand }) {
   const doc = new jsPDF({ unit: "mm", format: "a4" });
-  buildInvoicePdfPage(doc, invoice, items);
+  buildInvoicePdfPage(doc, invoice, items, brand);
   drawFooter(doc, doc.internal.getNumberOfPages(), 0);
   return doc;
 }

@@ -7,7 +7,7 @@ import {
   ArrowLeft, ArrowLeftRight, Loader2, Layers, TrendingUp, Wallet, DollarSign, Mail,
   RefreshCw, ShieldCheck, Paperclip,
 } from "lucide-react";
-import { supabase, sendWhatsAppText, sendWhatsAppTemplate, fetchCedarRate, submitCustomerToCedar, submitRecipientToCedar, submitReceiverAccountToCedar, submitCedarTransaction, approveCedarQuote, confirmCedarDeposit, cancelCedarTransaction, uploadCedarFile, uploadFileBoth, uploadInvoicePdf, uploadInvoicePaymentProof, uploadReceiptPdf, uploadRecipientReceiptPdf, pickServiceProviderForQuote, runComplianceReview, runComplianceWatchman, submitDocumentToCedar, sendEmail, safeUrl, logAuditEvent } from "./lib/supabase.js";
+import { supabase, sendWhatsAppText, sendWhatsAppTemplate, fetchCedarRate, submitCustomerToCedar, submitRecipientToCedar, submitReceiverAccountToCedar, submitCedarTransaction, approveCedarQuote, confirmCedarDeposit, cancelCedarTransaction, uploadCedarFile, uploadFileBoth, uploadInvoicePdf, uploadInvoicePaymentProof, uploadReceiptPdf, uploadRecipientReceiptPdf, uploadBrandLogo, pickServiceProviderForQuote, runComplianceReview, runComplianceWatchman, submitDocumentToCedar, sendEmail, safeUrl, logAuditEvent } from "./lib/supabase.js";
 import { generateQuotePdf, uploadQuotePdf, downloadQuotePdf } from "./lib/pdf.js";
 import { generateCompliancePackPdf, downloadCompliancePackPdf, generateTransactionConfirmationPdf, downloadTransactionConfirmationPdf, generateInvoicePdf, downloadInvoicePdf, generateReceiptPdf, downloadReceiptPdf, generateRecipientReceiptPdf, downloadRecipientReceiptPdf } from "./lib/pdf-doc.js";
 import { TermsOfService, PrivacyPolicy, DataDeletion, RefundPolicy, ServiceProviderMSA } from "./legal/LegalPages.jsx";
@@ -5704,6 +5704,7 @@ function BDCDashboard({ session, initialCustomerId, onInitialCustomerHandled }) 
     { id: "recipients", label: "Recipients", icon: Briefcase },
     { id: "invoicing", label: "Invoicing", icon: FileText },
     { id: "providers", label: "Providers", icon: Layers },
+    { id: "brand", label: "Brand", icon: Sparkles },
     { id: "earnings", label: "Earnings", icon: TrendingUp },
   ];
   // Operator name + role line. Demo session passes a single string; real auth-backed
@@ -5771,6 +5772,7 @@ function BDCDashboard({ session, initialCustomerId, onInitialCustomerHandled }) 
           {tab === "recipients" && <BDCRecipients />}
           {tab === "invoicing" && <BDCInvoices />}
           {tab === "providers" && <BDCProviders />}
+          {tab === "brand" && <BDCBrandSettings />}
           {tab === "earnings" && <BDCEarnings />}
         </div>
       </div>
@@ -5953,6 +5955,13 @@ function CreateInvoiceModal({ open, onClose, onCreated }) {
     paymentMethods: [], // [{ id, type, label, instructions }]
   };
   const [data, setData] = useState(empty);
+  const [operatorBrand, setOperatorBrand] = useState(null);
+  // Fetch this operator's brand profile once when the modal opens so PDF +
+  // email can reflect their branding. Quietly no-ops for individual operators.
+  useEffect(() => {
+    if (!open || !auth.user) return;
+    supabase.from("operator_profiles").select("*").eq("auth_user_id", auth.user.id).maybeSingle().then(({ data }) => setOperatorBrand(data || null));
+  }, [open, auth.user?.id]);
   const togglePaymentMethod = (type) => {
     setData((d) => {
       const exists = d.paymentMethods.find((m) => m.type === type);
@@ -5997,7 +6006,14 @@ function CreateInvoiceModal({ open, onClose, onCreated }) {
   const submit = async (sendNow) => {
     if (!canSubmit) return;
     setSaving(true);
-    const operatorName = auth.user?.user_metadata?.company || "XaeccoX";
+    // Business-mode operators use their brand's business_name on the invoice.
+    // Falls through to user metadata / XaeccoX default for individual operators.
+    const operatorName = (operatorBrand?.operator_type === "business" && operatorBrand?.business_name)
+      ? operatorBrand.business_name
+      : (auth.user?.user_metadata?.company || "XaeccoX");
+    const brandAccent = (operatorBrand?.operator_type === "business" && operatorBrand?.brand_accent_color)
+      ? operatorBrand.brand_accent_color
+      : "#0a0b0d";
     // Strip empty methods (operator toggled them on but never typed instructions).
     // crossborder is allowed without instructions because the rate-quote flow
     // provides its own walkthrough.
@@ -6097,7 +6113,7 @@ function CreateInvoiceModal({ open, onClose, onCreated }) {
 
     // Generate PDF + upload + (if sendNow) email
     try {
-      const pdf = generateInvoicePdf({ invoice: inv, items: itemRows });
+      const pdf = generateInvoicePdf({ invoice: inv, items: itemRows, brand: operatorBrand });
       const upRes = await uploadInvoicePdf(inv.id, pdf);
       if (upRes.ok) {
         await supabase.from("invoices").update({
@@ -6113,7 +6129,8 @@ function CreateInvoiceModal({ open, onClose, onCreated }) {
         const itemRowsHtml = itemRows.map((it) => `<tr><td style="padding:6px 0;font-size:13px;">${it.description}</td><td style="padding:6px 0;text-align:right;font-family:monospace;font-size:12px;">${it.quantity} × ${data.currency} ${it.unit_price.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td><td style="padding:6px 0;text-align:right;font-family:monospace;font-size:13px;font-weight:600;">${data.currency} ${it.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td></tr>`).join("");
         const methodsHtml = cleanedMethods.length > 0 ? `<div style="margin-bottom:20px;padding:14px;background:#f5f4ee;border-radius:10px;"><div style="font-size:11px;text-transform:uppercase;letter-spacing:0.05em;color:#6b7280;margin-bottom:8px;font-weight:600;">Payment options</div>${cleanedMethods.map((m) => { const def = PAYMENT_METHOD_BY_TYPE[m.type] || { label: m.type }; return `<div style="font-size:12px;color:#374151;margin-bottom:6px;"><strong>${def.label}${m.label ? ` · ${m.label}` : ""}</strong>${m.instructions ? `<div style="font-family:monospace;font-size:11px;color:#6b7280;white-space:pre-wrap;margin-top:2px;">${m.instructions}</div>` : ""}</div>`; }).join("")}</div>` : "";
         const methodsText = cleanedMethods.length > 0 ? `\n\nPayment options:\n${cleanedMethods.map((m) => { const def = PAYMENT_METHOD_BY_TYPE[m.type] || { label: m.type }; return `  ${def.label}${m.label ? ` (${m.label})` : ""}${m.instructions ? `\n    ${m.instructions.replace(/\n/g, "\n    ")}` : ""}`; }).join("\n")}` : "";
-        const html = `<!doctype html><html><body style="font-family:system-ui,-apple-system,sans-serif;color:#0a0b0d;background:#fcfbf7;margin:0;padding:24px;"><div style="max-width:560px;margin:0 auto;background:white;border:1px solid #e5e7eb;border-radius:16px;padding:32px;"><h2 style="margin:0 0 8px;font-size:22px;">Invoice ${inv.invoice_number}</h2><p style="color:#6b7280;margin:0 0 20px;font-size:14px;">${operatorName} has issued you an invoice via XaePay.</p><div style="background:#0a0b0d;color:#d4f570;border-radius:12px;padding:20px;margin-bottom:20px;"><div style="font-size:11px;text-transform:uppercase;letter-spacing:0.05em;color:rgba(247,245,240,0.5);">Amount due</div><div style="font-size:30px;font-weight:600;margin-top:6px;">${totalText}</div><div style="font-size:11px;font-family:monospace;color:rgba(247,245,240,0.7);margin-top:8px;">Due: ${dueText}</div></div><table style="width:100%;border-collapse:collapse;margin-bottom:20px;"><thead><tr style="border-bottom:1px solid #e5e7eb;"><th style="text-align:left;padding-bottom:8px;font-size:10px;font-family:monospace;letter-spacing:0.05em;color:#6b7280;">DESCRIPTION</th><th style="text-align:right;padding-bottom:8px;font-size:10px;font-family:monospace;letter-spacing:0.05em;color:#6b7280;">QTY × UNIT</th><th style="text-align:right;padding-bottom:8px;font-size:10px;font-family:monospace;letter-spacing:0.05em;color:#6b7280;">AMOUNT</th></tr></thead><tbody>${itemRowsHtml}</tbody></table>${methodsHtml}${data.notes ? `<p style="color:#374151;font-size:13px;line-height:1.5;margin-bottom:20px;"><strong>Notes:</strong> ${data.notes}</p>` : ""}<p style="text-align:center;margin:24px 0 8px;"><a href="${portalUrl}" style="display:inline-block;background:#0a0b0d;color:#d4f570;padding:12px 28px;border-radius:12px;text-decoration:none;font-weight:600;font-size:14px;">View &amp; pay invoice</a></p><p style="color:#9ca3af;font-size:11px;text-align:center;margin:20px 0 0;">Issued via XaePay · Pay using any of the methods above, then confirm payment in your portal</p></div></body></html>`;
+        const brandLogoHtml = operatorBrand?.brand_logo_url ? `<div style="text-align:center;margin-bottom:16px;"><img src="${operatorBrand.brand_logo_url}" alt="${operatorName}" style="max-height:48px;max-width:200px;" /></div>` : "";
+        const html = `<!doctype html><html><body style="font-family:system-ui,-apple-system,sans-serif;color:#0a0b0d;background:#fcfbf7;margin:0;padding:24px;"><div style="max-width:560px;margin:0 auto;background:white;border:1px solid #e5e7eb;border-radius:16px;padding:32px;">${brandLogoHtml}<h2 style="margin:0 0 8px;font-size:22px;">Invoice ${inv.invoice_number}</h2><p style="color:#6b7280;margin:0 0 20px;font-size:14px;">${operatorName} has issued you an invoice via XaePay.</p><div style="background:${brandAccent};color:#d4f570;border-radius:12px;padding:20px;margin-bottom:20px;"><div style="font-size:11px;text-transform:uppercase;letter-spacing:0.05em;color:rgba(247,245,240,0.5);">Amount due</div><div style="font-size:30px;font-weight:600;margin-top:6px;">${totalText}</div><div style="font-size:11px;font-family:monospace;color:rgba(247,245,240,0.7);margin-top:8px;">Due: ${dueText}</div></div><table style="width:100%;border-collapse:collapse;margin-bottom:20px;"><thead><tr style="border-bottom:1px solid #e5e7eb;"><th style="text-align:left;padding-bottom:8px;font-size:10px;font-family:monospace;letter-spacing:0.05em;color:#6b7280;">DESCRIPTION</th><th style="text-align:right;padding-bottom:8px;font-size:10px;font-family:monospace;letter-spacing:0.05em;color:#6b7280;">QTY × UNIT</th><th style="text-align:right;padding-bottom:8px;font-size:10px;font-family:monospace;letter-spacing:0.05em;color:#6b7280;">AMOUNT</th></tr></thead><tbody>${itemRowsHtml}</tbody></table>${methodsHtml}${data.notes ? `<p style="color:#374151;font-size:13px;line-height:1.5;margin-bottom:20px;"><strong>Notes:</strong> ${data.notes}</p>` : ""}<p style="text-align:center;margin:24px 0 8px;"><a href="${portalUrl}" style="display:inline-block;background:${brandAccent};color:#d4f570;padding:12px 28px;border-radius:12px;text-decoration:none;font-weight:600;font-size:14px;">View &amp; pay invoice</a></p><p style="color:#9ca3af;font-size:11px;text-align:center;margin:20px 0 0;">Issued via XaePay · Pay using any of the methods above, then confirm payment in your portal</p></div></body></html>`;
         const text = `Invoice ${inv.invoice_number}\n\n${operatorName} has issued you an invoice via XaePay.\n\nAmount: ${totalText}\nDue: ${dueText}\n\n${itemRows.map(it => `  ${it.description}  ${data.currency} ${it.amount.toFixed(2)}`).join("\n")}${methodsText}\n\nView and confirm payment: ${portalUrl}`;
         await sendEmail({ to: data.customerEmail, subject: `Invoice ${inv.invoice_number} from ${operatorName}`, html, text });
       }
@@ -6411,13 +6428,25 @@ function InvoiceDrawer({ invoice, onClose, onChanged }) {
   const pill = INVOICE_STATUS_PILL[invoice.status] || INVOICE_STATUS_PILL.draft;
   const ccy = invoice.currency || "USD";
 
+  // Fetch operator's brand profile so PDF regeneration here also applies the
+  // branded header. No-op for individual operators.
+  const [operatorBrand, setOperatorBrand] = useState(null);
+  useEffect(() => {
+    if (!invoice?.id) return;
+    supabase.auth.getUser().then(({ data }) => {
+      const uid = data?.user?.id;
+      if (!uid) return;
+      supabase.from("operator_profiles").select("*").eq("auth_user_id", uid).maybeSingle().then(({ data }) => setOperatorBrand(data || null));
+    });
+  }, [invoice?.id]);
+
   const downloadPdf = async () => {
     try {
       if (invoice.pdf_url) {
         window.open(safeUrl(invoice.pdf_url), "_blank");
         return;
       }
-      const pdf = generateInvoicePdf({ invoice, items });
+      const pdf = generateInvoicePdf({ invoice, items, brand: operatorBrand });
       downloadInvoicePdf(pdf, invoice);
     } catch (err) {
       push(`Couldn't open PDF: ${err?.message || err}`, "warn");
@@ -6432,7 +6461,7 @@ function InvoiceDrawer({ invoice, onClose, onChanged }) {
       // Update status first
       await supabase.from("invoices").update({ status: "sent", sent_at: new Date().toISOString() }).eq("id", invoice.id);
       // Regenerate PDF + upload + email
-      const pdf = generateInvoicePdf({ invoice: { ...invoice, status: "sent" }, items });
+      const pdf = generateInvoicePdf({ invoice: { ...invoice, status: "sent" }, items, brand: operatorBrand });
       const upRes = await uploadInvoicePdf(invoice.id, pdf);
       if (upRes.ok) {
         await supabase.from("invoices").update({ pdf_url: upRes.url, pdf_path: upRes.path, pdf_generated_at: new Date().toISOString() }).eq("id", invoice.id);
@@ -6735,6 +6764,199 @@ function BDCProviders() {
       <div className="rounded-xl p-4 text-xs" style={{ background: "rgba(15,95,63,0.05)", border: "1px solid rgba(15,95,63,0.15)" }}>
         <div className="font-mono text-[10px] uppercase tracking-wider mb-1" style={{ color: "var(--emerald)" }}>How routing works today</div>
         <p style={{ color: "var(--muted)" }}>Right now Cedar is the default rail for all cross-border quotes. As more providers come online, XaePay will pick the best-fit provider per quote based on corridor coverage, pricing, and speed.</p>
+      </div>
+    </div>
+  );
+}
+
+// =============================================================================
+// Brand Settings — per-operator profile. Only business-type operators see the
+// brand fields. Individual operators see just the type toggle (with a small
+// note explaining why). Brand template applies to invoice PDF + email; customer
+// portal + receipts stay XaePay-branded. "Issued via XaePay" disclosure stays
+// in the invoice footer regardless of branding.
+// =============================================================================
+
+const EMPTY_BRAND = {
+  operator_type: "individual",
+  business_name: "",
+  business_address: "",
+  business_phone: "",
+  business_email: "",
+  brand_logo_url: null,
+  brand_logo_path: null,
+  brand_accent_color: "#0a0b0d",
+  brand_tagline: "",
+};
+
+function BDCBrandSettings() {
+  const { push } = useToast();
+  const auth = useAuth();
+  const isSignedIn = !!auth.user;
+  const [profile, setProfile] = useState(EMPTY_BRAND);
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [uploading, setUploading] = useState(false);
+
+  const fetchProfile = async () => {
+    if (!isSignedIn) return;
+    setLoading(true);
+    const { data, error } = await supabase
+      .from("operator_profiles")
+      .select("*")
+      .eq("auth_user_id", auth.user.id)
+      .maybeSingle();
+    if (!error && data) {
+      setProfile({
+        operator_type: data.operator_type || "individual",
+        business_name: data.business_name || "",
+        business_address: data.business_address || "",
+        business_phone: data.business_phone || "",
+        business_email: data.business_email || "",
+        brand_logo_url: data.brand_logo_url || null,
+        brand_logo_path: data.brand_logo_path || null,
+        brand_accent_color: data.brand_accent_color || "#0a0b0d",
+        brand_tagline: data.brand_tagline || "",
+      });
+    }
+    setLoading(false);
+  };
+  useEffect(() => { fetchProfile(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [auth.user?.id]);
+
+  const onLogoChange = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploading(true);
+    try {
+      const res = await uploadBrandLogo(auth.user.id, file);
+      if (!res.ok) { push(`Upload failed: ${res.error}`, "warn"); return; }
+      setProfile((p) => ({ ...p, brand_logo_url: res.url, brand_logo_path: res.path }));
+      push("Logo uploaded — remember to save", "info");
+    } finally { setUploading(false); }
+  };
+
+  const save = async () => {
+    if (saving) return;
+    setSaving(true);
+    try {
+      const payload = {
+        auth_user_id: auth.user.id,
+        operator_type: profile.operator_type,
+        business_name: profile.operator_type === "business" ? (profile.business_name || null) : null,
+        business_address: profile.operator_type === "business" ? (profile.business_address || null) : null,
+        business_phone: profile.operator_type === "business" ? (profile.business_phone || null) : null,
+        business_email: profile.operator_type === "business" ? (profile.business_email || null) : null,
+        brand_logo_url: profile.operator_type === "business" ? profile.brand_logo_url : null,
+        brand_logo_path: profile.operator_type === "business" ? profile.brand_logo_path : null,
+        brand_accent_color: profile.operator_type === "business" ? (profile.brand_accent_color || null) : null,
+        brand_tagline: profile.operator_type === "business" ? (profile.brand_tagline || null) : null,
+        updated_at: new Date().toISOString(),
+      };
+      const { error } = await supabase.from("operator_profiles").upsert(payload, { onConflict: "auth_user_id" });
+      if (error) throw error;
+      push("Brand settings saved", "success");
+    } catch (err) {
+      push(`Couldn't save: ${err?.message || err}`, "warn");
+    } finally { setSaving(false); }
+  };
+
+  const isBusiness = profile.operator_type === "business";
+
+  return (
+    <div className="space-y-6">
+      <Card>
+        <h3 className="font-display text-lg font-semibold mb-1">Operator type</h3>
+        <p className="text-sm mb-4" style={{ color: "var(--muted)" }}>Pick the option that matches how you operate. Business operators can upload a logo and customize how their invoices look to customers.</p>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <button type="button" onClick={() => setProfile((p) => ({ ...p, operator_type: "individual" }))}
+            className="rounded-xl p-4 text-left transition"
+            style={!isBusiness ? { background: "var(--ink)", color: "var(--bone)", border: "1px solid var(--ink)" } : { background: "white", border: "1px solid var(--line)" }}>
+            <div className="font-display text-base font-semibold">Individual</div>
+            <div className="font-mono text-[11px] mt-1" style={!isBusiness ? { color: "rgba(247,245,240,0.6)" } : { color: "var(--muted)" }}>Solo agent. Invoices use the XaePay default brand. No custom logo or business contact block.</div>
+          </button>
+          <button type="button" onClick={() => setProfile((p) => ({ ...p, operator_type: "business" }))}
+            className="rounded-xl p-4 text-left transition"
+            style={isBusiness ? { background: "var(--ink)", color: "var(--bone)", border: "1px solid var(--ink)" } : { background: "white", border: "1px solid var(--line)" }}>
+            <div className="font-display text-base font-semibold">Business</div>
+            <div className="font-mono text-[11px] mt-1" style={isBusiness ? { color: "rgba(247,245,240,0.6)" } : { color: "var(--muted)" }}>Registered business (BDC, IMTO, etc.). Upload your logo + business contact block; appears on every invoice you send.</div>
+          </button>
+        </div>
+      </Card>
+
+      {isBusiness && (
+        <Card>
+          <h3 className="font-display text-lg font-semibold mb-1">Brand template</h3>
+          <p className="text-sm mb-4" style={{ color: "var(--muted)" }}>Customer-facing receipts and the customer portal stay XaePay-branded. Your brand template applies to invoice PDFs and invoice emails. The "Issued via XaePay" disclosure stays in the footer for compliance.</p>
+
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field label="Business name (legal)" full>
+              <Input value={profile.business_name} onChange={(e) => setProfile({ ...profile, business_name: e.target.value })} placeholder="Adekunle Exchange Ltd" />
+            </Field>
+            <Field label="Tagline (optional)" full>
+              <Input value={profile.brand_tagline} onChange={(e) => setProfile({ ...profile, brand_tagline: e.target.value })} placeholder="Cross-border, simplified" />
+            </Field>
+            <Field label="Business phone">
+              <Input value={profile.business_phone} onChange={(e) => setProfile({ ...profile, business_phone: e.target.value })} placeholder="+234 803 …" />
+            </Field>
+            <Field label="Business email">
+              <Input type="email" value={profile.business_email} onChange={(e) => setProfile({ ...profile, business_email: e.target.value })} placeholder="ops@yourcompany.com" />
+            </Field>
+            <Field label="Business address" full>
+              <Input value={profile.business_address} onChange={(e) => setProfile({ ...profile, business_address: e.target.value })} placeholder="22 Adeola Hopewell, Victoria Island, Lagos" />
+            </Field>
+            <Field label="Accent color">
+              <div className="flex items-center gap-2">
+                <input type="color" value={profile.brand_accent_color || "#0a0b0d"} onChange={(e) => setProfile({ ...profile, brand_accent_color: e.target.value })}
+                  className="h-10 w-14 rounded-lg border" style={{ borderColor: "var(--line)" }} />
+                <Input value={profile.brand_accent_color || ""} onChange={(e) => setProfile({ ...profile, brand_accent_color: e.target.value })} placeholder="#0a0b0d" />
+              </div>
+            </Field>
+            <Field label="Logo (PNG/JPG, max 2 MB)">
+              <Input type="file" accept="image/png,image/jpeg" onChange={onLogoChange} disabled={uploading} />
+              {profile.brand_logo_url && (
+                <div className="mt-2 flex items-center gap-3">
+                  <img src={safeUrl(profile.brand_logo_url)} alt="Logo preview" className="h-12 w-12 rounded object-contain" style={{ background: "white", border: "1px solid var(--line)" }} />
+                  <button type="button" onClick={() => setProfile({ ...profile, brand_logo_url: null, brand_logo_path: null })} className="text-xs underline" style={{ color: "var(--muted)" }}>Remove</button>
+                </div>
+              )}
+            </Field>
+          </div>
+
+          {/* Live preview of the invoice header so the operator sees what their
+              customers will see before saving. */}
+          <div className="mt-6">
+            <Label>Preview · how your invoice header will look</Label>
+            <div className="rounded-xl overflow-hidden" style={{ border: "1px solid var(--line)" }}>
+              <div className="flex items-center justify-between px-4 py-3" style={{ background: profile.brand_accent_color || "#0a0b0d" }}>
+                <div className="flex items-center gap-2">
+                  <div className="flex h-6 w-6 items-center justify-center rounded" style={{ background: "var(--lime)" }}>
+                    <span className="font-display text-xs font-semibold" style={{ color: "var(--ink)" }}>X</span>
+                  </div>
+                  <span className="font-display text-sm font-semibold" style={{ color: "var(--bone)" }}>XaePay</span>
+                </div>
+                <span className="font-mono text-[9px] uppercase tracking-wider" style={{ color: "var(--lime)" }}>Invoice</span>
+              </div>
+              <div className="bg-white p-4 grid gap-3 sm:grid-cols-2 text-xs">
+                <div>
+                  <div className="font-mono text-[9px] uppercase tracking-wider" style={{ color: "var(--muted)" }}>Issued by</div>
+                  <div className="font-semibold mt-1">{profile.business_name || "(your business name)"}</div>
+                  <div className="font-mono text-[10px] mt-0.5" style={{ color: "var(--muted)" }}>{[profile.business_phone, profile.business_email].filter(Boolean).join(" · ") || "(contact info)"}</div>
+                  <div className="font-mono text-[10px]" style={{ color: "var(--muted)" }}>{profile.business_address || "(business address)"}</div>
+                </div>
+                <div>
+                  <div className="font-mono text-[9px] uppercase tracking-wider" style={{ color: "var(--muted)" }}>Bill to</div>
+                  <div className="font-semibold mt-1">Your customer</div>
+                  <div className="font-mono text-[10px] mt-0.5" style={{ color: "var(--muted)" }}>customer@email.com</div>
+                </div>
+              </div>
+              <div className="px-4 py-2 text-[9px] text-center" style={{ background: "var(--bone)", color: "var(--muted)", borderTop: "1px solid var(--line)" }}>Issued via XaePay · Operator-issued invoice</div>
+            </div>
+          </div>
+        </Card>
+      )}
+
+      <div className="flex justify-end">
+        <PrimaryBtn onClick={save} disabled={saving || loading}>{saving ? <><Loader2 size={12} className="animate-spin" /> Saving…</> : <>Save brand settings</>}</PrimaryBtn>
       </div>
     </div>
   );
