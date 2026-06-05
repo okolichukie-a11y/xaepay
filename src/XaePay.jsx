@@ -3754,15 +3754,17 @@ function CustomerRequestQuoteModal({ open, onClose, customer, onCreated }) {
           </p>
         </div>
         <div>
-          <Label>Direction</Label>
+          <Label>Payment rail / corridor</Label>
           <div className="grid grid-cols-2 gap-2">
-            <button type="button" onClick={() => setData({ ...data, direction: "outbound" })} className="rounded-xl px-4 py-3 text-sm font-medium transition" style={data.direction === "outbound" ? { background: "var(--ink)", color: "var(--bone)", border: "1px solid var(--ink)" } : { background: "white", border: "1px solid var(--line)" }}>
-              <div className="font-semibold">Outbound</div>
-              <div className="font-mono text-[10px] uppercase tracking-wider mt-0.5 opacity-70">Nigeria → World</div>
+            <button type="button" onClick={() => setData({ ...data, direction: "outbound" })} className="rounded-xl px-4 py-3 text-sm font-medium transition text-left" style={data.direction === "outbound" ? { background: "var(--ink)", color: "var(--bone)", border: "1px solid var(--ink)" } : { background: "white", border: "1px solid var(--line)" }}>
+              <div className="font-mono text-[10px] uppercase tracking-wider opacity-70">Outbound</div>
+              <div className="font-semibold mt-0.5">NGN → USD / GBP / etc.</div>
+              <div className="font-mono text-[10px] mt-1 opacity-60">You're paying a foreign supplier</div>
             </button>
-            <button type="button" onClick={() => setData({ ...data, direction: "inbound" })} className="rounded-xl px-4 py-3 text-sm font-medium transition" style={data.direction === "inbound" ? { background: "var(--ink)", color: "var(--bone)", border: "1px solid var(--ink)" } : { background: "white", border: "1px solid var(--line)" }}>
-              <div className="font-semibold">Inbound</div>
-              <div className="font-mono text-[10px] uppercase tracking-wider mt-0.5 opacity-70">World → Nigeria</div>
+            <button type="button" onClick={() => setData({ ...data, direction: "inbound" })} className="rounded-xl px-4 py-3 text-sm font-medium transition text-left" style={data.direction === "inbound" ? { background: "var(--ink)", color: "var(--bone)", border: "1px solid var(--ink)" } : { background: "white", border: "1px solid var(--line)" }}>
+              <div className="font-mono text-[10px] uppercase tracking-wider opacity-70">Inbound</div>
+              <div className="font-semibold mt-0.5">USD / GBP / etc. → NGN</div>
+              <div className="font-mono text-[10px] mt-1 opacity-60">You hold USD · paying NGN recipient in Nigeria</div>
             </button>
           </div>
         </div>
@@ -7210,12 +7212,6 @@ function OperatorQuoteModal({ open, onClose, onCreated }) {
     invoice: false,
     selectedTier: "documented",
     markupAmount: TIERS.documented.minMarkup,
-    // Rate-display perspective. 'outbound' = NGN→USD view (default operator
-    // mental model). 'inbound' = USD→NGN view, showing the rate diaspora
-    // senders or recipients see — typically ~₦20 less due to the spread.
-    // Doesn't change the actual locked rate on the quote; that's still driven
-    // by data.direction.
-    displayDir: "outbound",
   };
   const [step, setStep] = useState(1);
   const [data, setData] = useState(empty);
@@ -7286,15 +7282,7 @@ function OperatorQuoteModal({ open, onClose, onCreated }) {
 
   const tier = TIERS[data.selectedTier];
   const isInbound = data.direction === "inbound";
-  // The quote's *locked* rate is determined by the customer's direction. The
-  // operator can however toggle the rate-display orientation to see the other
-  // side of the spread without changing the quote — a frequent "what would
-  // they get on the inverse?" check during pricing.
-  const outboundRate = wholesaleRate + data.markupAmount;
-  const inboundRate  = Math.max(0, wholesaleRate - data.markupAmount);
-  const displayInbound = data.displayDir === "inbound";
-  const displayRate = displayInbound ? inboundRate : outboundRate;
-  const customerRate = isInbound ? inboundRate : outboundRate;
+  const customerRate = isInbound ? wholesaleRate - data.markupAmount : wholesaleRate + data.markupAmount;
   const amount = parseFloat(data.amount) || 0;
   const ngnTotal = Math.round(amount * customerRate);
   const totalMarginUSD = customerRate > 0 ? (data.markupAmount * amount) / customerRate : 0;
@@ -7478,15 +7466,17 @@ function OperatorQuoteModal({ open, onClose, onCreated }) {
             <p className="text-sm" style={{ color: "var(--muted)" }}>Enter your customer's payment details. They don't need a XaePay account — quotes go through you.</p>
           </div>
           <div>
-            <Label>Direction of this transaction</Label>
+            <Label>Payment rail / corridor</Label>
             <div className="grid grid-cols-2 gap-2">
-              <button type="button" onClick={() => setData({ ...data, direction: "outbound" })} className="rounded-xl px-4 py-3 text-sm font-medium transition" style={data.direction === "outbound" ? { background: "var(--ink)", color: "var(--bone)", border: "1px solid var(--ink)" } : { background: "white", border: "1px solid var(--line)" }}>
-                <div className="font-semibold">Outbound</div>
-                <div className="font-mono text-[10px] uppercase tracking-wider mt-0.5 opacity-70">Nigeria → World</div>
+              <button type="button" onClick={() => setData({ ...data, direction: "outbound" })} className="rounded-xl px-4 py-3 text-sm font-medium transition text-left" style={data.direction === "outbound" ? { background: "var(--ink)", color: "var(--bone)", border: "1px solid var(--ink)" } : { background: "white", border: "1px solid var(--line)" }}>
+                <div className="font-mono text-[10px] uppercase tracking-wider opacity-70">Outbound</div>
+                <div className="font-semibold mt-0.5">NGN → USD / GBP / etc.</div>
+                <div className="font-mono text-[10px] mt-1 opacity-60">Customer in Nigeria · pays foreign supplier abroad</div>
               </button>
-              <button type="button" onClick={() => setData({ ...data, direction: "inbound" })} className="rounded-xl px-4 py-3 text-sm font-medium transition" style={data.direction === "inbound" ? { background: "var(--ink)", color: "var(--bone)", border: "1px solid var(--ink)" } : { background: "white", border: "1px solid var(--line)" }}>
-                <div className="font-semibold">Inbound</div>
-                <div className="font-mono text-[10px] uppercase tracking-wider mt-0.5 opacity-70">World → Nigeria</div>
+              <button type="button" onClick={() => setData({ ...data, direction: "inbound" })} className="rounded-xl px-4 py-3 text-sm font-medium transition text-left" style={data.direction === "inbound" ? { background: "var(--ink)", color: "var(--bone)", border: "1px solid var(--ink)" } : { background: "white", border: "1px solid var(--line)" }}>
+                <div className="font-mono text-[10px] uppercase tracking-wider opacity-70">Inbound</div>
+                <div className="font-semibold mt-0.5">USD / GBP / etc. → NGN</div>
+                <div className="font-mono text-[10px] mt-1 opacity-60">Diaspora or USD-holder · pays NGN recipient in Nigeria</div>
               </button>
             </div>
           </div>
@@ -7624,35 +7614,6 @@ function OperatorQuoteModal({ open, onClose, onCreated }) {
                 <EconRow label="Wholesale rate" value={`₦${wholesaleRate.toFixed(2)}/$`} muted />
                 <EconRow label={isInbound ? "Your spread (subtracted)" : "Your markup (added)"} value={`${isInbound ? "−" : "+"}₦${data.markupAmount.toFixed(2)}/$`} highlight />
                 <EconRow label={isInbound ? "Recipient receives at" : "Customer all-in rate"} value={`₦${customerRate.toFixed(2)}/$`} />
-                {/* Rate-direction toggle. Flips the display orientation between
-                    NGN→USD (outbound rate) and USD→NGN (inbound rate, ~₦20 less
-                    by default). Doesn't change the quote's actual locked rate —
-                    that's still driven by data.direction at the top of the form. */}
-                <div className="rounded-lg p-2.5" style={{ background: "var(--bone)", border: "1px solid var(--line)" }}>
-                  <div className="flex items-center justify-between gap-2 mb-2">
-                    <span className="font-mono text-[10px] uppercase tracking-wider" style={{ color: "var(--muted)" }}>Rate orientation</span>
-                    <div className="flex gap-1 p-0.5 rounded-md" style={{ background: "white", border: "1px solid var(--line)" }}>
-                      <button type="button" onClick={() => setData({ ...data, displayDir: "outbound" })}
-                        className="rounded px-2 py-0.5 text-[10px] font-mono font-semibold transition"
-                        style={!displayInbound ? { background: "var(--ink)", color: "var(--bone)" } : { color: "var(--muted)" }}>
-                        NGN → USD
-                      </button>
-                      <button type="button" onClick={() => setData({ ...data, displayDir: "inbound" })}
-                        className="rounded px-2 py-0.5 text-[10px] font-mono font-semibold transition"
-                        style={displayInbound ? { background: "var(--ink)", color: "var(--bone)" } : { color: "var(--muted)" }}>
-                        USD → NGN
-                      </button>
-                    </div>
-                  </div>
-                  <div className="flex justify-between items-baseline text-xs">
-                    <span style={{ color: "var(--muted)" }}>{displayInbound ? "Inbound rate (USD→NGN)" : "Outbound rate (NGN→USD)"}</span>
-                    <span className="font-mono font-semibold">₦{displayRate.toFixed(2)}/$</span>
-                  </div>
-                  <div className="flex justify-between items-baseline text-[10px] mt-1" style={{ color: "var(--muted)" }}>
-                    <span>Spread between directions</span>
-                    <span className="font-mono">₦{(outboundRate - inboundRate).toFixed(2)}/$</span>
-                  </div>
-                </div>
                 <div className="h-px my-2" style={{ background: "var(--line)" }} />
                 <EconRow label={`Amount: $${amount.toLocaleString()}`} value={`${isInbound ? "Recipient gets " : ""}₦${ngnTotal.toLocaleString()}`} />
                 <EconRow label="Total margin captured" value={`$${totalMarginUSD.toFixed(2)}`} />
@@ -8369,9 +8330,16 @@ function InvoicePreviewModal({ open, onClose, data }) {
           )}
 
           {isInbound && (
-            <div className="rounded-lg p-4 mb-5" style={{ background: "rgba(212,168,44,0.08)", border: "1px solid rgba(212,168,44,0.25)" }}>
-              <div className="font-mono text-[9px] uppercase tracking-wider mb-2" style={{ color: "var(--amber)" }}>Inbound — sender funds in foreign currency</div>
-              <p className="text-xs" style={{ color: "var(--ink)" }}>The sender pays our licensed payment provider in {data.currency}. Once cleared, the recipient receives ₦{Math.round(data.ngnTotal).toLocaleString()} to their Nigerian bank account. Operator does not collect NGN on inbound — payment instructions for the foreign side are generated separately at confirmation.</p>
+            <div className="rounded-lg p-4 mb-5" style={{ background: "rgba(15,95,63,0.06)", border: "1px solid rgba(15,95,63,0.2)" }}>
+              <div className="font-mono text-[9px] uppercase tracking-wider mb-2" style={{ color: "var(--emerald)" }}>Inbound · {data.currency} → NGN funding</div>
+              <p className="text-xs mb-2" style={{ color: "var(--ink)" }}>The sender (in {data.country || "the diaspora"} or holding {data.currency}) pays our licensed payment provider directly in {data.currency}. Once cleared, the recipient receives <strong>₦{Math.round(data.ngnTotal).toLocaleString()}</strong> to their Nigerian bank account same-day.</p>
+              <div className="space-y-1 text-[11px] font-mono" style={{ color: "var(--muted)" }}>
+                <div>1. Sender confirms quote → gets {data.currency} funding details from the provider</div>
+                <div>2. Sender wires / ACH / Zelle / card → provider's {data.currency} collection account</div>
+                <div>3. Provider executes NGN payout → recipient's Nigerian bank, same business day</div>
+                <div>4. Receipt + payment confirmation issued to both sender and recipient</div>
+              </div>
+              <p className="text-[10px] mt-2" style={{ color: "var(--muted)" }}>The operator does not collect NGN on inbound — they coordinate the documentation. Payment instructions for the {data.currency} side are generated at confirmation.</p>
             </div>
           )}
 
