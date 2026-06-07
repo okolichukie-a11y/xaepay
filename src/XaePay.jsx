@@ -398,10 +398,12 @@ function AppShell() {
       const email = auth.user.email;
       // Diaspora self-serve cold-start: if there's a pending signup payload in
       // localStorage AND no customer row yet matches this email, create the
-      // customers row now (RLS allows the auth'd user to insert their own row
-      // with bdc_user_id = null per the "diaspora self-onboarding" policy).
-      // The customer is unassigned until an operator claims them; until then
-      // they can browse their portal but can't request a quote.
+      // customers row now and auto-assign to the platform's default operator
+      // (XaeccoX). This means cold-start customers can immediately request
+      // quotes — no "unassigned" limbo state. Existing customers onboarded by
+      // a specific operator keep that assignment; only true cold-starts go to
+      // XaeccoX. RLS allows the auth'd user to insert their own row if the
+      // bdc_user_id matches the platform default per "diaspora self-onboarding".
       try {
         const staged = localStorage.getItem("xaepay_pending_signup");
         if (staged) {
@@ -409,17 +411,25 @@ function AppShell() {
           if (payload?.email && payload.email === email) {
             const { data: existing } = await supabase.from("customers").select("id").eq("email", email).limit(1);
             if (!existing || existing.length === 0) {
-              await supabase.from("customers").insert({
-                email,
-                name: payload.name || null,
-                phone: payload.phone || null,
-                type: payload.type || "individual",
-                business_name: payload.business_name || null,
-                bdc_user_id: null,
-                bdc_name: "Pending operator assignment",
-                kyc_status: "pending_review",
-                kyc_tier: 0,
-              });
+              // Look up the default operator (set via operator_profiles.is_platform_default)
+              const { data: defaultOperator } = await supabase
+                .from("operator_profiles")
+                .select("auth_user_id, business_name")
+                .eq("is_platform_default", true)
+                .maybeSingle();
+              if (defaultOperator?.auth_user_id) {
+                await supabase.from("customers").insert({
+                  email,
+                  name: payload.name || null,
+                  phone: payload.phone || null,
+                  type: payload.type || "individual",
+                  business_name: payload.business_name || null,
+                  bdc_user_id: defaultOperator.auth_user_id,
+                  bdc_name: defaultOperator.business_name || "XaeccoX",
+                  kyc_status: "pending_review",
+                  kyc_tier: 0,
+                });
+              }
             }
             localStorage.removeItem("xaepay_pending_signup");
           }
