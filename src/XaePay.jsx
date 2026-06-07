@@ -3420,6 +3420,18 @@ function CustomerPortal({ session, customerRows }) {
     try { localStorage.setItem("xaepay_notifications_collapsed", notificationsCollapsed ? "1" : "0"); } catch { /* noop */ }
   }, [notificationsCollapsed]);
 
+  // Collapse state map for the dashboard sections (open / expired / past).
+  // Persisted per-customer so preferences stick across sessions. Expired and
+  // past default to collapsed since they're historical reference, not action
+  // items; open quotes default to expanded.
+  const [sectionCollapsed, setSectionCollapsed] = useState(() => {
+    try { return JSON.parse(localStorage.getItem("xaepay_portal_sections") || '{"expiredQuotes":true,"pastQuotes":true}'); } catch { return { expiredQuotes: true, pastQuotes: true }; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem("xaepay_portal_sections", JSON.stringify(sectionCollapsed)); } catch { /* noop */ }
+  }, [sectionCollapsed]);
+  const toggleSection = (key) => setSectionCollapsed((s) => ({ ...s, [key]: !s[key] }));
+
   const activeCustomer = customerRows.find((c) => c.id === activeCustomerId);
 
   const fetchInvoices = async () => {
@@ -3527,12 +3539,24 @@ function CustomerPortal({ session, customerRows }) {
     const s = (cs || "").toUpperCase();
     return s.includes("COMPLETED") || s.includes("CANCELED") || s.includes("CANCELLED") || s.includes("EXPIRED");
   };
-  const openQuotes = quotes.filter((q) => q.status === "pending_approval");
+  // Time-based expiry: a pending_approval quote whose expires_at has passed
+  // is functionally expired even if its DB status hasn't been flipped yet.
+  // Surface those alongside explicitly-expired quotes in the Expired section
+  // so they're not mixed in with truly actionable open quotes.
+  const nowMs = Date.now();
+  const isTimeExpired = (q) => q.expires_at && new Date(q.expires_at).getTime() < nowMs;
+
+  const openQuotes = quotes.filter((q) => q.status === "pending_approval" && !isTimeExpired(q));
+  const expiredQuotes = quotes.filter((q) =>
+    q.status === "expired"
+    || (q.status === "pending_approval" && isTimeExpired(q))
+  );
   const requestQuotes = quotes.filter((q) => q.status === "request_pending");
   const inProgressQuotes = quotes.filter((q) => q.status === "customer_approved" && !isCedarTerminal(q.cedar_request_status));
   const pastQuotes = quotes.filter((q) =>
     q.status !== "pending_approval" &&
     q.status !== "request_pending" &&
+    q.status !== "expired" &&
     !(q.status === "customer_approved" && !isCedarTerminal(q.cedar_request_status))
   );
 
@@ -3800,26 +3824,53 @@ function CustomerPortal({ session, customerRows }) {
       )}
 
       <section className="mb-10 rise" style={{ animationDelay: "0.05s" }}>
-        <div className="flex items-baseline justify-between mb-4">
-          <h2 className="font-display text-xl font-semibold">
-            {openQuotes.length} open quote{openQuotes.length === 1 ? "" : "s"}
-          </h2>
+        <div className="flex items-baseline justify-between mb-4 gap-2">
+          <button type="button" onClick={() => toggleSection("openQuotes")} className="flex-1 flex items-baseline justify-between text-left group">
+            <h2 className="font-display text-xl font-semibold flex items-center gap-2">
+              {openQuotes.length} open quote{openQuotes.length === 1 ? "" : "s"}
+              <ChevronRight size={14} style={{ color: "var(--muted)", transform: sectionCollapsed.openQuotes ? "rotate(0deg)" : "rotate(90deg)", transition: "transform 0.15s" }} />
+            </h2>
+          </button>
           <SecondaryBtn onClick={fetchQuotes} disabled={loading}><RefreshCw size={14} className={loading ? "animate-spin" : ""} /> Refresh</SecondaryBtn>
         </div>
-        {loading && quotes.length === 0 && <Card><div className="p-8 text-center text-sm" style={{ color: "var(--muted)" }}>Loading…</div></Card>}
-        {!loading && openQuotes.length === 0 && (
-          <Card>
-            <div className="p-10 text-center">
-              <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full" style={{ background: "var(--bone-2)" }}><Receipt size={20} style={{ color: "var(--muted)" }} /></div>
-              <h3 className="font-display text-lg font-semibold">No open quotes</h3>
-              <p className="mt-1.5 text-sm" style={{ color: "var(--muted)" }}>Your operator will send any new quotes here. You'll also get a WhatsApp notification.</p>
+        {!sectionCollapsed.openQuotes && (
+          <>
+            {loading && quotes.length === 0 && <Card><div className="p-8 text-center text-sm" style={{ color: "var(--muted)" }}>Loading…</div></Card>}
+            {!loading && openQuotes.length === 0 && (
+              <Card>
+                <div className="p-10 text-center">
+                  <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full" style={{ background: "var(--bone-2)" }}><Receipt size={20} style={{ color: "var(--muted)" }} /></div>
+                  <h3 className="font-display text-lg font-semibold">No open quotes</h3>
+                  <p className="mt-1.5 text-sm" style={{ color: "var(--muted)" }}>Your operator will send any new quotes here. You'll also get a WhatsApp notification.</p>
+                </div>
+              </Card>
+            )}
+            <div className="space-y-3">
+              {openQuotes.map((q) => <CustomerQuoteCard key={q.id} q={q} onDecide={decide} onInvoiceUploaded={fetchQuotes} />)}
             </div>
-          </Card>
+          </>
         )}
-        <div className="space-y-3">
-          {openQuotes.map((q) => <CustomerQuoteCard key={q.id} q={q} onDecide={decide} onInvoiceUploaded={fetchQuotes} />)}
-        </div>
       </section>
+
+      {/* Expired quotes — both explicitly-expired and stale pending_approval
+          that passed their expires_at. Separated so they're not mixed in with
+          actionable opens. Defaults to collapsed since they're not actionable. */}
+      {expiredQuotes.length > 0 && (
+        <section className="mb-10 rise" style={{ animationDelay: "0.07s" }}>
+          <button type="button" onClick={() => toggleSection("expiredQuotes")} className="w-full flex items-baseline justify-between mb-4 group">
+            <h2 className="font-display text-xl font-semibold flex items-center gap-2" style={{ color: "var(--muted)" }}>
+              {expiredQuotes.length} expired quote{expiredQuotes.length === 1 ? "" : "s"}
+              <ChevronRight size={14} style={{ color: "var(--muted)", transform: sectionCollapsed.expiredQuotes ? "rotate(0deg)" : "rotate(90deg)", transition: "transform 0.15s" }} />
+            </h2>
+            <span className="font-mono text-[10px]" style={{ color: "var(--muted)" }}>{sectionCollapsed.expiredQuotes ? "Show" : "Hide"}</span>
+          </button>
+          {!sectionCollapsed.expiredQuotes && (
+            <div className="space-y-3">
+              {expiredQuotes.map((q) => <CustomerQuoteCard key={q.id} q={q} onDecide={decide} onInvoiceUploaded={fetchQuotes} />)}
+            </div>
+          )}
+        </section>
+      )}
 
       {inProgressQuotes.length > 0 && (
         <section className="mb-10 rise" style={{ animationDelay: "0.08s" }}>
@@ -3834,7 +3885,15 @@ function CustomerPortal({ session, customerRows }) {
 
       {pastQuotes.length > 0 && (
         <section className="rise" style={{ animationDelay: "0.1s" }}>
-          <h2 className="font-display text-xl font-semibold mb-4">Past activity</h2>
+          <button type="button" onClick={() => toggleSection("pastQuotes")} className="w-full flex items-baseline justify-between mb-4 group">
+            <h2 className="font-display text-xl font-semibold flex items-center gap-2">
+              Past activity
+              <span className="font-mono text-[11px]" style={{ color: "var(--muted)" }}>· {pastQuotes.length}</span>
+              <ChevronRight size={14} style={{ color: "var(--muted)", transform: sectionCollapsed.pastQuotes ? "rotate(0deg)" : "rotate(90deg)", transition: "transform 0.15s" }} />
+            </h2>
+            <span className="font-mono text-[10px]" style={{ color: "var(--muted)" }}>{sectionCollapsed.pastQuotes ? "Show" : "Hide"}</span>
+          </button>
+          {!sectionCollapsed.pastQuotes && (
           <Card padding="none">
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
@@ -3864,6 +3923,7 @@ function CustomerPortal({ session, customerRows }) {
               </table>
             </div>
           </Card>
+          )}
         </section>
       )}
       <CustomerRequestQuoteModal
