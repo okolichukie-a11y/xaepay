@@ -12,6 +12,7 @@ import { generateQuotePdf, uploadQuotePdf, downloadQuotePdf } from "./lib/pdf.js
 import { generateCompliancePackPdf, downloadCompliancePackPdf, generateTransactionConfirmationPdf, downloadTransactionConfirmationPdf, generateInvoicePdf, downloadInvoicePdf, generateReceiptPdf, downloadReceiptPdf, generateRecipientReceiptPdf, downloadRecipientReceiptPdf } from "./lib/pdf-doc.js";
 import { TermsOfService, PrivacyPolicy, DataDeletion, RefundPolicy, ServiceProviderMSA } from "./legal/LegalPages.jsx";
 import { OperatorsPage, CustomersPage, ProvidersPage, SendUsdToNgnPage } from "./legal/UserPages.jsx";
+import { CounselBriefPage } from "./legal/CounselBriefPage.jsx";
 import { useAuth } from "./lib/auth.js";
 
 // ─── Editable in one place ────────────────────────────────────────────────
@@ -317,7 +318,7 @@ function AppShell() {
   // and audience-focused sub-landings (?p=operators/customers/providers). These
   // bypass the rest of the app so footers + external deep-links work without
   // hitting the splash gate or sign-in flow.
-  const STATIC_PAGES = ["terms", "privacy", "refunds", "data-deletion", "msa", "operators", "customers", "providers", "send-usd-ngn"];
+  const STATIC_PAGES = ["terms", "privacy", "refunds", "data-deletion", "msa", "operators", "customers", "providers", "send-usd-ngn", "counsel-brief"];
   const [legalRoute] = useState(() => {
     if (typeof window === "undefined") return null;
     const p = new URLSearchParams(window.location.search).get("p");
@@ -518,6 +519,7 @@ function AppShell() {
   if (legalRoute === "customers")      return <CustomersPage />;
   if (legalRoute === "providers")      return <ProvidersPage />;
   if (legalRoute === "send-usd-ngn")   return <SendUsdToNgnPage />;
+  if (legalRoute === "counsel-brief")  return <CounselBriefPage />;
   if (quoteRoute) return <QuoteApprovalPage quote={quoteRoute} />;
   if (onboardRoute) return <CustomerOnboardPage invite={onboardRoute} />;
 
