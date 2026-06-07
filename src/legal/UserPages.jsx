@@ -266,7 +266,7 @@ export function SendUsdToNgnPage() {
       eyebrow="USD → NGN corridor"
       title={<>Send USD to Nigeria,<br/><span className="italic" style={{ color: "var(--lime)" }}>landed in naira same day.</span></>}
       lede="If you're holding USD anywhere in the world and need to pay NGN to a recipient in Nigeria — family, supplier, contractor, school — XaePay routes you through a vetted operator and a licensed payment provider. Locked rate, transparent fees, full receipt."
-      primaryCta={{ label: "Get started", href: "/" }}
+      primaryCta={{ label: "Get started", href: "/?signup=diaspora" }}
       secondaryCta={{ label: "Talk on WhatsApp", href: WHATSAPP_URL, external: true, icon: "wa" }}
     >
       <Section eyebrow="Who this is for" title="The USD → NGN rail">
@@ -323,8 +323,8 @@ export function SendUsdToNgnPage() {
 
       <div className="rounded-3xl p-8 text-center" style={{ background: "var(--ink)", color: "var(--bone)" }}>
         <h2 className="font-display text-3xl font-[450] tracking-tight">Send your first USD → NGN payment</h2>
-        <p className="mt-3 text-sm" style={{ color: "rgba(247,245,240,0.7)" }}>Join the waitlist — we'll match you with an operator when we open up.</p>
-        <a href="/" className="mt-6 inline-flex items-center justify-center gap-2 rounded-xl px-6 py-3 text-sm font-semibold transition" style={{ background: "var(--lime)", color: "var(--ink)" }}>Get started <ArrowRight size={14} /></a>
+        <p className="mt-3 text-sm" style={{ color: "rgba(247,245,240,0.7)" }}>Sign up directly — we'll match you with a vetted operator and you'll be able to request your first quote.</p>
+        <a href="/?signup=diaspora" className="mt-6 inline-flex items-center justify-center gap-2 rounded-xl px-6 py-3 text-sm font-semibold transition" style={{ background: "var(--lime)", color: "var(--ink)" }}>Get started <ArrowRight size={14} /></a>
       </div>
     </PageShell>
   );

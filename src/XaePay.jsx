@@ -343,6 +343,18 @@ function AppShell() {
   const [signInOpen, setSignInOpen] = useState(false);
   const [waitlistOpen, setWaitlistOpen] = useState(false);
   const [waitlistIntent, setWaitlistIntent] = useState({ intent: "general", role: "business" });
+  const [diasporaSignupOpen, setDiasporaSignupOpen] = useState(false);
+  // Auto-open the diaspora signup modal when ?signup=diaspora is in the URL —
+  // handoff from the /?p=send-usd-ngn landing page's "Get started" buttons.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (new URLSearchParams(window.location.search).get("signup") === "diaspora") {
+      setDiasporaSignupOpen(true);
+      const u = new URL(window.location.href);
+      u.searchParams.delete("signup");
+      window.history.replaceState({}, "", u.toString());
+    }
+  }, []);
   const [onboardingOpen, setOnboardingOpen] = useState(false);
   const [onboardingType, setOnboardingType] = useState(null);
   const [session, setSession] = useState({ type: null, tier: 0, name: null, company: null });
@@ -384,6 +396,36 @@ function AppShell() {
     let cancelled = false;
     (async () => {
       const email = auth.user.email;
+      // Diaspora self-serve cold-start: if there's a pending signup payload in
+      // localStorage AND no customer row yet matches this email, create the
+      // customers row now (RLS allows the auth'd user to insert their own row
+      // with bdc_user_id = null per the "diaspora self-onboarding" policy).
+      // The customer is unassigned until an operator claims them; until then
+      // they can browse their portal but can't request a quote.
+      try {
+        const staged = localStorage.getItem("xaepay_pending_signup");
+        if (staged) {
+          const payload = JSON.parse(staged);
+          if (payload?.email && payload.email === email) {
+            const { data: existing } = await supabase.from("customers").select("id").eq("email", email).limit(1);
+            if (!existing || existing.length === 0) {
+              await supabase.from("customers").insert({
+                email,
+                name: payload.name || null,
+                phone: payload.phone || null,
+                type: payload.type || "individual",
+                business_name: payload.business_name || null,
+                bdc_user_id: null,
+                bdc_name: "Pending operator assignment",
+                kyc_status: "pending_review",
+                kyc_tier: 0,
+              });
+            }
+            localStorage.removeItem("xaepay_pending_signup");
+          }
+        }
+      } catch { /* best-effort — diaspora signup is non-blocking */ }
+
       // Before checking memberships, auto-accept any pending provider invites
       // matching this email. Idempotent (unique constraint on the join table).
       // This is what closes the invite loop — recipient signs in, lands as a
@@ -548,6 +590,7 @@ function AppShell() {
       <BecomePartnerModal open={becomePartnerOpen} onClose={() => setBecomePartnerOpen(false)} onComplete={(data) => { setBecomePartnerOpen(false); completeOnboarding(data); }} />
       <RequestAccessModal open={accessOpen} onClose={() => setAccessOpen(false)} onChoose={startOnboarding} onWaitlist={() => { setAccessOpen(false); setWaitlistOpen(true); }} />
       <WaitlistModal open={waitlistOpen} onClose={() => setWaitlistOpen(false)} defaultRole={waitlistIntent.role} intent={waitlistIntent.intent} />
+      <DiasporaSignupModal open={diasporaSignupOpen} onClose={() => setDiasporaSignupOpen(false)} />
       {onboardingOpen && <OnboardingFlow type={onboardingType} onClose={() => setOnboardingOpen(false)} onComplete={completeOnboarding} onSwitchType={(t) => setOnboardingType(t)} />}
       <TwoFactorSetupModal open={twoFactorOpen} onClose={() => setTwoFactorOpen(false)} onEnrolled={async () => { await refreshMfaState(); }} />
     </div>
@@ -918,6 +961,135 @@ function PreviewBanner({ onWaitlist }) {
       <span style={{ color: "rgba(247,245,240,0.85)" }}>Get invited when we open up. </span>
       <button onClick={onWaitlist} className="font-semibold underline underline-offset-2" style={{ color: "var(--lime)" }}>Join the waitlist →</button>
     </div>
+  );
+}
+
+// Diaspora cold-start self-serve signup. Unlike the WaitlistModal (which just
+// collects emails for marketing/onboarding outreach), this actually creates a
+// customers row and sends the magic-link sign-in email in one step. The
+// customer lands in their portal as soon as they click the link.
+//
+// bdc_user_id is left null at signup time — the customer is "unassigned." An
+// operator (manual for V1; auto-routed in a later phase) claims them by
+// setting bdc_user_id from their dashboard. Until claimed, the customer can
+// see their portal but can't request quotes.
+function DiasporaSignupModal({ open, onClose }) {
+  const { push } = useToast();
+  const auth = useAuth();
+  const [data, setData] = useState({
+    full_name: "",
+    email: "",
+    phone: "",
+    country: "United States",
+    purpose: "",
+    type: "individual",
+    business_name: "",
+  });
+  const [submitting, setSubmitting] = useState(false);
+  const [sent, setSent] = useState(false);
+  const [error, setError] = useState("");
+
+  const reset = () => {
+    setData({ full_name: "", email: "", phone: "", country: "United States", purpose: "", type: "individual", business_name: "" });
+    setSubmitting(false); setSent(false); setError("");
+  };
+  const closeAndReset = () => { reset(); onClose(); };
+
+  const canSubmit = !!(data.full_name && data.email && data.country && (data.type !== "business" || data.business_name) && !submitting);
+
+  const submit = async (e) => {
+    e?.preventDefault?.();
+    if (!canSubmit) return;
+    setSubmitting(true); setError("");
+    try {
+      // Step 1 — send magic link so the customer authenticates. This also
+      // creates an auth.users row so the RLS policy on customers (email =
+      // auth.email()) will match when we insert in step 2.
+      const { error: authErr } = await auth.signInWithEmail(data.email);
+      if (authErr) throw authErr;
+      // Step 2 — stage the signup data in localStorage. On the magic-link
+      // callback, the auth bootstrap will find this and create the customers
+      // row before routing them to the portal.
+      const payload = {
+        email: data.email.trim().toLowerCase(),
+        name: data.full_name.trim(),
+        phone: data.phone.trim() || null,
+        type: data.type,
+        business_name: data.type === "business" ? data.business_name.trim() : null,
+        country: data.country,
+        purpose: data.purpose.trim() || null,
+        captured_at: new Date().toISOString(),
+      };
+      try { localStorage.setItem("xaepay_pending_signup", JSON.stringify(payload)); } catch { /* localStorage may be blocked */ }
+      // Step 3 — also log to xaepay_waitlist so we have a record even if the
+      // customer never clicks the magic link. Best-effort; insert errors are
+      // swallowed.
+      supabase.from("xaepay_waitlist").insert({
+        name: data.full_name, email: data.email, role: "diaspora",
+        source: "diaspora-selfserve", user_agent: typeof navigator !== "undefined" ? navigator.userAgent : null,
+        referrer: typeof document !== "undefined" ? document.referrer || null : null,
+      }).then(() => {}).catch(() => {});
+      setSent(true);
+      push("Sign-in link sent — check your email.", "success");
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error("Diaspora signup failed:", err);
+      setError(err?.message || "Couldn't send the link. Try again or reach us on WhatsApp.");
+    } finally { setSubmitting(false); }
+  };
+
+  if (sent) {
+    return (
+      <Modal open={open} onClose={closeAndReset} title="Check your inbox" size="sm">
+        <div className="text-center py-2">
+          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full" style={{ background: "var(--lime)" }}>
+            <Mail size={24} strokeWidth={2.5} style={{ color: "var(--ink)" }} />
+          </div>
+          <h3 className="font-display mt-4 text-xl font-semibold" style={{ color: "var(--ink)" }}>Sign-in link sent to {data.email}</h3>
+          <p className="mt-2 text-sm" style={{ color: "var(--muted)" }}>
+            Click the link in your email to land in your XaePay portal. We'll match you with a vetted operator and you'll be able to request your first USD → NGN quote.
+          </p>
+          <p className="mt-4 text-xs" style={{ color: "var(--muted)" }}>
+            Didn't get it? Check spam or message us on{" "}
+            <a href="https://wa.me/15717245894" target="_blank" rel="noreferrer" className="font-semibold underline" style={{ color: "var(--emerald)" }}>WhatsApp</a>.
+          </p>
+        </div>
+      </Modal>
+    );
+  }
+
+  return (
+    <Modal open={open} onClose={closeAndReset} title="Send USD to Nigeria" size="md">
+      <form onSubmit={submit} className="space-y-4">
+        <p className="text-sm" style={{ color: "var(--muted)" }}>
+          We'll match you with a vetted operator and send you a sign-in link to your portal. KYC takes 5–15 business days the first time; transactions land same day after that.
+        </p>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <Field label="Full name" full><Input required value={data.full_name} onChange={(e) => setData({ ...data, full_name: e.target.value })} placeholder="Adekunle Okafor" /></Field>
+          <Field label="Email"><Input type="email" required value={data.email} onChange={(e) => setData({ ...data, email: e.target.value })} placeholder="you@email.com" /></Field>
+          <Field label="Phone (optional)"><Input value={data.phone} onChange={(e) => setData({ ...data, phone: e.target.value })} placeholder="+1 415 ..." /></Field>
+          <Field label="I'm sending from"><Select value={data.country} onChange={(e) => setData({ ...data, country: e.target.value })}>
+            <option>United States</option><option>United Kingdom</option><option>Canada</option><option>Germany</option><option>UAE</option><option>Nigeria (USD account)</option><option>Other</option>
+          </Select></Field>
+          <Field label="Sending as"><Select value={data.type} onChange={(e) => setData({ ...data, type: e.target.value })}>
+            <option value="individual">Individual</option><option value="business">Business</option>
+          </Select></Field>
+          {data.type === "business" && (
+            <Field label="Business name"><Input required value={data.business_name} onChange={(e) => setData({ ...data, business_name: e.target.value })} placeholder="Acme Imports LLC" /></Field>
+          )}
+        </div>
+        <Field label="What are you sending for? (optional)" full>
+          <textarea rows={2} value={data.purpose} onChange={(e) => setData({ ...data, purpose: e.target.value })} placeholder="Family support, school fees, supplier payment, contractor invoice, etc." className="w-full rounded-xl px-3 py-2 text-sm" style={{ background: "white", border: "1px solid var(--line)" }} />
+        </Field>
+        {error && <div className="rounded-lg p-3 text-xs" style={{ background: "#fee2e2", color: "#991b1b" }}>{error}</div>}
+        <PrimaryBtn type="submit" full disabled={!canSubmit}>
+          {submitting ? <><Loader2 size={14} className="spin" /> Sending sign-in link…</> : <><Mail size={14} /> Send me my sign-in link</>}
+        </PrimaryBtn>
+        <p className="text-[11px] text-center" style={{ color: "var(--muted)" }}>
+          By signing up you agree to our <a href="/?p=terms" className="underline" style={{ color: "var(--emerald)" }}>Terms</a> and <a href="/?p=privacy" className="underline" style={{ color: "var(--emerald)" }}>Privacy Policy</a>.
+        </p>
+      </form>
+    </Modal>
   );
 }
 
@@ -3365,6 +3537,89 @@ function CustomerPortal({ session, customerRows }) {
           </p>
         )}
       </div>
+
+      {/* Action items — the canonical "what needs your attention" surface in the
+          portal. Aggregates time-sensitive items from quotes + invoices so a
+          customer who missed a WhatsApp / email can sign in and see everything
+          waiting on them in one place. Reduces the single-channel risk of the
+          4-min quote-approval window. */}
+      {(() => {
+        const items = [];
+        // Quotes awaiting customer approval (urgent — 4-min window)
+        openQuotes.forEach((q) => items.push({
+          key: `q-approve-${q.id}`,
+          icon: AlertTriangle,
+          urgent: true,
+          title: `Quote ready · approve to lock the rate`,
+          body: `${q.currency} ${parseFloat(q.amount).toLocaleString()} → ${q.beneficiary || q.destination || "recipient"} · expires soon`,
+          time: q.created_at,
+          ctaLabel: "Review quote",
+          ctaOnClick: () => { window.location.href = `/?quote=${q.id}`; },
+        }));
+        // Quotes that are customer-approved but awaiting customer deposit
+        inProgressQuotes.filter((q) => (q.cedar_request_status || "").toUpperCase().includes("AWAITING_DEPOSIT")).forEach((q) => items.push({
+          key: `q-deposit-${q.id}`,
+          icon: Wallet,
+          urgent: true,
+          title: `Awaiting your deposit`,
+          body: `${q.currency} ${parseFloat(q.amount).toLocaleString()} · deposit instructions below`,
+          time: q.cedar_request_status_updated_at || q.created_at,
+        }));
+        // Unpaid invoices (sent but no confirmed payment claim)
+        invoices.filter((inv) => inv.status === "sent").forEach((inv) => items.push({
+          key: `inv-${inv.id}`,
+          icon: Receipt,
+          title: `Invoice ${inv.invoice_number} from ${inv.operator_name || "your operator"}`,
+          body: `${inv.currency} ${parseFloat(inv.total).toLocaleString()}${inv.due_date ? ` · due ${new Date(inv.due_date).toLocaleDateString("en-GB", { day: "2-digit", month: "short" })}` : ""}`,
+          time: inv.sent_at || inv.created_at,
+          ctaLabel: "View & pay",
+          ctaOnClick: () => setSelectedInvoice(inv),
+        }));
+        // Recently paid invoices (last 7 days) — receipts available
+        const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+        invoices.filter((inv) => inv.status === "paid" && inv.receipt_pdf_url && new Date(inv.paid_at).getTime() >= sevenDaysAgo).forEach((inv) => items.push({
+          key: `rcp-${inv.id}`,
+          icon: CheckCircle2,
+          title: `Receipt available · ${inv.invoice_number}`,
+          body: `${inv.currency} ${parseFloat(inv.total).toLocaleString()} · paid ${relativeTime(inv.paid_at)}`,
+          time: inv.paid_at,
+          ctaLabel: "Download",
+          ctaOnClick: () => window.open(safeUrl(inv.receipt_pdf_url), "_blank"),
+        }));
+        items.sort((a, b) => new Date(b.time) - new Date(a.time));
+        if (items.length === 0) return null;
+        return (
+          <section className="mb-6 rise" style={{ animationDelay: "0.03s" }}>
+            <div className="flex items-baseline justify-between mb-3">
+              <h2 className="font-display text-base font-semibold flex items-center gap-2"><Bell size={14} /> What needs your attention</h2>
+              <span className="font-mono text-[10px]" style={{ color: "var(--muted)" }}>{items.length} item{items.length === 1 ? "" : "s"}</span>
+            </div>
+            <div className="grid gap-2">
+              {items.slice(0, 6).map((it) => {
+                const Icon = it.icon;
+                return (
+                  <div key={it.key} className="rounded-xl p-3 flex items-start gap-3" style={{ background: it.urgent ? "#fef3c7" : "white", border: `1px solid ${it.urgent ? "#fcd34d" : "var(--line)"}` }}>
+                    <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg" style={{ background: it.urgent ? "#fbbf24" : "var(--bone-2)", color: it.urgent ? "var(--ink)" : "var(--emerald)" }}>
+                      <Icon size={14} />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="font-semibold text-sm">{it.title}</div>
+                      <div className="font-mono text-[11px] mt-0.5" style={{ color: "var(--muted)" }}>{it.body}</div>
+                      <div className="font-mono text-[10px] mt-0.5" style={{ color: "var(--muted)" }}>{relativeTime(it.time)}</div>
+                    </div>
+                    {it.ctaLabel && it.ctaOnClick && (
+                      <button type="button" onClick={it.ctaOnClick} className="rounded-lg px-3 py-1.5 text-xs font-semibold flex-shrink-0 transition" style={{ background: it.urgent ? "var(--ink)" : "var(--lime)", color: it.urgent ? "var(--lime)" : "var(--ink)" }}>{it.ctaLabel}</button>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+            {items.length > 6 && (
+              <p className="text-xs mt-2" style={{ color: "var(--muted)" }}>+ {items.length - 6} more · scroll the lists below to see everything</p>
+            )}
+          </section>
+        );
+      })()}
 
       {/* Activity overview — lifetime + recent counts derived from the quotes list. */}
       {(() => {
