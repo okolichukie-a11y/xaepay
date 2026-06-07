@@ -2607,9 +2607,12 @@ function Hero({ onGetStarted, onCustomerSignup }) {
               )}
               <a href={WHATSAPP_URL} target="_blank" rel="noreferrer" className="inline-flex items-center justify-center gap-2 rounded-xl px-6 py-3.5 text-sm font-semibold transition hover:bg-white/5" style={{ border: "1px solid rgba(255,255,255,0.15)", color: "var(--bone)" }}><MessageCircle size={16} /> Talk on WhatsApp</a>
             </div>
-            <div className="rise mt-5" style={{ animationDelay: "0.28s" }}>
+            <div className="rise mt-5 flex flex-col gap-2" style={{ animationDelay: "0.28s" }}>
               <a href="/?p=send-usd-ngn" className="inline-flex items-center gap-1.5 font-mono text-[11px] underline" style={{ color: "rgba(247,245,240,0.6)" }}>
                 Sending USD to Nigeria from abroad? <ArrowRight size={11} />
+              </a>
+              <a href="/?p=providers#apply" className="inline-flex items-center gap-1.5 font-mono text-[11px] underline" style={{ color: "rgba(247,245,240,0.6)" }}>
+                Are you a licensed payment provider? Apply → <ArrowRight size={11} />
               </a>
             </div>
             <div className="rise mt-12 flex flex-wrap gap-x-8 gap-y-3" style={{ animationDelay: "0.32s" }}>

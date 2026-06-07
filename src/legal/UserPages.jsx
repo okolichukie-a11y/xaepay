@@ -1,9 +1,10 @@
-import React from "react";
+import React, { useState } from "react";
 import {
   ArrowRight, ArrowLeftRight, CheckCircle2, FileText, Shield, ShieldCheck,
-  Wallet, MessageCircle, Send, TrendingUp, Sparkles, Briefcase, Layers, Zap, Receipt,
+  Wallet, MessageCircle, Send, TrendingUp, Sparkles, Briefcase, Layers, Zap, Receipt, Loader2,
 } from "lucide-react";
 import { TIERS } from "../XaePay.jsx";
+import { supabase, sendEmail } from "../lib/supabase.js";
 
 // =============================================================================
 // XaePay user-focused sub-pages — each pitched to one audience.
@@ -340,7 +341,7 @@ export function ProvidersPage() {
       eyebrow="For licensed providers"
       title={<>Clean compliance packages<br/><span className="italic" style={{ color: "var(--lime)" }}>routed to your desk.</span></>}
       lede="Receive pre-screened KYC packages with the documents your regulators expect, the customer's stated purpose, and the operator's audit trail attached. Settle the leg; XaePay handles the orchestration and the audit pack."
-      primaryCta={{ label: "Onboard as a provider", href: "/" }}
+      primaryCta={{ label: "Apply to onboard", href: "/?p=providers#apply" }}
       secondaryCta={{ label: "Read the MSA", href: "/?p=msa" }}
     >
       <Section eyebrow="What we deliver" title="Pre-screened, fully documented transactions">
@@ -402,11 +403,184 @@ export function ProvidersPage() {
         </div>
       </Section>
 
-      <div className="rounded-3xl p-8 text-center" style={{ background: "var(--ink)", color: "var(--bone)" }}>
-        <h2 className="font-display text-3xl font-[450] tracking-tight">Interested in being a provider?</h2>
-        <p className="mt-3 text-sm" style={{ color: "rgba(247,245,240,0.7)" }}>Write to us with your license details and corridor coverage. We onboard providers individually.</p>
-        <a href="mailto:legal@xaepay.com?subject=Provider%20onboarding" className="mt-6 inline-flex items-center justify-center gap-2 rounded-xl px-6 py-3 text-sm font-semibold transition" style={{ background: "var(--lime)", color: "var(--ink)" }}>Email provider onboarding <ArrowRight size={14} /></a>
+      <div id="apply">
+        <Section eyebrow="Apply" title="Submit a provider application" lede="Tell us about your licenses and the corridors you cover. We review applications individually and respond within 3–5 business days.">
+          <ProviderApplicationForm />
+        </Section>
       </div>
     </PageShell>
+  );
+}
+
+// Provider application form. Inserts into provider_applications + sends
+// notification email to platform admin and confirmation email to applicant.
+function ProviderApplicationForm() {
+  const empty = {
+    legal_entity_name: "",
+    contact_name: "",
+    contact_email: "",
+    contact_phone: "",
+    licenses_held: "",
+    countries_covered: "",          // comma-separated ISO codes, parsed on submit
+    currencies_supported: "",       // same
+    integration_capability: "manual_portal",
+    daily_volume_capacity: "",
+    monthly_volume_capacity: "",
+    how_did_you_hear: "",
+    notes: "",
+    nda_accepted: false,
+  };
+  const [form, setForm] = useState(empty);
+  const [submitting, setSubmitting] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
+  const [error, setError] = useState("");
+
+  const update = (field, value) => setForm((f) => ({ ...f, [field]: value }));
+  const canSubmit = !!(form.legal_entity_name && form.contact_name && form.contact_email && form.licenses_held && form.nda_accepted && !submitting);
+
+  const submit = async (e) => {
+    e?.preventDefault?.();
+    if (!canSubmit) return;
+    setSubmitting(true); setError("");
+    try {
+      const parseList = (s) => (s || "").split(/[,\s]+/).map((x) => x.trim().toUpperCase()).filter(Boolean);
+      const payload = {
+        legal_entity_name: form.legal_entity_name.trim(),
+        contact_name: form.contact_name.trim(),
+        contact_email: form.contact_email.trim().toLowerCase(),
+        contact_phone: form.contact_phone.trim() || null,
+        licenses_held: form.licenses_held.trim(),
+        countries_covered: parseList(form.countries_covered),
+        currencies_supported: parseList(form.currencies_supported),
+        integration_capability: form.integration_capability,
+        daily_volume_capacity: form.daily_volume_capacity.trim() || null,
+        monthly_volume_capacity: form.monthly_volume_capacity.trim() || null,
+        how_did_you_hear: form.how_did_you_hear.trim() || null,
+        notes: form.notes.trim() || null,
+        nda_accepted: form.nda_accepted,
+        nda_accepted_at: form.nda_accepted ? new Date().toISOString() : null,
+        user_agent: typeof navigator !== "undefined" ? navigator.userAgent : null,
+        referrer: typeof document !== "undefined" ? document.referrer || null : null,
+      };
+      const { error: insertErr } = await supabase.from("provider_applications").insert(payload);
+      if (insertErr) throw insertErr;
+
+      // Best-effort notification emails. Failures don't block submission.
+      const summary = [
+        `Legal entity: ${payload.legal_entity_name}`,
+        `Contact: ${payload.contact_name} · ${payload.contact_email}${payload.contact_phone ? ` · ${payload.contact_phone}` : ""}`,
+        `Licenses: ${payload.licenses_held}`,
+        `Countries: ${payload.countries_covered.join(", ") || "—"}`,
+        `Currencies: ${payload.currencies_supported.join(", ") || "—"}`,
+        `Integration: ${payload.integration_capability}`,
+        payload.daily_volume_capacity ? `Daily cap: ${payload.daily_volume_capacity}` : null,
+        payload.monthly_volume_capacity ? `Monthly cap: ${payload.monthly_volume_capacity}` : null,
+        payload.how_did_you_hear ? `Heard via: ${payload.how_did_you_hear}` : null,
+        payload.notes ? `Notes: ${payload.notes}` : null,
+      ].filter(Boolean).join("\n");
+      const adminHtml = `<!doctype html><html><body style="font-family:system-ui,sans-serif;background:#fcfbf7;margin:0;padding:24px;"><div style="max-width:560px;margin:0 auto;background:white;border:1px solid #e5e7eb;border-radius:16px;padding:32px;"><h2 style="margin:0 0 8px;font-size:20px;color:#0a0b0d;">New provider application</h2><p style="color:#6b7280;font-size:13px;margin:0 0 16px;">${payload.legal_entity_name} just applied to be onboarded as a XaePay service provider.</p><pre style="background:#f5f4ee;padding:14px;border-radius:8px;font-size:12px;line-height:1.6;white-space:pre-wrap;font-family:ui-monospace,monospace;">${summary}</pre><p style="color:#6b7280;font-size:12px;margin:16px 0 0;">Review in Supabase: <code>select * from provider_applications order by created_at desc limit 5;</code></p></div></body></html>`;
+      sendEmail({ to: "legal@xaepay.com", subject: `New provider application · ${payload.legal_entity_name}`, html: adminHtml, text: `New provider application from ${payload.legal_entity_name}.\n\n${summary}` }).catch(() => {});
+      const applicantHtml = `<!doctype html><html><body style="font-family:system-ui,sans-serif;background:#fcfbf7;margin:0;padding:24px;"><div style="max-width:560px;margin:0 auto;background:white;border:1px solid #e5e7eb;border-radius:16px;padding:32px;"><h2 style="margin:0 0 8px;font-size:22px;color:#0a0b0d;">Application received</h2><p style="color:#6b7280;font-size:14px;margin:0 0 20px;">Thanks ${payload.contact_name} — we've received the application from ${payload.legal_entity_name} and will respond within 3–5 business days.</p><p style="color:#374151;font-size:13px;">In the meantime you can review our <a href="https://xaepay.com/?p=msa" style="color:#0f5f3f;">Master Service Agreement template</a> and the <a href="https://xaepay.com/?p=providers" style="color:#0f5f3f;">provider portal overview</a>.</p><p style="color:#9ca3af;font-size:11px;margin:20px 0 0;">Questions? Reply to this email.</p></div></body></html>`;
+      sendEmail({ to: payload.contact_email, subject: `Application received · XaePay`, html: applicantHtml, text: `Thanks ${payload.contact_name} — we've received your provider application from ${payload.legal_entity_name} and will respond within 3–5 business days.` }).catch(() => {});
+
+      setSubmitted(true);
+      setForm(empty);
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error("Provider application failed:", err);
+      setError(err?.message || "Couldn't submit. Try again or email legal@xaepay.com directly.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  if (submitted) {
+    return (
+      <div className="rounded-2xl p-8 text-center" style={{ background: "var(--ink)", color: "var(--bone)" }}>
+        <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full" style={{ background: "var(--lime)" }}>
+          <CheckCircle2 size={24} strokeWidth={2.5} style={{ color: "var(--ink)" }} />
+        </div>
+        <h3 className="font-display mt-4 text-2xl font-semibold">Application received</h3>
+        <p className="mt-2 text-sm max-w-md mx-auto" style={{ color: "rgba(247,245,240,0.7)" }}>
+          We'll review and respond within 3–5 business days. Check the email you provided for a confirmation.
+        </p>
+      </div>
+    );
+  }
+
+  const inputCls = "w-full rounded-xl px-3 py-2.5 text-sm";
+  const inputStyle = { background: "white", border: "1px solid var(--line)" };
+  const labelCls = "block font-mono text-[10px] uppercase tracking-wider mb-1";
+  const labelStyle = { color: "var(--muted)" };
+
+  return (
+    <form onSubmit={submit} className="rounded-2xl p-6 space-y-5" style={{ background: "white", border: "1px solid var(--line)" }}>
+      <div className="grid gap-4 sm:grid-cols-2">
+        <div className="sm:col-span-2">
+          <label className={labelCls} style={labelStyle}>Legal entity name *</label>
+          <input required className={inputCls} style={inputStyle} value={form.legal_entity_name} onChange={(e) => update("legal_entity_name", e.target.value)} placeholder="Cedar Money Inc." />
+        </div>
+        <div>
+          <label className={labelCls} style={labelStyle}>Contact name *</label>
+          <input required className={inputCls} style={inputStyle} value={form.contact_name} onChange={(e) => update("contact_name", e.target.value)} placeholder="Jane Doe" />
+        </div>
+        <div>
+          <label className={labelCls} style={labelStyle}>Contact email *</label>
+          <input required type="email" className={inputCls} style={inputStyle} value={form.contact_email} onChange={(e) => update("contact_email", e.target.value)} placeholder="bd@cedarmoney.com" />
+        </div>
+        <div>
+          <label className={labelCls} style={labelStyle}>Contact phone</label>
+          <input className={inputCls} style={inputStyle} value={form.contact_phone} onChange={(e) => update("contact_phone", e.target.value)} placeholder="+1 415 ..." />
+        </div>
+        <div>
+          <label className={labelCls} style={labelStyle}>Integration capability</label>
+          <select className={inputCls} style={inputStyle} value={form.integration_capability} onChange={(e) => update("integration_capability", e.target.value)}>
+            <option value="full_api">Full API (REST + webhooks)</option>
+            <option value="webhook_only">Webhook-only / partial API</option>
+            <option value="manual_portal">Manual portal (OTC, no API)</option>
+          </select>
+        </div>
+        <div className="sm:col-span-2">
+          <label className={labelCls} style={labelStyle}>Licenses held *</label>
+          <input required className={inputCls} style={inputStyle} value={form.licenses_held} onChange={(e) => update("licenses_held", e.target.value)} placeholder="e.g. US MSB #12345, UK FCA #67890, NG IMTO #..." />
+        </div>
+        <div>
+          <label className={labelCls} style={labelStyle}>Countries covered (ISO codes, comma-separated)</label>
+          <input className={inputCls} style={inputStyle} value={form.countries_covered} onChange={(e) => update("countries_covered", e.target.value)} placeholder="US, GB, NG, CN" />
+        </div>
+        <div>
+          <label className={labelCls} style={labelStyle}>Currencies supported (3-letter, comma-separated)</label>
+          <input className={inputCls} style={inputStyle} value={form.currencies_supported} onChange={(e) => update("currencies_supported", e.target.value)} placeholder="USD, GBP, NGN, EUR" />
+        </div>
+        <div>
+          <label className={labelCls} style={labelStyle}>Daily volume capacity</label>
+          <input className={inputCls} style={inputStyle} value={form.daily_volume_capacity} onChange={(e) => update("daily_volume_capacity", e.target.value)} placeholder="$1M/day" />
+        </div>
+        <div>
+          <label className={labelCls} style={labelStyle}>Monthly volume capacity</label>
+          <input className={inputCls} style={inputStyle} value={form.monthly_volume_capacity} onChange={(e) => update("monthly_volume_capacity", e.target.value)} placeholder="$20M/month" />
+        </div>
+        <div className="sm:col-span-2">
+          <label className={labelCls} style={labelStyle}>How did you hear about XaePay?</label>
+          <input className={inputCls} style={inputStyle} value={form.how_did_you_hear} onChange={(e) => update("how_did_you_hear", e.target.value)} placeholder="Conference, referral, search, etc." />
+        </div>
+        <div className="sm:col-span-2">
+          <label className={labelCls} style={labelStyle}>Anything else we should know?</label>
+          <textarea rows={3} className={inputCls} style={inputStyle} value={form.notes} onChange={(e) => update("notes", e.target.value)} placeholder="Specific corridors of interest, unique capabilities, timing constraints, etc." />
+        </div>
+      </div>
+      <div className="rounded-xl p-3 flex items-start gap-3" style={{ background: "var(--bone)", border: "1px solid var(--line)" }}>
+        <input id="nda-checkbox" type="checkbox" checked={form.nda_accepted} onChange={(e) => update("nda_accepted", e.target.checked)} className="mt-1 flex-shrink-0" />
+        <label htmlFor="nda-checkbox" className="text-xs cursor-pointer" style={{ color: "var(--ink)" }}>
+          I have authority to enter into agreements on behalf of this entity, and we agree to keep confidential any non-public information XaePay shares with us during the application and onboarding process.
+        </label>
+      </div>
+      {error && <div className="rounded-lg p-3 text-xs" style={{ background: "#fee2e2", color: "#991b1b" }}>{error}</div>}
+      <div className="flex justify-end">
+        <button type="submit" disabled={!canSubmit} className="inline-flex items-center justify-center gap-2 rounded-xl px-6 py-3 text-sm font-semibold transition disabled:opacity-50" style={{ background: canSubmit ? "var(--ink)" : "var(--bone-2)", color: canSubmit ? "var(--lime)" : "var(--muted)" }}>
+          {submitting ? <><Loader2 size={14} className="animate-spin" /> Submitting…</> : <>Submit application <ArrowRight size={14} /></>}
+        </button>
+      </div>
+    </form>
   );
 }
