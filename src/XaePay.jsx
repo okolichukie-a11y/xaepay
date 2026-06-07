@@ -3410,6 +3410,15 @@ function CustomerPortal({ session, customerRows }) {
   const [pastDetailQuote, setPastDetailQuote] = useState(null);
   const [invoices, setInvoices] = useState([]);
   const [selectedInvoice, setSelectedInvoice] = useState(null);
+  // Notifications panel collapse state — persisted to localStorage so the
+  // customer's preference sticks across sessions. Defaults to expanded since
+  // the whole point is surfacing urgent items.
+  const [notificationsCollapsed, setNotificationsCollapsed] = useState(() => {
+    try { return localStorage.getItem("xaepay_notifications_collapsed") === "1"; } catch { return false; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem("xaepay_notifications_collapsed", notificationsCollapsed ? "1" : "0"); } catch { /* noop */ }
+  }, [notificationsCollapsed]);
 
   const activeCustomer = customerRows.find((c) => c.id === activeCustomerId);
 
@@ -3600,32 +3609,48 @@ function CustomerPortal({ session, customerRows }) {
         if (items.length === 0) return null;
         return (
           <section className="mb-6 rise" style={{ animationDelay: "0.03s" }}>
-            <div className="flex items-baseline justify-between mb-3">
-              <h2 className="font-display text-base font-semibold flex items-center gap-2"><Bell size={14} /> What needs your attention</h2>
-              <span className="font-mono text-[10px]" style={{ color: "var(--muted)" }}>{items.length} item{items.length === 1 ? "" : "s"}</span>
-            </div>
-            <div className="grid gap-2">
-              {items.slice(0, 6).map((it) => {
-                const Icon = it.icon;
-                return (
-                  <div key={it.key} className="rounded-xl p-3 flex items-start gap-3" style={{ background: it.urgent ? "#fef3c7" : "white", border: `1px solid ${it.urgent ? "#fcd34d" : "var(--line)"}` }}>
-                    <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg" style={{ background: it.urgent ? "#fbbf24" : "var(--bone-2)", color: it.urgent ? "var(--ink)" : "var(--emerald)" }}>
-                      <Icon size={14} />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="font-semibold text-sm">{it.title}</div>
-                      <div className="font-mono text-[11px] mt-0.5" style={{ color: "var(--muted)" }}>{it.body}</div>
-                      <div className="font-mono text-[10px] mt-0.5" style={{ color: "var(--muted)" }}>{relativeTime(it.time)}</div>
-                    </div>
-                    {it.ctaLabel && it.ctaOnClick && (
-                      <button type="button" onClick={it.ctaOnClick} className="rounded-lg px-3 py-1.5 text-xs font-semibold flex-shrink-0 transition" style={{ background: it.urgent ? "var(--ink)" : "var(--lime)", color: it.urgent ? "var(--lime)" : "var(--ink)" }}>{it.ctaLabel}</button>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-            {items.length > 6 && (
-              <p className="text-xs mt-2" style={{ color: "var(--muted)" }}>+ {items.length - 6} more · scroll the lists below to see everything</p>
+            <button
+              type="button"
+              onClick={() => setNotificationsCollapsed((v) => !v)}
+              className="w-full flex items-center justify-between mb-3 group"
+              aria-expanded={!notificationsCollapsed}
+            >
+              <h2 className="font-display text-base font-semibold flex items-center gap-2">
+                <Bell size={14} />
+                What needs your attention
+                <span className="font-mono text-[10px] ml-1" style={{ color: "var(--muted)" }}>{items.length}</span>
+              </h2>
+              <span className="font-mono text-[10px] flex items-center gap-1 transition group-hover:text-stone-900" style={{ color: "var(--muted)" }}>
+                {notificationsCollapsed ? "Show" : "Hide"}
+                <ChevronRight size={12} style={{ transform: notificationsCollapsed ? "rotate(0deg)" : "rotate(90deg)", transition: "transform 0.15s" }} />
+              </span>
+            </button>
+            {!notificationsCollapsed && (
+              <>
+                <div className="grid gap-2">
+                  {items.slice(0, 6).map((it) => {
+                    const Icon = it.icon;
+                    return (
+                      <div key={it.key} className="rounded-xl p-3 flex items-start gap-3" style={{ background: it.urgent ? "#fef3c7" : "white", border: `1px solid ${it.urgent ? "#fcd34d" : "var(--line)"}` }}>
+                        <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg" style={{ background: it.urgent ? "#fbbf24" : "var(--bone-2)", color: it.urgent ? "var(--ink)" : "var(--emerald)" }}>
+                          <Icon size={14} />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="font-semibold text-sm">{it.title}</div>
+                          <div className="font-mono text-[11px] mt-0.5" style={{ color: "var(--muted)" }}>{it.body}</div>
+                          <div className="font-mono text-[10px] mt-0.5" style={{ color: "var(--muted)" }}>{relativeTime(it.time)}</div>
+                        </div>
+                        {it.ctaLabel && it.ctaOnClick && (
+                          <button type="button" onClick={it.ctaOnClick} className="rounded-lg px-3 py-1.5 text-xs font-semibold flex-shrink-0 transition" style={{ background: it.urgent ? "var(--ink)" : "var(--lime)", color: it.urgent ? "var(--lime)" : "var(--ink)" }}>{it.ctaLabel}</button>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+                {items.length > 6 && (
+                  <p className="text-xs mt-2" style={{ color: "var(--muted)" }}>+ {items.length - 6} more · scroll the lists below to see everything</p>
+                )}
+              </>
             )}
           </section>
         );
