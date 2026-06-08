@@ -391,6 +391,31 @@ export async function pickServiceProviderForQuote({ sourceName, destName, curren
   return eligible[0]?.id || null;
 }
 
+// Fetch a single platform_settings value by key. Returns the raw string or
+// the supplied fallback if the row is missing / RLS blocks it. Lightweight —
+// no caching for now; called rarely (once per relevant component mount).
+export async function getPlatformSetting(key, fallback = null) {
+  try {
+    const { data, error } = await supabase
+      .from("platform_settings")
+      .select("value")
+      .eq("key", key)
+      .maybeSingle();
+    if (error || !data) return fallback;
+    return data.value;
+  } catch {
+    return fallback;
+  }
+}
+
+// Convenience: same as getPlatformSetting but parses the value as a number.
+export async function getPlatformSettingInt(key, fallback) {
+  const raw = await getPlatformSetting(key, null);
+  if (raw == null) return fallback;
+  const n = parseInt(raw, 10);
+  return Number.isFinite(n) ? n : fallback;
+}
+
 // Upload an operator's brand logo for use on invoices + emails. Stored in the
 // public cedar-files bucket so logos can be referenced from email HTML and
 // embedded in client-rendered PDFs without a signed-URL fetch. 2 MB cap (logos

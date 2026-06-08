@@ -7,7 +7,7 @@ import {
   ArrowLeft, ArrowLeftRight, Loader2, Layers, TrendingUp, Wallet, DollarSign, Mail,
   RefreshCw, ShieldCheck, Paperclip,
 } from "lucide-react";
-import { supabase, sendWhatsAppText, sendWhatsAppTemplate, fetchCedarRate, submitCustomerToCedar, submitRecipientToCedar, submitReceiverAccountToCedar, submitCedarTransaction, approveCedarQuote, confirmCedarDeposit, cancelCedarTransaction, uploadCedarFile, uploadFileBoth, uploadInvoicePdf, uploadInvoicePaymentProof, uploadReceiptPdf, uploadRecipientReceiptPdf, uploadBrandLogo, pickServiceProviderForQuote, runComplianceReview, runComplianceWatchman, submitDocumentToCedar, sendEmail, safeUrl, logAuditEvent } from "./lib/supabase.js";
+import { supabase, sendWhatsAppText, sendWhatsAppTemplate, fetchCedarRate, submitCustomerToCedar, submitRecipientToCedar, submitReceiverAccountToCedar, submitCedarTransaction, approveCedarQuote, confirmCedarDeposit, cancelCedarTransaction, uploadCedarFile, uploadFileBoth, uploadInvoicePdf, uploadInvoicePaymentProof, uploadReceiptPdf, uploadRecipientReceiptPdf, uploadBrandLogo, pickServiceProviderForQuote, runComplianceReview, runComplianceWatchman, submitDocumentToCedar, sendEmail, safeUrl, logAuditEvent, getPlatformSettingInt } from "./lib/supabase.js";
 import { generateQuotePdf, uploadQuotePdf, downloadQuotePdf } from "./lib/pdf.js";
 import { generateCompliancePackPdf, downloadCompliancePackPdf, generateTransactionConfirmationPdf, downloadTransactionConfirmationPdf, generateInvoicePdf, downloadInvoicePdf, generateReceiptPdf, downloadReceiptPdf, generateRecipientReceiptPdf, downloadRecipientReceiptPdf } from "./lib/pdf-doc.js";
 import { TermsOfService, PrivacyPolicy, DataDeletion, RefundPolicy, ServiceProviderMSA } from "./legal/LegalPages.jsx";
@@ -3422,6 +3422,11 @@ function CustomerPortal({ session, customerRows }) {
   const [issuedInvoices, setIssuedInvoices] = useState([]);
   const [createIssuedOpen, setCreateIssuedOpen] = useState(false);
   const [selectedIssuedInvoice, setSelectedIssuedInvoice] = useState(null);
+  // Free-tier monthly invoice limit, read from platform_settings so the admin
+  // can edit it without a code deploy. Defaults to 3 if the setting row is
+  // missing or RLS blocks the read.
+  const [freeInvoiceLimit, setFreeInvoiceLimit] = useState(3);
+  useEffect(() => { getPlatformSettingInt("free_customer_invoice_limit_per_month", 3).then(setFreeInvoiceLimit); }, []);
   // Notifications panel collapse state — persisted to localStorage so the
   // customer's preference sticks across sessions. Defaults to expanded since
   // the whole point is surfacing urgent items.
@@ -3969,7 +3974,7 @@ function CustomerPortal({ session, customerRows }) {
       {activeCustomer?.type === "business" && (() => {
         const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1).getTime();
         const thisMonthCount = issuedInvoices.filter((inv) => new Date(inv.created_at).getTime() >= monthStart).length;
-        const FREE_LIMIT = 3;
+        const FREE_LIMIT = freeInvoiceLimit;
         const atLimit = thisMonthCount >= FREE_LIMIT;
         return (
           <section className="mb-10 rise" style={{ animationDelay: "0.11s" }}>
