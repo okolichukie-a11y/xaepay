@@ -3415,6 +3415,11 @@ function CustomerPortal({ session, customerRows }) {
   const [pastDetailQuote, setPastDetailQuote] = useState(null);
   const [invoices, setInvoices] = useState([]);
   const [selectedInvoice, setSelectedInvoice] = useState(null);
+  // For business-type customers — invoices THEY issue to their downstream clients.
+  // Distinct from `invoices` above which are invoices billed TO this customer.
+  const [issuedInvoices, setIssuedInvoices] = useState([]);
+  const [createIssuedOpen, setCreateIssuedOpen] = useState(false);
+  const [selectedIssuedInvoice, setSelectedIssuedInvoice] = useState(null);
   // Notifications panel collapse state — persisted to localStorage so the
   // customer's preference sticks across sessions. Defaults to expanded since
   // the whole point is surfacing urgent items.
@@ -3450,6 +3455,29 @@ function CustomerPortal({ session, customerRows }) {
   };
 
   useEffect(() => { fetchInvoices(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [activeCustomerId]);
+
+  // Fetch invoices THIS customer has issued (only relevant for business-type).
+  const fetchIssuedInvoices = async () => {
+    if (!activeCustomerId) return;
+    const { data } = await supabase
+      .from("invoices")
+      .select("*, items:invoice_items(*)")
+      .eq("customer_issuer_id", activeCustomerId)
+      .order("created_at", { ascending: false });
+    setIssuedInvoices(data || []);
+  };
+  useEffect(() => { fetchIssuedInvoices(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [activeCustomerId]);
+
+  // Realtime subscription so newly-created or updated issued invoices show without refresh.
+  useEffect(() => {
+    if (!activeCustomerId) return;
+    const channel = supabase
+      .channel(`issued-invoices-${activeCustomerId}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "invoices", filter: `customer_issuer_id=eq.${activeCustomerId}` }, () => fetchIssuedInvoices())
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+    /* eslint-disable-next-line react-hooks/exhaustive-deps */
+  }, [activeCustomerId]);
 
   // Email deep-link: a customer clicking the "Pay this invoice" button in their
   // invoice email lands at /?invoice=<id>. After invoices load, find the match
@@ -3931,6 +3959,76 @@ function CustomerPortal({ session, customerRows }) {
           )}
         </section>
       )}
+      {/* Customer-issued invoicing — business-type customers only. Lets a
+          business bill its own downstream clients from inside the same portal,
+          using the same payment-method picker and receipt flow operators use.
+          Free tier: 3 invoices per calendar month. Defaults collapsed to keep
+          the dashboard tight; expands when there are issued invoices. */}
+      {activeCustomer?.type === "business" && (() => {
+        const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1).getTime();
+        const thisMonthCount = issuedInvoices.filter((inv) => new Date(inv.created_at).getTime() >= monthStart).length;
+        const FREE_LIMIT = 3;
+        const atLimit = thisMonthCount >= FREE_LIMIT;
+        return (
+          <section className="mb-10 rise" style={{ animationDelay: "0.11s" }}>
+            <button type="button" onClick={() => toggleSection("issuedInvoices")} className="w-full flex items-baseline justify-between mb-4 group">
+              <h2 className="font-display text-xl font-semibold flex items-center gap-2">
+                <FileText size={18} />
+                Bill your clients
+                <span className="font-mono text-[11px]" style={{ color: "var(--muted)" }}>· {issuedInvoices.length} issued</span>
+                <ChevronRight size={14} style={{ color: "var(--muted)", transform: sectionCollapsed.issuedInvoices ? "rotate(0deg)" : "rotate(90deg)", transition: "transform 0.15s" }} />
+              </h2>
+              <span className="font-mono text-[10px]" style={{ color: "var(--muted)" }}>{thisMonthCount}/{FREE_LIMIT} this month</span>
+            </button>
+            {!sectionCollapsed.issuedInvoices && (
+              <Card>
+                <div className="flex items-baseline justify-between mb-4 flex-wrap gap-2">
+                  <p className="text-sm" style={{ color: "var(--muted)" }}>Issue invoices to your own clients for goods or services you've rendered. They pay via Zelle, ACH, bank transfer, or cross-border — and you get a receipt at confirmation.</p>
+                  <PrimaryBtn onClick={() => setCreateIssuedOpen(true)} disabled={atLimit}>
+                    <Plus size={14} /> New invoice
+                  </PrimaryBtn>
+                </div>
+                {atLimit && (
+                  <div className="rounded-lg p-3 text-xs mb-4" style={{ background: "#fef3c7", color: "#92400e" }}>
+                    You've used all {FREE_LIMIT} free invoices this month. Upgrade options coming — for now, more invoices unlock next month.
+                  </div>
+                )}
+                {issuedInvoices.length === 0 ? (
+                  <div className="p-8 text-center rounded-xl" style={{ background: "var(--bone)" }}>
+                    <Receipt size={20} className="mx-auto mb-2" style={{ color: "var(--muted)" }} />
+                    <p className="text-sm" style={{ color: "var(--muted)" }}>No invoices issued yet. Hit "New invoice" to bill a client.</p>
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead><tr style={{ background: "var(--bone)", borderBottom: "1px solid var(--line)" }}>
+                        {["Invoice #", "Bill to", "Issued", "Total", "Status"].map((h) => (
+                          <th key={h} className="px-4 py-3 text-left font-mono text-[10px] font-semibold uppercase tracking-wider" style={{ color: "var(--muted)" }}>{h}</th>
+                        ))}
+                      </tr></thead>
+                      <tbody>
+                        {issuedInvoices.map((inv) => {
+                          const pill = INVOICE_STATUS_PILL[inv.status] || INVOICE_STATUS_PILL.draft;
+                          return (
+                            <tr key={inv.id} onClick={() => setSelectedIssuedInvoice(inv)} className="cursor-pointer hover:bg-[color:var(--bone)]" style={{ borderBottom: "1px solid var(--line)" }}>
+                              <td className="px-4 py-3.5 font-mono text-xs font-semibold">{inv.invoice_number}</td>
+                              <td className="px-4 py-3.5">{inv.customer_name || "—"}</td>
+                              <td className="px-4 py-3.5 font-mono text-xs" style={{ color: "var(--muted)" }}>{inv.issue_date ? new Date(inv.issue_date).toLocaleDateString("en-GB", { day: "2-digit", month: "short" }) : "—"}</td>
+                              <td className="px-4 py-3.5 font-mono">{inv.currency} {parseFloat(inv.total || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                              <td className="px-4 py-3.5"><span className="rounded-full px-2 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-wider" style={{ background: pill.bg, color: pill.color }}>{pill.label}</span></td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </Card>
+            )}
+          </section>
+        );
+      })()}
+
       <CustomerRequestQuoteModal
         open={requestOpen}
         onClose={() => setRequestOpen(false)}
@@ -3938,6 +4036,8 @@ function CustomerPortal({ session, customerRows }) {
         onCreated={fetchQuotes}
       />
       <CustomerInvoiceDrawer invoice={selectedInvoice} customer={activeCustomer} onClose={() => setSelectedInvoice(null)} onPaid={() => { fetchInvoices(); fetchQuotes(); }} />
+      <CustomerIssuedInvoiceModal open={createIssuedOpen} customerIssuer={activeCustomer} onClose={() => setCreateIssuedOpen(false)} onCreated={() => { fetchIssuedInvoices(); setCreateIssuedOpen(false); }} />
+      <CustomerIssuedInvoiceDrawer invoice={selectedIssuedInvoice} customerIssuer={activeCustomer} onClose={() => setSelectedIssuedInvoice(null)} onChanged={fetchIssuedInvoices} />
       <Drawer open={!!pastDetailQuote} onClose={() => setPastDetailQuote(null)} title={pastDetailQuote ? `Transaction QU-${pastDetailQuote.id.slice(0, 4).toUpperCase()}` : ""}>
         {pastDetailQuote && (() => {
           const txShape = {
@@ -4658,6 +4758,357 @@ function CustomerInvoiceDrawer({ invoice, customer, onClose, onPaid }) {
           <SecondaryBtn onClick={downloadPdf}><Download size={12} /> Invoice PDF</SecondaryBtn>
           {invoice.receipt_pdf_url && (
             <SecondaryBtn onClick={() => window.open(safeUrl(invoice.receipt_pdf_url), "_blank")}><Download size={12} /> Receipt PDF</SecondaryBtn>
+          )}
+        </div>
+      </div>
+    </Drawer>
+  );
+}
+
+// =============================================================================
+// Customer-issued invoicing — for business-type customers who want to bill
+// their own downstream clients from inside their XaePay portal. Mirrors the
+// operator's BDC invoicing flow but scoped to customer_issuer_id ownership,
+// no operator brand, and a 3-invoice/month free-tier limit (enforced on the
+// portal section's "New invoice" button, not here).
+// =============================================================================
+
+function CustomerIssuedInvoiceModal({ open, onClose, customerIssuer, onCreated }) {
+  const { push } = useToast();
+  const auth = useAuth();
+  const empty = {
+    billToName: "",
+    billToEmail: "",
+    billToPhone: "",
+    currency: "USD",
+    dueDate: "",
+    notes: "",
+    items: [{ description: "", quantity: "1", unit_price: "" }],
+    paymentMethods: [],
+  };
+  const [data, setData] = useState(empty);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (!open) { const t = setTimeout(() => setData(empty), 250); return () => clearTimeout(t); }
+    /* eslint-disable-next-line react-hooks/exhaustive-deps */
+  }, [open]);
+
+  const updateItem = (idx, field, value) => {
+    setData((d) => { const items = [...d.items]; items[idx] = { ...items[idx], [field]: value }; return { ...d, items }; });
+  };
+  const addItem = () => setData((d) => ({ ...d, items: [...d.items, { description: "", quantity: "1", unit_price: "" }] }));
+  const removeItem = (idx) => setData((d) => ({ ...d, items: d.items.length === 1 ? d.items : d.items.filter((_, i) => i !== idx) }));
+
+  const togglePaymentMethod = (type) => {
+    setData((d) => {
+      const exists = d.paymentMethods.find((m) => m.type === type);
+      if (exists) return { ...d, paymentMethods: d.paymentMethods.filter((m) => m.type !== type) };
+      const id = (crypto && crypto.randomUUID) ? crypto.randomUUID() : `${type}-${Date.now()}`;
+      return { ...d, paymentMethods: [...d.paymentMethods, { id, type, label: "", instructions: "" }] };
+    });
+  };
+  const updatePaymentMethod = (id, field, value) => {
+    setData((d) => ({ ...d, paymentMethods: d.paymentMethods.map((m) => m.id === id ? { ...m, [field]: value } : m) }));
+  };
+
+  const subtotal = data.items.reduce((s, it) => s + (parseFloat(it.quantity) || 0) * (parseFloat(it.unit_price) || 0), 0);
+  const total = subtotal;
+  const validItems = data.items.filter((it) => it.description && parseFloat(it.unit_price) > 0);
+  const canSubmit = !!data.billToName && validItems.length > 0 && !saving;
+
+  const submit = async (sendNow) => {
+    if (!canSubmit || !customerIssuer?.id) return;
+    setSaving(true);
+    const issuerName = customerIssuer.business_name || customerIssuer.name || "Business";
+    const cleanedMethods = data.paymentMethods.filter((m) => m.type === "crossborder" || (m.instructions || "").trim().length > 0);
+
+    const { data: inv, error: invErr } = await supabase.from("invoices").insert({
+      customer_issuer_id: customerIssuer.id,    // NEW: customer is the issuer
+      operator_user_id: null,                    // not operator-issued
+      operator_name: issuerName,                 // displayed as the issuer name on the invoice
+      customer_id: null,                         // bill-to is a downstream client, not a XaePay user
+      customer_name: data.billToName,
+      customer_email: data.billToEmail || null,
+      customer_phone: data.billToPhone || null,
+      currency: data.currency,
+      due_date: data.dueDate || null,
+      notes: data.notes || null,
+      subtotal, tax: 0, total,
+      payment_methods: cleanedMethods,
+      status: sendNow ? "sent" : "draft",
+      sent_at: sendNow ? new Date().toISOString() : null,
+    }).select("*").single();
+    if (invErr) { setSaving(false); push(`Couldn't create invoice: ${invErr.message}`, "warn"); return; }
+
+    const itemRows = validItems.map((it, i) => ({
+      invoice_id: inv.id,
+      description: it.description,
+      quantity: parseFloat(it.quantity) || 1,
+      unit_price: parseFloat(it.unit_price),
+      amount: (parseFloat(it.quantity) || 1) * parseFloat(it.unit_price),
+      position: i,
+    }));
+    await supabase.from("invoice_items").insert(itemRows);
+
+    // PDF + email — best-effort.
+    try {
+      const pdf = generateInvoicePdf({ invoice: inv, items: itemRows });
+      const upRes = await uploadInvoicePdf(inv.id, pdf);
+      if (upRes.ok) {
+        await supabase.from("invoices").update({
+          pdf_url: upRes.url, pdf_path: upRes.path, pdf_generated_at: new Date().toISOString(),
+        }).eq("id", inv.id);
+      }
+      if (sendNow && data.billToEmail) {
+        const portalUrl = `https://xaepay.com/?invoice=${inv.id}`;
+        const totalText = `${data.currency} ${total.toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
+        const dueText = data.dueDate ? new Date(data.dueDate).toLocaleDateString("en-GB", { day: "2-digit", month: "long", year: "numeric" }) : "On receipt";
+        const itemRowsHtml = itemRows.map((it) => `<tr><td style="padding:6px 0;font-size:13px;">${it.description}</td><td style="padding:6px 0;text-align:right;font-family:monospace;font-size:12px;">${it.quantity} × ${data.currency} ${it.unit_price.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td><td style="padding:6px 0;text-align:right;font-family:monospace;font-size:13px;font-weight:600;">${data.currency} ${it.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td></tr>`).join("");
+        const methodsHtml = cleanedMethods.length > 0 ? `<div style="margin-bottom:20px;padding:14px;background:#f5f4ee;border-radius:10px;"><div style="font-size:11px;text-transform:uppercase;letter-spacing:0.05em;color:#6b7280;margin-bottom:8px;font-weight:600;">Payment options</div>${cleanedMethods.map((m) => { const def = PAYMENT_METHOD_BY_TYPE[m.type] || { label: m.type }; return `<div style="font-size:12px;color:#374151;margin-bottom:6px;"><strong>${def.label}${m.label ? ` · ${m.label}` : ""}</strong>${m.instructions ? `<div style="font-family:monospace;font-size:11px;color:#6b7280;white-space:pre-wrap;margin-top:2px;">${m.instructions}</div>` : ""}</div>`; }).join("")}</div>` : "";
+        const html = `<!doctype html><html><body style="font-family:system-ui,-apple-system,sans-serif;color:#0a0b0d;background:#fcfbf7;margin:0;padding:24px;"><div style="max-width:560px;margin:0 auto;background:white;border:1px solid #e5e7eb;border-radius:16px;padding:32px;"><h2 style="margin:0 0 8px;font-size:22px;">Invoice ${inv.invoice_number}</h2><p style="color:#6b7280;margin:0 0 20px;font-size:14px;">${issuerName} has issued you an invoice via XaePay.</p><div style="background:#0a0b0d;color:#d4f570;border-radius:12px;padding:20px;margin-bottom:20px;"><div style="font-size:11px;text-transform:uppercase;letter-spacing:0.05em;color:rgba(247,245,240,0.5);">Amount due</div><div style="font-size:30px;font-weight:600;margin-top:6px;">${totalText}</div><div style="font-size:11px;font-family:monospace;color:rgba(247,245,240,0.7);margin-top:8px;">Due: ${dueText}</div></div><table style="width:100%;border-collapse:collapse;margin-bottom:20px;"><tbody>${itemRowsHtml}</tbody></table>${methodsHtml}${data.notes ? `<p style="color:#374151;font-size:13px;line-height:1.5;margin-bottom:20px;"><strong>Notes:</strong> ${data.notes}</p>` : ""}<p style="text-align:center;margin:24px 0 8px;"><a href="${portalUrl}" style="display:inline-block;background:#0a0b0d;color:#d4f570;padding:12px 28px;border-radius:12px;text-decoration:none;font-weight:600;font-size:14px;">View &amp; pay invoice</a></p><p style="color:#9ca3af;font-size:11px;text-align:center;margin:20px 0 0;">Issued via XaePay</p></div></body></html>`;
+        await sendEmail({ to: data.billToEmail, subject: `Invoice ${inv.invoice_number} from ${issuerName}`, html, text: `Invoice ${inv.invoice_number}\n\nAmount: ${totalText}\nDue: ${dueText}\n\nView and pay: ${portalUrl}` });
+      }
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error("Customer-issued invoice PDF/email failed:", err);
+    }
+
+    setSaving(false);
+    push(`Invoice ${inv.invoice_number} ${sendNow ? "sent" : "saved as draft"}`, "success");
+    onCreated && onCreated(inv);
+  };
+
+  return (
+    <Modal open={open} onClose={onClose} title="Issue an invoice" size="xl">
+      <div className="space-y-5">
+        <p className="text-sm" style={{ color: "var(--muted)" }}>Bill one of your clients for goods or services. They'll get an email with the invoice and a "View &amp; pay" link.</p>
+
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field label="Bill to (client name)" full>
+            <Input value={data.billToName} onChange={(e) => setData({ ...data, billToName: e.target.value })} placeholder="Acme Imports Ltd" />
+          </Field>
+          <Field label="Client email"><Input type="email" value={data.billToEmail} onChange={(e) => setData({ ...data, billToEmail: e.target.value })} placeholder="ops@acme.com" /></Field>
+          <Field label="Client phone (optional)"><Input value={data.billToPhone} onChange={(e) => setData({ ...data, billToPhone: e.target.value })} placeholder="+1 415 ..." /></Field>
+          <Field label="Invoice currency">
+            <Select value={data.currency} onChange={(e) => setData({ ...data, currency: e.target.value })}>
+              {INVOICE_CURRENCIES.map((c) => <option key={c.code} value={c.code}>{c.symbol} {c.name} ({c.code})</option>)}
+            </Select>
+          </Field>
+          <Field label="Due date (optional)"><Input type="date" value={data.dueDate} onChange={(e) => setData({ ...data, dueDate: e.target.value })} /></Field>
+        </div>
+
+        <div>
+          <div className="flex items-baseline justify-between mb-2">
+            <Label>Line items</Label>
+            <SecondaryBtn onClick={addItem}><Plus size={12} /> Add item</SecondaryBtn>
+          </div>
+          <div className="space-y-3 sm:space-y-2">
+            {data.items.map((it, idx) => (
+              <div key={idx} className="rounded-lg p-3 space-y-2 sm:p-0 sm:rounded-none sm:space-y-0 sm:grid sm:gap-2 sm:items-center" style={{ background: "var(--bone)", border: "1px solid var(--line)", gridTemplateColumns: "1fr 70px 110px 110px auto" }}>
+                <Input value={it.description} onChange={(e) => updateItem(idx, "description", e.target.value)} placeholder="What are you billing for?" />
+                <div className="grid grid-cols-[1fr_1fr_1fr_auto] items-center gap-2 sm:contents">
+                  <Input type="number" step="0.01" value={it.quantity} onChange={(e) => updateItem(idx, "quantity", e.target.value)} placeholder="Qty" />
+                  <Input type="number" step="0.01" value={it.unit_price} onChange={(e) => updateItem(idx, "unit_price", e.target.value)} placeholder="Unit price" />
+                  <div className="flex items-center font-mono text-sm justify-end whitespace-nowrap" style={{ color: "var(--muted)" }}>{data.currency} {((parseFloat(it.quantity) || 0) * (parseFloat(it.unit_price) || 0)).toFixed(2)}</div>
+                  <button type="button" onClick={() => removeItem(idx)} disabled={data.items.length === 1} className="text-stone-400 hover:text-red-600 disabled:opacity-30 px-2" aria-label="Remove item"><X size={14} /></button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="rounded-xl p-4" style={{ background: "var(--bone)", border: "1px solid var(--line)" }}>
+          <div className="flex justify-between items-baseline">
+            <span className="text-sm" style={{ color: "var(--muted)" }}>Total ({data.currency})</span>
+            <span className="font-display text-2xl font-semibold">{data.currency} {total.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+          </div>
+        </div>
+
+        <div>
+          <Label>Payment options</Label>
+          <div className="flex flex-wrap gap-2 mb-3">
+            {PAYMENT_METHOD_TYPES.map((m) => {
+              const on = data.paymentMethods.some((p) => p.type === m.type);
+              return (
+                <button key={m.type} type="button" onClick={() => togglePaymentMethod(m.type)}
+                  className="rounded-full px-3 py-1.5 text-xs font-medium transition"
+                  style={{ background: on ? "var(--ink)" : "var(--bone)", color: on ? "var(--lime)" : "var(--ink)", border: `1px solid ${on ? "var(--ink)" : "var(--line)"}` }}>
+                  {on ? "✓ " : "+ "}{m.label}
+                </button>
+              );
+            })}
+          </div>
+          {data.paymentMethods.length > 0 && (
+            <div className="space-y-2">
+              {data.paymentMethods.map((m) => {
+                const def = PAYMENT_METHOD_BY_TYPE[m.type];
+                if (!def) return null;
+                if (def.auto) {
+                  return (
+                    <div key={m.id} className="rounded-xl p-3 text-xs" style={{ background: "rgba(15,95,63,0.06)", border: "1px solid rgba(15,95,63,0.2)" }}>
+                      <div className="font-semibold mb-1" style={{ color: "var(--emerald)" }}>{def.label}</div>
+                      <div style={{ color: "var(--muted)" }}>Your client will see a "Pay via XaePay" button that opens the cross-border rate quote flow through your assigned operator.</div>
+                    </div>
+                  );
+                }
+                return (
+                  <div key={m.id} className="rounded-xl p-3 space-y-2" style={{ background: "var(--bone)", border: "1px solid var(--line)" }}>
+                    <div className="flex items-center justify-between gap-2"><div className="font-semibold text-xs">{def.label}</div></div>
+                    <Input value={m.label} onChange={(e) => updatePaymentMethod(m.id, "label", e.target.value)} placeholder="Nickname (optional)" />
+                    <textarea rows={2} value={m.instructions} onChange={(e) => updatePaymentMethod(m.id, "instructions", e.target.value)}
+                      placeholder={def.hint}
+                      className="w-full rounded-lg px-3 py-2 text-xs font-mono" style={{ background: "white", border: "1px solid var(--line)" }} />
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        <Field label="Notes (optional)" full>
+          <textarea rows={3} value={data.notes} onChange={(e) => setData({ ...data, notes: e.target.value })} placeholder="Payment terms, references, anything else your client should know." className="w-full rounded-xl px-3 py-2 text-sm" style={{ background: "white", border: "1px solid var(--line)" }} />
+        </Field>
+
+        <div className="flex flex-col-reverse sm:flex-row sm:justify-between gap-2 pt-2">
+          <SecondaryBtn onClick={onClose} disabled={saving}>Cancel</SecondaryBtn>
+          <div className="flex flex-col sm:flex-row gap-2">
+            <SecondaryBtn onClick={() => submit(false)} disabled={!canSubmit}>{saving ? <Loader2 size={12} className="animate-spin" /> : null} Save as draft</SecondaryBtn>
+            <PrimaryBtn onClick={() => submit(true)} disabled={!canSubmit || !data.billToEmail}>{saving ? <><Loader2 size={12} className="animate-spin" /> Sending…</> : <>Send to client <Send size={12} /></>}</PrimaryBtn>
+          </div>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+function CustomerIssuedInvoiceDrawer({ invoice, customerIssuer, onClose, onChanged }) {
+  const { push } = useToast();
+  const [items, setItems] = useState([]);
+  const [claims, setClaims] = useState([]);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    if (!invoice?.id) { setItems([]); setClaims([]); return; }
+    supabase.from("invoice_items").select("*").eq("invoice_id", invoice.id).order("position").then(({ data }) => setItems(data || []));
+    supabase.from("invoice_payments").select("*").eq("invoice_id", invoice.id).order("claimed_at", { ascending: false }).then(({ data }) => setClaims(data || []));
+  }, [invoice?.id]);
+
+  if (!invoice) return null;
+  const pill = INVOICE_STATUS_PILL[invoice.status] || INVOICE_STATUS_PILL.draft;
+  const ccy = invoice.currency || "USD";
+
+  const downloadPdf = () => {
+    if (invoice.pdf_url) { window.open(safeUrl(invoice.pdf_url), "_blank"); return; }
+    const pdf = generateInvoicePdf({ invoice, items });
+    downloadInvoicePdf(pdf, invoice);
+  };
+
+  const confirmClaim = async (claim) => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const { error } = await supabase.from("invoice_payments").update({
+        status: "confirmed",
+        confirmed_at: new Date().toISOString(),
+        confirmed_by: (await supabase.auth.getUser()).data?.user?.id || null,
+      }).eq("id", claim.id);
+      if (error) throw error;
+      push("Payment confirmed — invoice marked paid", "success");
+      onChanged && onChanged();
+    } catch (err) { push(`Couldn't confirm: ${err?.message || err}`, "warn"); }
+    finally { setBusy(false); }
+  };
+  const rejectClaim = async (claim) => {
+    const reason = window.prompt("Reject this payment claim? Reason:");
+    if (!reason || busy) return;
+    setBusy(true);
+    try {
+      const { error } = await supabase.from("invoice_payments").update({
+        status: "rejected", rejected_at: new Date().toISOString(), rejection_reason: reason,
+      }).eq("id", claim.id);
+      if (error) throw error;
+      push("Payment claim rejected", "info");
+      onChanged && onChanged();
+    } catch (err) { push(`Couldn't reject: ${err?.message || err}`, "warn"); }
+    finally { setBusy(false); }
+  };
+  const voidInvoice = async () => {
+    if (!window.confirm(`Void ${invoice.invoice_number}?`)) return;
+    await supabase.from("invoices").update({ status: "void", voided_at: new Date().toISOString() }).eq("id", invoice.id);
+    push(`Invoice ${invoice.invoice_number} voided`, "info");
+    onChanged && onChanged(); onClose();
+  };
+
+  return (
+    <Drawer open={!!invoice} onClose={onClose} title={invoice.invoice_number}>
+      <div className="space-y-5">
+        <div className="rounded-xl p-5" style={{ background: "var(--ink)", color: "var(--bone)" }}>
+          <div className="font-mono text-[10px] uppercase tracking-wider" style={{ color: "rgba(247,245,240,0.5)" }}>Total</div>
+          <div className="font-display mt-1 text-4xl font-[500]" style={{ color: "var(--lime)" }}>{ccy} {parseFloat(invoice.total || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</div>
+          <div className="mt-1 font-mono text-[11px]" style={{ color: "rgba(247,245,240,0.6)" }}>Issued {invoice.issue_date ? new Date(invoice.issue_date).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }) : "—"} {invoice.due_date ? `· Due ${new Date(invoice.due_date).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })}` : ""}</div>
+          <div className="mt-3"><span className="rounded-full px-2 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-wider" style={{ background: pill.bg, color: pill.color }}>{pill.label}</span></div>
+        </div>
+        <div>
+          <Label>Bill to</Label>
+          <div className="rounded-xl p-3 text-xs" style={{ background: "var(--bone)", border: "1px solid var(--line)" }}>
+            <div className="font-medium">{invoice.customer_name || "—"}</div>
+            <div className="font-mono text-[11px] mt-1" style={{ color: "var(--muted)" }}>{[invoice.customer_email, invoice.customer_phone].filter(Boolean).join(" · ") || "—"}</div>
+          </div>
+        </div>
+        <div>
+          <Label>Line items</Label>
+          <div className="rounded-xl p-3 space-y-2" style={{ background: "var(--bone)", border: "1px solid var(--line)" }}>
+            {items.map((it) => (
+              <div key={it.id} className="flex justify-between items-baseline text-xs" style={{ borderBottom: "1px solid var(--line)", paddingBottom: 6 }}>
+                <div className="flex-1"><div className="font-medium">{it.description}</div><div className="font-mono text-[10px] mt-0.5" style={{ color: "var(--muted)" }}>{it.quantity} × {ccy} {parseFloat(it.unit_price).toFixed(2)}</div></div>
+                <div className="font-mono font-semibold">{ccy} {parseFloat(it.amount).toFixed(2)}</div>
+              </div>
+            ))}
+            <div className="flex justify-between items-baseline pt-1">
+              <span className="font-semibold text-sm">Total</span>
+              <span className="font-display text-lg font-semibold">{ccy} {parseFloat(invoice.total || 0).toFixed(2)}</span>
+            </div>
+          </div>
+        </div>
+        {claims.length > 0 && (
+          <div>
+            <Label>Payment claims from client</Label>
+            <div className="space-y-2">
+              {claims.map((c) => {
+                const def = PAYMENT_METHOD_BY_TYPE[c.method_type] || { label: c.method_type };
+                const pillC = PAYMENT_CLAIM_STATUS_PILL[c.status] || PAYMENT_CLAIM_STATUS_PILL.claimed;
+                return (
+                  <div key={c.id} className="rounded-xl p-3 text-xs space-y-2" style={{ background: "var(--bone)", border: "1px solid var(--line)" }}>
+                    <div className="flex items-center justify-between gap-2 flex-wrap">
+                      <div>
+                        <span className="font-semibold">{def.label}{c.method_label ? ` · ${c.method_label}` : ""}</span>
+                        <div className="font-mono text-[10px] mt-0.5" style={{ color: "var(--muted)" }}>{c.currency} {parseFloat(c.amount || 0).toFixed(2)} · {relativeTime(c.claimed_at)}</div>
+                      </div>
+                      <span className="rounded-full px-2 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-wider" style={{ background: pillC.bg, color: pillC.color }}>{pillC.label}</span>
+                    </div>
+                    {c.reference && <div className="font-mono" style={{ color: "var(--muted)" }}>Reference: <span style={{ color: "var(--ink)" }}>{c.reference}</span></div>}
+                    {c.proof_url && (
+                      <a href={safeUrl(c.proof_url)} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 underline font-medium" style={{ color: "var(--emerald)" }}>
+                        <Paperclip size={11} /> View proof of payment
+                      </a>
+                    )}
+                    {c.status === "claimed" && (
+                      <div className="flex gap-2 pt-1">
+                        <PrimaryBtn onClick={() => confirmClaim(c)} disabled={busy}><CheckCircle2 size={12} /> Confirm payment</PrimaryBtn>
+                        <SecondaryBtn onClick={() => rejectClaim(c)} disabled={busy}><X size={12} /> Reject</SecondaryBtn>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+        <div className="flex flex-wrap gap-2 pt-2">
+          <SecondaryBtn onClick={downloadPdf}><Download size={12} /> Invoice PDF</SecondaryBtn>
+          {invoice.status !== "paid" && invoice.status !== "void" && (
+            <SecondaryBtn onClick={voidInvoice}><X size={12} /> Void</SecondaryBtn>
           )}
         </div>
       </div>
