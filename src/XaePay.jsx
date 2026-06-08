@@ -2542,15 +2542,120 @@ function LPOnboarding({ onComplete }) {
 }
 
 function Landing({ setView, onRequestAccess, onCustomerSignup, onWaitlist }) {
+  // General-audience homepage. Audience-specific deep content lives on sub-
+  // pages (/?p=operators, /?p=customers, /?p=send-usd-ngn, /?p=providers,
+  // /?p=pricing). The homepage routes visitors to the right sub-page based
+  // on what they're trying to do, rather than pitching one audience.
   return (
     <div>
       <Hero onGetStarted={onRequestAccess} onCustomerSignup={onCustomerSignup} />
+      <WhoItsFor />
       <HowItWorks />
-      <FourTiers onGetStarted={onRequestAccess} />
-      <PartnerEconomics onGetStarted={onRequestAccess} />
+      <CapabilityStrip />
+      <StructureSection />
       <CTA onGetStarted={onRequestAccess} onCustomerSignup={onCustomerSignup} />
       <Footer onWaitlist={onWaitlist} />
     </div>
+  );
+}
+
+// =============================================================================
+// "Who's it for?" — 4 audience cards routing to dedicated sub-pages. Replaces
+// the operator-only pitch on the homepage with a clear "pick your audience"
+// pattern that improves first-impression for any visitor.
+// =============================================================================
+function WhoItsFor() {
+  const audiences = [
+    {
+      icon: Briefcase,
+      label: "Operators",
+      lede: "BDCs, IMTOs, freight forwarders, independent agents. Bring your customers, set your rates, keep up to 70% of the markup.",
+      href: "/?p=operators",
+      cta: "Apply as an operator",
+    },
+    {
+      icon: Building2,
+      label: "Businesses paying suppliers",
+      lede: "Pay your foreign suppliers from Nigeria with transparent rates, full trade documentation, and a receipt for every wire.",
+      href: "/?p=customers",
+      cta: "See how it works",
+    },
+    {
+      icon: Wallet,
+      label: "Diaspora senders",
+      lede: "Hold USD abroad and need to pay NGN in Nigeria — family, school fees, supplier, contractor. Locked rate, same-day payout.",
+      href: "/?p=send-usd-ngn",
+      cta: "Send USD → NGN",
+    },
+    {
+      icon: Layers,
+      label: "Licensed providers",
+      lede: "Receive clean KYC-completed transactions routed to your desk. We handle docs + orchestration; you execute the regulated leg.",
+      href: "/?p=providers",
+      cta: "Apply to onboard",
+    },
+  ];
+  return (
+    <section className="border-b" style={{ borderColor: "var(--line)", background: "var(--bone)" }}>
+      <div className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8 lg:py-20">
+        <div className="mb-10 max-w-2xl">
+          <SectionEyebrow>Who's it for</SectionEyebrow>
+          <h2 className="font-display mt-3 text-4xl font-[450] leading-[1.05] tracking-tight sm:text-5xl">Four audiences. <span className="italic" style={{ color: "var(--emerald)" }}>One platform.</span></h2>
+          <p className="mt-4 max-w-xl text-base leading-relaxed" style={{ color: "var(--muted)" }}>XaePay is a multi-sided platform: customers initiate payments, operators handle the relationship, providers execute the regulated leg. Each role gets its own dashboard, its own economics, and its own way in.</p>
+        </div>
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          {audiences.map((a) => {
+            const Icon = a.icon;
+            return (
+              <a key={a.label} href={a.href} className="card-soft card-lift rounded-2xl bg-white p-6 transition" style={{ border: "1px solid var(--line)" }}>
+                <div className="flex h-10 w-10 items-center justify-center rounded-lg" style={{ background: "var(--bone-2)", color: "var(--emerald)" }}><Icon size={18} /></div>
+                <h3 className="font-display mt-4 text-base font-semibold">{a.label}</h3>
+                <p className="mt-2 text-sm" style={{ color: "var(--muted)" }}>{a.lede}</p>
+                <div className="mt-4 font-mono text-[11px] inline-flex items-center gap-1 underline" style={{ color: "var(--emerald)" }}>
+                  {a.cta} <ArrowRight size={11} />
+                </div>
+              </a>
+            );
+          })}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+// =============================================================================
+// CapabilityStrip — what the platform actually does, in compact form. Shows
+// breadth without forcing a visitor to read deeply.
+// =============================================================================
+function CapabilityStrip() {
+  const items = [
+    { icon: ArrowLeftRight, title: "Cross-border routing", body: "NGN ↔ USD, GBP, EUR, CNY, AED, INR. Routed through licensed providers; locked rates; same-day settlement." },
+    { icon: Receipt, title: "Invoicing tools", body: "Operators bill customers. Business customers bill their own clients. Multi-method payment options on every invoice." },
+    { icon: Shield, title: "Compliance documentation", body: "Auto-assembled audit packs, RFI prevention agent, customer + recipient KYC orchestration. Tier-aware deliverables." },
+    { icon: CheckCircle2, title: "Receipts both ways", body: "Customer receipt when they pay an invoice. Recipient receipt when a payout settles. Issued automatically, downloadable." },
+    { icon: User, title: "Customer portals", body: "Customers see their own quotes, invoices, claims, and receipts in one place. WhatsApp + email + portal — three channels per critical message." },
+    { icon: Layers, title: "Multi-provider rails", body: "Multiple licensed providers competing for routing. Best fit per transaction based on corridor, cost, and speed." },
+  ];
+  return (
+    <section className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8 lg:py-20">
+      <div className="mb-10 max-w-2xl">
+        <SectionEyebrow>Capabilities</SectionEyebrow>
+        <h2 className="font-display mt-3 text-4xl font-[450] leading-[1.05] tracking-tight sm:text-5xl">Everything in <span className="italic" style={{ color: "var(--emerald)" }}>one platform.</span></h2>
+        <p className="mt-4 max-w-xl text-base leading-relaxed" style={{ color: "var(--muted)" }}>The product surface keeps growing. Today, all of this is live.</p>
+      </div>
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        {items.map((it) => {
+          const Icon = it.icon;
+          return (
+            <div key={it.title} className="rounded-2xl p-5" style={{ background: "white", border: "1px solid var(--line)" }}>
+              <div className="flex h-9 w-9 items-center justify-center rounded-lg" style={{ background: "var(--bone-2)", color: "var(--emerald)" }}><Icon size={16} /></div>
+              <h3 className="font-display mt-3 text-base font-semibold">{it.title}</h3>
+              <p className="mt-2 text-sm leading-relaxed" style={{ color: "var(--muted)" }}>{it.body}</p>
+            </div>
+          );
+        })}
+      </div>
+    </section>
   );
 }
 
@@ -2692,22 +2797,26 @@ function HeroChat() {
 }
 
 function HowItWorks() {
+  // Reframed for the general homepage: shows the 3 layers of the platform
+  // (customer / operator / provider) so any visitor — whichever role they
+  // play — sees where they fit. Audience-specific deep how-it-works content
+  // lives on the /?p=operators, /?p=customers, etc. sub-pages.
   return (
-    <section className="mx-auto max-w-7xl px-4 py-20 sm:px-6 lg:px-8 lg:py-28">
-      <div className="mb-14 max-w-2xl">
+    <section className="border-y mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8 lg:py-20" style={{ borderColor: "var(--line)" }}>
+      <div className="mb-10 max-w-2xl">
         <SectionEyebrow>How it works</SectionEyebrow>
-        <h2 className="font-display mt-4 text-4xl font-[450] leading-[1.05] tracking-tight sm:text-5xl">Three stages. <span className="italic" style={{ color: "var(--emerald)" }}>One platform.</span></h2>
-        <p className="mt-5 max-w-xl text-base leading-relaxed" style={{ color: "var(--muted)" }}>Everything starts with onboarding your customer through our compliance provider's KYC. Once approved (5–15 days), they can transact through you indefinitely.</p>
+        <h2 className="font-display mt-3 text-4xl font-[450] leading-[1.05] tracking-tight sm:text-5xl">Three layers. <span className="italic" style={{ color: "var(--emerald)" }}>One transaction.</span></h2>
+        <p className="mt-4 max-w-xl text-base leading-relaxed" style={{ color: "var(--muted)" }}>Every cross-border payment on XaePay flows through three named parties. Each layer plays its role; XaePay is the software that connects them.</p>
       </div>
       <div className="grid gap-5 lg:grid-cols-3">
         {[
-          { n: "01", title: "Customer KYC onboarding", body: "You forward your customer's details to XaePay. We submit to our licensed payment provider's compliance team. They review and approve (5–15 business days). Customer becomes 'Approved' status. Only approved customers can transact.", footer: "First-time only · per customer" },
-          { n: "02", title: "Per-transaction quote", body: "Customer messages you with payment details. You forward to XaePay. We quote five tiers, you pick one and set your markup. Customer confirms, gets funding instructions, deposits NGN. Our licensed partner executes the wire same day.", footer: "Every transaction" },
-          { n: "03", title: "Documentation + earnings", body: "XaePay handles invoice validation, BOL collection, audit pack assembly per the tier you selected. Earnings calculated on each transaction. Bi-weekly payouts to your Nigerian bank account.", footer: "Automatic · ongoing" },
+          { n: "01", title: "Customer initiates", body: "A business paying a foreign supplier, a diaspora sender funding a recipient in Nigeria, or a customer issuing an invoice to their own client. They start the request — through the portal, by WhatsApp, or via an invoice link.", footer: "Customer · the payer" },
+          { n: "02", title: "Operator coordinates", body: "A licensed agent (BDC, IMTO, MSB, freight forwarder) vets the customer, sets the rate, captures KYC and trade documentation, and routes the transaction to a payment provider. Earns a share of the markup.", footer: "Operator · the relationship" },
+          { n: "03", title: "Provider executes", body: "A licensed payment provider receives the KYC-completed transaction and executes the regulated leg — wire, ACH, settlement to the recipient's bank. XaePay collects status, issues the receipt, and closes the loop.", footer: "Provider · the rail" },
         ].map((s) => (
           <div key={s.n} className="card-soft rounded-2xl bg-white p-6" style={{ border: "1px solid var(--line)" }}>
             <div className="font-mono text-[11px] font-medium" style={{ color: "var(--emerald)" }}>{s.n}</div>
-            <h3 className="font-display mt-4 text-lg font-semibold" style={{ color: "var(--ink)" }}>{s.title}</h3>
+            <h3 className="font-display mt-3 text-lg font-semibold" style={{ color: "var(--ink)" }}>{s.title}</h3>
             <p className="mt-2 text-sm leading-relaxed" style={{ color: "var(--muted)" }}>{s.body}</p>
             <div className="mt-4 pt-3 font-mono text-[10px] uppercase tracking-wider" style={{ borderTop: "1px solid var(--line)", color: "var(--muted)" }}>{s.footer}</div>
           </div>
@@ -2717,7 +2826,7 @@ function HowItWorks() {
         <div className="flex items-start gap-3">
           <Shield size={16} className="mt-0.5 flex-shrink-0" style={{ color: "var(--emerald)" }} />
           <div className="text-sm" style={{ color: "var(--ink)" }}>
-            <span className="font-semibold">Why customer KYC is the gating step.</span> Our licensed payment provider is the regulated entity executing every wire. Their AML obligations require KYC approval before any customer can transact, regardless of how the customer was introduced. XaePay handles the submission and chases approval, but the timeline (5–15 days) sits with the partner's compliance team. Plan for it as the first conversation with any new customer — not a barrier you discover after they're ready to send.
+            <span className="font-semibold">XaePay is the software layer.</span> We don't custody funds, we don't quote FX on our own book, and we don't act as a party to any transaction. Money flows directly between the customer, the operator's collection account, and the licensed payment provider. We orchestrate compliance, documentation, and routing. The regulated entities own their respective regulated activities.
           </div>
         </div>
       </div>
@@ -2874,13 +2983,20 @@ function CTA({ onGetStarted, onCustomerSignup }) {
       <div className="mx-auto max-w-7xl px-4 py-20 sm:px-6 lg:px-8 lg:py-24">
         <div className="text-center max-w-2xl mx-auto">
           <h2 className="font-display text-4xl font-[450] leading-[1.05] tracking-tight sm:text-5xl">Ready to plug in?</h2>
-          <p className="mt-5 text-base leading-relaxed" style={{ color: "var(--muted)" }}>Operators get paid for routing customers + handling compliance. Customers get a vetted operator, clean documentation, and the option to pay locally or cross-border on the same platform.</p>
-          <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:justify-center">
-            <button onClick={onGetStarted} className="inline-flex items-center justify-center gap-2 rounded-xl px-6 py-3.5 text-sm font-semibold transition" style={{ background: "var(--ink)", color: "var(--bone)" }}>Become an operator <ArrowRight size={16} /></button>
+          <p className="mt-5 text-base leading-relaxed" style={{ color: "var(--muted)" }}>Pick the role you're playing — operator, customer, or licensed payment provider. Each gets its own dashboard, its own economics, and its own way in.</p>
+          <div className="mt-8 grid gap-3 sm:grid-cols-3 max-w-3xl mx-auto">
+            <button onClick={onGetStarted} className="inline-flex items-center justify-center gap-2 rounded-xl px-5 py-3.5 text-sm font-semibold transition" style={{ background: "var(--ink)", color: "var(--bone)" }}>Become an operator <ArrowRight size={14} /></button>
             {onCustomerSignup && (
-              <button onClick={onCustomerSignup} className="inline-flex items-center justify-center gap-2 rounded-xl px-6 py-3.5 text-sm font-semibold transition hover:bg-white" style={{ border: "1px solid var(--line)", color: "var(--ink)" }}>Send a payment <ArrowRight size={16} /></button>
+              <button onClick={onCustomerSignup} className="inline-flex items-center justify-center gap-2 rounded-xl px-5 py-3.5 text-sm font-semibold transition hover:bg-white" style={{ border: "1px solid var(--line)", color: "var(--ink)" }}>Send a payment <ArrowRight size={14} /></button>
             )}
-            <a href={WHATSAPP_URL} target="_blank" rel="noreferrer" className="inline-flex items-center justify-center gap-2 rounded-xl px-6 py-3.5 text-sm font-semibold transition hover:bg-white" style={{ border: "1px solid var(--line)", color: "var(--ink)" }}><MessageCircle size={16} /> Ask questions</a>
+            <a href="/?p=providers#apply" className="inline-flex items-center justify-center gap-2 rounded-xl px-5 py-3.5 text-sm font-semibold transition hover:bg-white" style={{ border: "1px solid var(--line)", color: "var(--ink)" }}>Apply as provider <ArrowRight size={14} /></a>
+          </div>
+          <div className="mt-4 flex flex-wrap items-center justify-center gap-4 font-mono text-[11px]" style={{ color: "var(--muted)" }}>
+            <a href="/?p=pricing" className="underline">See pricing</a>
+            <span>·</span>
+            <a href={WHATSAPP_URL} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 underline"><MessageCircle size={11} /> WhatsApp</a>
+            <span>·</span>
+            <a href="/?p=send-usd-ngn" className="underline">Sending USD to Nigeria?</a>
           </div>
         </div>
       </div>
