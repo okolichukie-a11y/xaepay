@@ -56,12 +56,31 @@ export function AdminPortal() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) { setAuthChecking(false); return; }
       setAuthUser(user);
-      const { data: profile } = await supabase
-        .from("operator_profiles")
-        .select("is_platform_default")
-        .eq("auth_user_id", user.id)
-        .maybeSingle();
-      setAuthorized(profile?.is_platform_default === true);
+
+      // Auth check has two paths so we're resilient to RLS hiccups:
+      // (1) operator_profiles row says is_platform_default = true
+      // (2) email is on the hardcoded admin allowlist (belt-and-suspenders)
+      // Either grants access. Email allowlist is the source of truth for
+      // bootstrapping — the DB flag is then the long-term mechanism so
+      // additional admins can be added without code deploys.
+      const ADMIN_EMAILS = new Set(["okoli.chukie@gmail.com"]);
+      const isAdminByEmail = ADMIN_EMAILS.has((user.email || "").toLowerCase());
+
+      let isAdminByProfile = false;
+      try {
+        const { data: profile, error } = await supabase
+          .from("operator_profiles")
+          .select("is_platform_default")
+          .eq("auth_user_id", user.id)
+          .maybeSingle();
+        if (!error) isAdminByProfile = profile?.is_platform_default === true;
+        else { /* eslint-disable-next-line no-console */ console.warn("[admin] profile fetch error", error); }
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.warn("[admin] profile fetch threw", err);
+      }
+
+      setAuthorized(isAdminByProfile || isAdminByEmail);
       setAuthChecking(false);
     })();
   }, []);
