@@ -13,6 +13,7 @@ import { generateCompliancePackPdf, downloadCompliancePackPdf, generateTransacti
 import { TermsOfService, PrivacyPolicy, DataDeletion, RefundPolicy, ServiceProviderMSA } from "./legal/LegalPages.jsx";
 import { OperatorsPage, CustomersPage, ProvidersPage, SendUsdToNgnPage } from "./legal/UserPages.jsx";
 import { CounselBriefPage } from "./legal/CounselBriefPage.jsx";
+import { PricingPage } from "./legal/PricingPage.jsx";
 import { AdminPortal } from "./admin/AdminPortal.jsx";
 import { useAuth } from "./lib/auth.js";
 
@@ -319,7 +320,7 @@ function AppShell() {
   // and audience-focused sub-landings (?p=operators/customers/providers). These
   // bypass the rest of the app so footers + external deep-links work without
   // hitting the splash gate or sign-in flow.
-  const STATIC_PAGES = ["terms", "privacy", "refunds", "data-deletion", "msa", "operators", "customers", "providers", "send-usd-ngn", "counsel-brief", "admin"];
+  const STATIC_PAGES = ["terms", "privacy", "refunds", "data-deletion", "msa", "operators", "customers", "providers", "send-usd-ngn", "counsel-brief", "pricing", "admin"];
   const [legalRoute] = useState(() => {
     if (typeof window === "undefined") return null;
     const p = new URLSearchParams(window.location.search).get("p");
@@ -521,6 +522,7 @@ function AppShell() {
   if (legalRoute === "providers")      return <ProvidersPage />;
   if (legalRoute === "send-usd-ngn")   return <SendUsdToNgnPage />;
   if (legalRoute === "counsel-brief")  return <CounselBriefPage />;
+  if (legalRoute === "pricing")        return <PricingPage />;
   if (legalRoute === "admin")          return <AdminPortal />;
   if (quoteRoute) return <QuoteApprovalPage quote={quoteRoute} />;
   if (onboardRoute) return <CustomerOnboardPage invite={onboardRoute} />;
@@ -3344,6 +3346,7 @@ function Footer({ onWaitlist }) {
             <a href="/?p=customers" className="hover:text-white transition" style={{ color: "inherit" }}>For customers</a>
             <a href="/?p=send-usd-ngn" className="hover:text-white transition" style={{ color: "inherit" }}>Send USD → NGN</a>
             <a href="/?p=providers" className="hover:text-white transition" style={{ color: "inherit" }}>For providers</a>
+            <a href="/?p=pricing" className="hover:text-white transition" style={{ color: "inherit" }}>Pricing</a>
             <a href="/?p=terms" className="hover:text-white transition" style={{ color: "inherit" }}>Terms</a>
             <a href="/?p=privacy" className="hover:text-white transition" style={{ color: "inherit" }}>Privacy</a>
             <a href="/?p=refunds" className="hover:text-white transition" style={{ color: "inherit" }}>Refunds</a>
