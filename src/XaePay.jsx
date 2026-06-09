@@ -7498,7 +7498,6 @@ function BDCDashboard({ session, initialCustomerId, onInitialCustomerHandled }) 
     { id: "invoicing", label: "Invoicing", icon: FileText },
     { id: "providers", label: "Providers", icon: Layers },
     { id: "reports", label: "Reports", icon: BarChart3 },
-    { id: "agent", label: "Agent", icon: Cpu },
     { id: "brand", label: "Brand", icon: Sparkles },
     { id: "earnings", label: "Earnings", icon: TrendingUp },
   ];
@@ -7507,10 +7506,23 @@ function BDCDashboard({ session, initialCustomerId, onInitialCustomerHandled }) 
   // fall back to session metadata; otherwise XaeccoX (parent-co umbrella).
   const auth = useAuth();
   const [operatorProfile, setOperatorProfile] = useState(null);
+  const [agentMode, setAgentMode] = useState(false);
+  const [savingAgentMode, setSavingAgentMode] = useState(false);
   useEffect(() => {
     if (!auth.user) return;
-    supabase.from("operator_profiles").select("business_name, operator_type").eq("auth_user_id", auth.user.id).maybeSingle().then(({ data }) => setOperatorProfile(data));
+    supabase.from("operator_profiles").select("business_name, operator_type, agent_mode").eq("auth_user_id", auth.user.id).maybeSingle().then(({ data }) => {
+      setOperatorProfile(data);
+      setAgentMode(!!data?.agent_mode);
+    });
   }, [auth.user?.id]);
+  const toggleAgentMode = async () => {
+    if (!auth.user || savingAgentMode) return;
+    setSavingAgentMode(true);
+    const next = !agentMode;
+    const { error } = await supabase.from("operator_profiles").update({ agent_mode: next }).eq("auth_user_id", auth.user.id);
+    setSavingAgentMode(false);
+    if (!error) setAgentMode(next);
+  };
   const operatorName = (operatorProfile?.operator_type === "business" && operatorProfile?.business_name)
     ? operatorProfile.business_name
     : (session?.name || session?.company || "XaeccoX");
@@ -7518,66 +7530,99 @@ function BDCDashboard({ session, initialCustomerId, onInitialCustomerHandled }) 
     ? `Agent operator · ${session.wrapper}`
     : "Agent operator · Account active";
   return (
-    <div className="mx-auto max-w-screen-2xl px-4 py-6 sm:px-6 lg:px-8 lg:py-10">
+    <div className={"mx-auto max-w-screen-2xl px-4 py-6 sm:px-6 lg:px-8 lg:py-10 transition-colors"} style={agentMode ? { background: "rgba(10,11,13,0.02)" } : {}}>
       <div className="mb-6 flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-end">
         <div className="rise">
-          <SectionEyebrow>Operator dashboard</SectionEyebrow>
+          <SectionEyebrow>{agentMode ? "Agent cockpit" : "Operator dashboard"}</SectionEyebrow>
           <h1 className="font-display mt-3 text-3xl font-[450] tracking-tight sm:text-[40px]">{operatorName}</h1>
           <div className="mt-2 font-mono text-xs" style={{ color: "var(--muted)" }}>{operatorRoleLine}</div>
         </div>
-        <div className="flex items-center gap-2">
-          <div className="hidden sm:inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 font-mono text-[10px] font-semibold uppercase tracking-wider" style={{ background: "var(--lime)", color: "var(--ink)" }}>
-            <div className="h-1.5 w-1.5 rounded-full" style={{ background: "var(--ink)" }} />
-            Production
+        <div className="flex items-center gap-2 flex-wrap">
+          {/* Agent Mode global switch — moves between Manual and Agent cockpit */}
+          <button
+            onClick={toggleAgentMode}
+            disabled={savingAgentMode}
+            className="group inline-flex items-center gap-3 rounded-full px-1 py-1 transition"
+            style={{
+              background: agentMode ? "var(--ink)" : "var(--bone)",
+              border: `1px solid ${agentMode ? "var(--ink)" : "var(--line)"}`,
+              boxShadow: agentMode ? "0 0 18px rgba(197,242,74,0.25)" : "none",
+            }}
+            title={agentMode ? "Switch to manual mode" : "Switch to agent mode"}
+          >
+            <span className="rounded-full px-3 py-1 font-mono text-[10px] font-semibold uppercase tracking-wider transition" style={{
+              background: agentMode ? "transparent" : "var(--ink)",
+              color: agentMode ? "rgba(247,245,240,0.5)" : "var(--bone)",
+            }}>Manual</span>
+            <span className="rounded-full px-3 py-1 font-mono text-[10px] font-semibold uppercase tracking-wider transition inline-flex items-center gap-1.5" style={{
+              background: agentMode ? "var(--lime)" : "transparent",
+              color: agentMode ? "var(--ink)" : "var(--muted)",
+            }}>
+              {agentMode && <span className="h-1.5 w-1.5 rounded-full pulse-dot" style={{ background: "var(--ink)" }} />}
+              Agent
+            </span>
+          </button>
+          <div className="hidden sm:inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 font-mono text-[10px] font-semibold uppercase tracking-wider" style={{ background: agentMode ? "var(--ink)" : "var(--lime)", color: agentMode ? "var(--lime)" : "var(--ink)" }}>
+            <div className="h-1.5 w-1.5 rounded-full pulse-dot" style={{ background: agentMode ? "var(--lime)" : "var(--ink)" }} />
+            {agentMode ? "Live · drafting" : "Production"}
           </div>
         </div>
       </div>
 
-      <div className="mb-6">
-        <ComplianceRemindersPanel onReminderClick={(n) => {
-          if (n?.subject_type === "customer" && n?.subject_id) jumpToCustomer(n.subject_id);
-          else if (n?.subject_type === "quote" && n?.subject_id) jumpToTransaction(n.subject_id);
-        }} />
-      </div>
-
-      <div className="lg:flex lg:gap-8">
-        <aside className="hidden lg:block lg:w-56 lg:flex-shrink-0">
-          <nav className="sticky top-24 space-y-1">
-            {tabs.map((t) => {
-              const Icon = t.icon;
-              const active = tab === t.id;
-              return (
-                <button key={t.id} onClick={() => setTab(t.id)} className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2.5 text-left text-sm transition" style={active ? { background: "var(--ink)", color: "var(--bone)" } : { color: "var(--muted)" }}>
-                  <Icon size={15} strokeWidth={1.75} />
-                  <span className="font-medium">{t.label}</span>
-                </button>
-              );
-            })}
-          </nav>
-        </aside>
-
-        <div className="lg:hidden mb-6 flex gap-1 overflow-x-auto" style={{ borderBottom: "1px solid var(--line)" }}>
-          {tabs.map((t) => (
-            <button key={t.id} onClick={() => setTab(t.id)} className="relative whitespace-nowrap px-4 py-3 text-sm font-medium transition" style={{ color: tab === t.id ? "var(--ink)" : "var(--muted)" }}>
-              {t.label}
-              {tab === t.id && <div className="absolute bottom-[-1px] left-0 right-0 h-[2px]" style={{ background: "var(--ink)" }} />}
-            </button>
-          ))}
+      {!agentMode && (
+        <div className="mb-6">
+          <ComplianceRemindersPanel onReminderClick={(n) => {
+            if (n?.subject_type === "customer" && n?.subject_id) jumpToCustomer(n.subject_id);
+            else if (n?.subject_type === "quote" && n?.subject_id) jumpToTransaction(n.subject_id);
+          }} />
         </div>
+      )}
 
-        <div className="flex-1 fade-in min-w-0">
-          {tab === "quote" && <BDCRailQuotes />}
-          {tab === "transactions" && <BDCTransactions jumpToTransactionId={jumpToTransactionId} onJumpHandled={() => setJumpToTransactionId(null)} />}
-          {tab === "customers" && <BDCCustomers addedCustomers={addedCustomers} onAddCustomer={addCustomer} jumpToCustomerId={jumpToCustomerId} onJumpHandled={() => setJumpToCustomerId(null)} />}
-          {tab === "recipients" && <BDCRecipients />}
-          {tab === "invoicing" && <BDCInvoices />}
-          {tab === "providers" && <BDCProviders />}
-          {tab === "reports" && <BDCRegulatoryReports />}
-          {tab === "agent" && <BDCAgent jumpToTransaction={jumpToTransaction} />}
-          {tab === "brand" && <BDCBrandSettings />}
-          {tab === "earnings" && <BDCEarnings />}
+      {agentMode ? (
+        // ============ AGENT COCKPIT — full-width agent view ============
+        <div className="fade-in">
+          <BDCAgent jumpToTransaction={jumpToTransaction} hideToggle />
         </div>
-      </div>
+      ) : (
+        // ============ NORMAL DASHBOARD — tabs + tab content ============
+        <div className="lg:flex lg:gap-8">
+          <aside className="hidden lg:block lg:w-56 lg:flex-shrink-0">
+            <nav className="sticky top-24 space-y-1">
+              {tabs.map((t) => {
+                const Icon = t.icon;
+                const active = tab === t.id;
+                return (
+                  <button key={t.id} onClick={() => setTab(t.id)} className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2.5 text-left text-sm transition" style={active ? { background: "var(--ink)", color: "var(--bone)" } : { color: "var(--muted)" }}>
+                    <Icon size={15} strokeWidth={1.75} />
+                    <span className="font-medium">{t.label}</span>
+                  </button>
+                );
+              })}
+            </nav>
+          </aside>
+
+          <div className="lg:hidden mb-6 flex gap-1 overflow-x-auto" style={{ borderBottom: "1px solid var(--line)" }}>
+            {tabs.map((t) => (
+              <button key={t.id} onClick={() => setTab(t.id)} className="relative whitespace-nowrap px-4 py-3 text-sm font-medium transition" style={{ color: tab === t.id ? "var(--ink)" : "var(--muted)" }}>
+                {t.label}
+                {tab === t.id && <div className="absolute bottom-[-1px] left-0 right-0 h-[2px]" style={{ background: "var(--ink)" }} />}
+              </button>
+            ))}
+          </div>
+
+          <div className="flex-1 fade-in min-w-0">
+            {tab === "quote" && <BDCRailQuotes />}
+            {tab === "transactions" && <BDCTransactions jumpToTransactionId={jumpToTransactionId} onJumpHandled={() => setJumpToTransactionId(null)} />}
+            {tab === "customers" && <BDCCustomers addedCustomers={addedCustomers} onAddCustomer={addCustomer} jumpToCustomerId={jumpToCustomerId} onJumpHandled={() => setJumpToCustomerId(null)} />}
+            {tab === "recipients" && <BDCRecipients />}
+            {tab === "invoicing" && <BDCInvoices />}
+            {tab === "providers" && <BDCProviders />}
+            {tab === "reports" && <BDCRegulatoryReports />}
+            {tab === "brand" && <BDCBrandSettings />}
+            {tab === "earnings" && <BDCEarnings />}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -9002,14 +9047,14 @@ function BDCRegulatoryReports() {
 // confirms, payment matches, report drafts) as agent_tasks rows. The operator
 // reviews, edits, and approves each one — nothing auto-sends in V1.
 // =============================================================================
-function BDCAgent({ jumpToTransaction }) {
+function BDCAgent({ jumpToTransaction, hideToggle }) {
   const { push } = useToast();
   const auth = useAuth();
   const [agentMode, setAgentMode] = useState(false);
   const [savingToggle, setSavingToggle] = useState(false);
   const [tasks, setTasks] = useState([]);
   const [loadingTasks, setLoadingTasks] = useState(false);
-  const [showHistory, setShowHistory] = useState(false);
+  const [showHistory, setShowHistory] = useState(true);
 
   const fetchAgentMode = async () => {
     if (!auth.user) return;
@@ -9063,9 +9108,39 @@ function BDCAgent({ jumpToTransaction }) {
   const pending = tasks.filter((t) => t.status === "pending_review");
   const reviewed = tasks.filter((t) => t.status !== "pending_review");
 
+  // Quick stats for the cockpit header
+  const todayStart = new Date(); todayStart.setHours(0,0,0,0);
+  const tasksToday = tasks.filter((t) => new Date(t.created_at) >= todayStart);
+  const approvedToday = tasksToday.filter((t) => t.operator_decision === "approved").length;
+  const rejectedToday = tasksToday.filter((t) => t.operator_decision === "rejected").length;
+  const pendingNow = tasks.filter((t) => t.status === "pending_review").length;
+
   return (
     <div className="space-y-6">
-      {/* Mode toggle card */}
+      {/* Stats strip — visible in cockpit mode so the operator gets the at-a-glance */}
+      {hideToggle && (
+        <div className="grid gap-3 grid-cols-2 sm:grid-cols-4">
+          <div className="rounded-xl p-4" style={{ background: "var(--ink)", color: "var(--bone)" }}>
+            <div className="font-mono text-[9px] uppercase tracking-wider" style={{ color: "rgba(247,245,240,0.5)" }}>Awaiting you</div>
+            <div className="font-display text-2xl font-semibold mt-1" style={{ color: pendingNow > 0 ? "var(--lime)" : "var(--bone)" }}>{pendingNow}</div>
+          </div>
+          <div className="rounded-xl p-4" style={{ background: "white", border: "1px solid var(--line)" }}>
+            <div className="font-mono text-[9px] uppercase tracking-wider" style={{ color: "var(--muted)" }}>Drafts today</div>
+            <div className="font-display text-2xl font-semibold mt-1">{tasksToday.length}</div>
+          </div>
+          <div className="rounded-xl p-4" style={{ background: "white", border: "1px solid var(--line)" }}>
+            <div className="font-mono text-[9px] uppercase tracking-wider" style={{ color: "var(--muted)" }}>Approved today</div>
+            <div className="font-display text-2xl font-semibold mt-1" style={{ color: "var(--emerald)" }}>{approvedToday}</div>
+          </div>
+          <div className="rounded-xl p-4" style={{ background: "white", border: "1px solid var(--line)" }}>
+            <div className="font-mono text-[9px] uppercase tracking-wider" style={{ color: "var(--muted)" }}>Rejected today</div>
+            <div className="font-display text-2xl font-semibold mt-1" style={{ color: rejectedToday > 0 ? "#92400e" : "var(--ink)" }}>{rejectedToday}</div>
+          </div>
+        </div>
+      )}
+
+      {/* Mode toggle card — only when not in cockpit mode (toggle is global at top in cockpit) */}
+      {!hideToggle && (
       <div className="rounded-2xl overflow-hidden" style={{ background: "var(--ink)", color: "var(--bone)", border: "1px solid var(--ink)" }}>
         <div className="flex items-center justify-between px-5 py-3" style={{ borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
           <div className="flex items-center gap-2">
@@ -9101,6 +9176,7 @@ function BDCAgent({ jumpToTransaction }) {
           </div>
         </div>
       </div>
+      )}
 
       {/* Pending tasks */}
       <Card padding="none">
