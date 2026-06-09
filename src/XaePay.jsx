@@ -2570,30 +2570,26 @@ function Landing({ setView, onRequestAccess, onCustomerSignup, onWaitlist }) {
 function WhoItsFor() {
   const paths = [
     {
-      title: "Send & receive across the Nigeria corridor",
-      detail: "USD ↔ NGN, plus GBP / EUR / CNY routes. Locked rate, agent-assembled compliance pack, receipts at both ends. Same-day settlement through a licensed BDC operator + licensed payment provider.",
-      tags: ["Multi-currency", "Locked rate", "Same-day", "Receipts both ways"],
+      title: "Send between USD and NGN",
+      detail: "Pay a supplier, send to family, settle school fees, move USD income. Both directions through a licensed BDC + provider — locked rate, same-day, receipt at both ends.",
       href: "/?p=send-usd-ngn",
       hotkey: "01",
     },
     {
-      title: "Bill clients in any currency",
-      detail: "Issue branded invoices in USD / GBP / EUR / CNY. Collect via card, wire, or shareable WhatsApp link. Settle to NGN automatically. Receipts + audit trail generated for you.",
-      tags: ["Branded invoices", "Multi-method collection", "Auto receipts", "Reports for regulators"],
+      title: "Pay foreign suppliers from Nigeria",
+      detail: "Suppliers in China, US, UK, Europe, India, UAE — through a vetted operator and a licensed payment provider. Locked rate, full receipt, compliance documentation handled.",
       href: "/?p=customers",
       hotkey: "02",
     },
     {
-      title: "Run a cross-border practice",
-      detail: "Operator dashboard for BDCs, IMTOs, freight forwarders, independent agents. AI compliance review, multi-provider routing, recurring billing, quarterly customer-activity reports — wired in. Keep 30–70% of every quote.",
-      tags: ["BDC / IMTO / agent", "AI compliance agent", "Multi-provider routing", "30–70% of margin"],
+      title: "Run my BDC on better tools",
+      detail: "Bring your customers. Set your rates. AI compliance, multi-provider routing, recurring billing, regulatory reports — all wired in. Keep 30–70% of every quote you route.",
       href: "/?p=operators",
       hotkey: "03",
     },
     {
-      title: "Plug in as a licensed provider",
-      detail: "Cedar today, more on the way. Receive KYC-completed, document-attached transactions on your desk via API or portal. Webhook-driven status. You only see deals matching your corridors, currencies, and caps.",
-      tags: ["API or portal", "Webhooks", "Corridor + currency filters", "Pre-screened deals"],
+      title: "Integrate as a licensed provider",
+      detail: "Receive pre-screened, KYC-completed transactions routed to your desk. API or portal — your call.",
       href: "/?p=providers",
       hotkey: "04",
     },
@@ -2630,13 +2626,6 @@ function WhoItsFor() {
                   <div className="min-w-0 flex-1">
                     <div className="font-display text-base sm:text-lg font-semibold" style={{ color: "var(--ink)" }}>{p.title}</div>
                     <div className="text-xs sm:text-sm mt-1.5 leading-relaxed" style={{ color: "var(--muted)" }}>{p.detail}</div>
-                    {p.tags && p.tags.length > 0 && (
-                      <div className="mt-3 flex flex-wrap gap-1.5">
-                        {p.tags.map((t) => (
-                          <span key={t} className="rounded-md px-2 py-0.5 font-mono text-[10px] uppercase tracking-wider" style={{ background: "var(--bone)", color: "var(--muted)", border: "1px solid var(--line)" }}>{t}</span>
-                        ))}
-                      </div>
-                    )}
                   </div>
                   <span className="font-mono text-[10px] uppercase tracking-wider hidden sm:inline-flex items-center gap-1 flex-shrink-0 pt-1.5" style={{ color: "var(--muted)" }}>↵</span>
                 </a>
