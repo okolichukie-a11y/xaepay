@@ -416,6 +416,26 @@ export async function getPlatformSettingInt(key, fallback) {
   return Number.isFinite(n) ? n : fallback;
 }
 
+// Upload a regulatory report (PDF or CSV) to Storage under regulatory-reports/.
+// Returns a 90-day signed URL the operator can download or share.
+export async function uploadRegulatoryReportFile(operatorId, reportType, periodLabel, blob, ext) {
+  try {
+    const safePeriod = (periodLabel || "report").replace(/[^\w-]+/g, "_");
+    const path = `regulatory-reports/${operatorId}/${reportType}-${safePeriod}-${Date.now()}.${ext}`;
+    const { error: upErr } = await supabase.storage
+      .from("quote-pdfs")
+      .upload(path, blob, { contentType: ext === "csv" ? "text/csv" : "application/pdf", upsert: false });
+    if (upErr) return { ok: false, error: upErr.message || "Upload failed" };
+    const { data: signed, error: signErr } = await supabase.storage
+      .from("quote-pdfs")
+      .createSignedUrl(path, 60 * 60 * 24 * 90);
+    if (signErr) return { ok: false, error: signErr.message };
+    return { ok: true, url: signed.signedUrl, path };
+  } catch (err) {
+    return { ok: false, error: err?.message || String(err) };
+  }
+}
+
 // Upload an operator's brand logo for use on invoices + emails. Stored in the
 // public cedar-files bucket so logos can be referenced from email HTML and
 // embedded in client-rendered PDFs without a signed-URL fetch. 2 MB cap (logos

@@ -7,9 +7,9 @@ import {
   ArrowLeft, ArrowLeftRight, Loader2, Layers, TrendingUp, Wallet, DollarSign, Mail,
   RefreshCw, ShieldCheck, Paperclip,
 } from "lucide-react";
-import { supabase, sendWhatsAppText, sendWhatsAppTemplate, fetchCedarRate, submitCustomerToCedar, submitRecipientToCedar, submitReceiverAccountToCedar, submitCedarTransaction, approveCedarQuote, confirmCedarDeposit, cancelCedarTransaction, uploadCedarFile, uploadFileBoth, uploadInvoicePdf, uploadInvoicePaymentProof, uploadReceiptPdf, uploadRecipientReceiptPdf, uploadBrandLogo, pickServiceProviderForQuote, runComplianceReview, runComplianceWatchman, submitDocumentToCedar, sendEmail, safeUrl, logAuditEvent, getPlatformSettingInt } from "./lib/supabase.js";
+import { supabase, sendWhatsAppText, sendWhatsAppTemplate, fetchCedarRate, submitCustomerToCedar, submitRecipientToCedar, submitReceiverAccountToCedar, submitCedarTransaction, approveCedarQuote, confirmCedarDeposit, cancelCedarTransaction, uploadCedarFile, uploadFileBoth, uploadInvoicePdf, uploadInvoicePaymentProof, uploadReceiptPdf, uploadRecipientReceiptPdf, uploadBrandLogo, uploadRegulatoryReportFile, pickServiceProviderForQuote, runComplianceReview, runComplianceWatchman, submitDocumentToCedar, sendEmail, safeUrl, logAuditEvent, getPlatformSettingInt } from "./lib/supabase.js";
 import { generateQuotePdf, uploadQuotePdf, downloadQuotePdf } from "./lib/pdf.js";
-import { generateCompliancePackPdf, downloadCompliancePackPdf, generateTransactionConfirmationPdf, downloadTransactionConfirmationPdf, generateInvoicePdf, downloadInvoicePdf, generateReceiptPdf, downloadReceiptPdf, generateRecipientReceiptPdf, downloadRecipientReceiptPdf } from "./lib/pdf-doc.js";
+import { generateCompliancePackPdf, downloadCompliancePackPdf, generateTransactionConfirmationPdf, downloadTransactionConfirmationPdf, generateInvoicePdf, downloadInvoicePdf, generateReceiptPdf, downloadReceiptPdf, generateRecipientReceiptPdf, downloadRecipientReceiptPdf, generateMonthlyTransactionReportPdf, downloadRegulatoryReportPdf, buildTransactionsCsv } from "./lib/pdf-doc.js";
 import { TermsOfService, PrivacyPolicy, DataDeletion, RefundPolicy, ServiceProviderMSA } from "./legal/LegalPages.jsx";
 import { OperatorsPage, CustomersPage, ProvidersPage, SendUsdToNgnPage } from "./legal/UserPages.jsx";
 import { CounselBriefPage } from "./legal/CounselBriefPage.jsx";
@@ -6875,6 +6875,7 @@ function BDCDashboard({ session, initialCustomerId, onInitialCustomerHandled }) 
     { id: "recipients", label: "Recipients", icon: Briefcase },
     { id: "invoicing", label: "Invoicing", icon: FileText },
     { id: "providers", label: "Providers", icon: Layers },
+    { id: "reports", label: "Reports", icon: BarChart3 },
     { id: "brand", label: "Brand", icon: Sparkles },
     { id: "earnings", label: "Earnings", icon: TrendingUp },
   ];
@@ -6943,6 +6944,7 @@ function BDCDashboard({ session, initialCustomerId, onInitialCustomerHandled }) 
           {tab === "recipients" && <BDCRecipients />}
           {tab === "invoicing" && <BDCInvoices />}
           {tab === "providers" && <BDCProviders />}
+          {tab === "reports" && <BDCRegulatoryReports />}
           {tab === "brand" && <BDCBrandSettings />}
           {tab === "earnings" && <BDCEarnings />}
         </div>
@@ -7961,6 +7963,209 @@ const EMPTY_BRAND = {
   default_outbound_markup: "",  // string in form, parsed to numeric on save
   default_inbound_markup: "",
 };
+
+// =============================================================================
+// Regulatory Reports — Business tier feature for operators that need to file
+// monthly/quarterly returns with CBN, SCUML, NFIU, FIRS. Generates PDF + CSV
+// from the operator's own transaction data; operator reviews, adapts to the
+// specific regulator's format, then submits manually.
+//
+// V1 covers Monthly Transaction Report only. Quarterly Customer Activity +
+// Suspicious Transaction Summary follow in V2.
+// =============================================================================
+
+function BDCRegulatoryReports() {
+  const { push } = useToast();
+  const auth = useAuth();
+  const isSignedIn = !!auth.user;
+  const [reports, setReports] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [generating, setGenerating] = useState(false);
+  const now = new Date();
+  const defaultMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  const [periodMonth, setPeriodMonth] = useState(defaultMonth);
+
+  const fetchReports = async () => {
+    if (!isSignedIn) return;
+    setLoading(true);
+    const { data } = await supabase
+      .from("regulatory_reports")
+      .select("*")
+      .order("generated_at", { ascending: false })
+      .limit(50);
+    setReports(data || []);
+    setLoading(false);
+  };
+  useEffect(() => { fetchReports(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [auth.user?.id]);
+
+  const generateMonthlyReport = async () => {
+    if (generating || !auth.user) return;
+    setGenerating(true);
+    try {
+      const [year, month] = periodMonth.split("-").map(Number);
+      const start = new Date(year, month - 1, 1);
+      const end = new Date(year, month, 0, 23, 59, 59, 999);
+      const startIso = start.toISOString();
+      const endIso = end.toISOString();
+      const periodLabel = start.toLocaleDateString("en-GB", { month: "long", year: "numeric" });
+
+      // Fetch transactions for the period (RLS scopes to operator's own)
+      const { data: txns, error: txErr } = await supabase
+        .from("quotes")
+        .select("id, customer_name, customer_phone, beneficiary, destination, amount, currency, rate, ngn_total, status, cedar_request_status, created_at")
+        .gte("created_at", startIso)
+        .lte("created_at", endIso)
+        .order("created_at", { ascending: true });
+      if (txErr) throw txErr;
+      const transactions = txns || [];
+      if (transactions.length === 0) {
+        push("No transactions in this period — nothing to report.", "info");
+        setGenerating(false);
+        return;
+      }
+
+      // Aggregate summary
+      const settled = transactions.filter((t) => t.status === "filled" || (t.cedar_request_status || "").toUpperCase().includes("COMPLETED"));
+      const volumesByCurrency = {};
+      let totalVolumeUsd = 0;
+      transactions.forEach((t) => {
+        const c = t.currency || "USD";
+        volumesByCurrency[c] = (volumesByCurrency[c] || 0) + parseFloat(t.amount || 0);
+        if (c === "USD") totalVolumeUsd += parseFloat(t.amount || 0);
+      });
+      const totalVolumeText = Object.entries(volumesByCurrency)
+        .map(([c, v]) => `${c} ${v.toLocaleString(undefined, { maximumFractionDigits: 0 })}`)
+        .join(" · ");
+      const summary = {
+        totalCount: transactions.length,
+        settledCount: settled.length,
+        pendingCount: transactions.length - settled.length,
+        volumesByCurrency,
+        totalVolumeText,
+      };
+
+      const operatorName = auth.user?.user_metadata?.company || "XaeccoX";
+
+      // Generate PDF + CSV
+      const pdf = generateMonthlyTransactionReportPdf({
+        operator: { name: operatorName },
+        transactions,
+        period: { label: periodLabel, start: startIso, end: endIso },
+        summary,
+      });
+      const csvString = buildTransactionsCsv(transactions);
+      const csvBlob = new Blob([csvString], { type: "text/csv" });
+
+      // Upload both to storage
+      const pdfBlob = pdf.output("blob");
+      const [pdfUp, csvUp] = await Promise.all([
+        uploadRegulatoryReportFile(auth.user.id, "monthly_transactions", periodLabel, pdfBlob, "pdf"),
+        uploadRegulatoryReportFile(auth.user.id, "monthly_transactions", periodLabel, csvBlob, "csv"),
+      ]);
+      if (!pdfUp.ok) { push(`PDF upload failed: ${pdfUp.error}`, "warn"); }
+      if (!csvUp.ok) { push(`CSV upload failed: ${csvUp.error}`, "warn"); }
+
+      // Save record
+      const { error: insertErr } = await supabase.from("regulatory_reports").insert({
+        operator_user_id: auth.user.id,
+        report_type: "monthly_transactions",
+        period_label: periodLabel,
+        period_start: start.toISOString().slice(0, 10),
+        period_end: end.toISOString().slice(0, 10),
+        pdf_url: pdfUp.ok ? pdfUp.url : null,
+        pdf_path: pdfUp.ok ? pdfUp.path : null,
+        csv_url: csvUp.ok ? csvUp.url : null,
+        csv_path: csvUp.ok ? csvUp.path : null,
+        metadata: summary,
+        generated_by: auth.user.id,
+      });
+      if (insertErr) throw insertErr;
+
+      // Also download the PDF for the operator immediately
+      downloadRegulatoryReportPdf(pdf, "monthly-transactions", periodLabel);
+      push(`Report generated for ${periodLabel} · ${transactions.length} transactions`, "success");
+      fetchReports();
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error("Report generation failed:", err);
+      push(`Couldn't generate report: ${err?.message || err}`, "warn");
+    } finally { setGenerating(false); }
+  };
+
+  return (
+    <div className="space-y-6">
+      <Card>
+        <div className="flex items-baseline justify-between mb-2 flex-wrap gap-2">
+          <div>
+            <h3 className="font-display text-lg font-semibold flex items-center gap-2">
+              Monthly Transaction Report
+              <span className="rounded-full px-2 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-wider" style={{ background: "var(--lime)", color: "var(--ink)" }}>Business</span>
+            </h3>
+            <p className="text-sm mt-1" style={{ color: "var(--muted)" }}>Pre-filled draft for your CBN / SCUML / NFIU / FIRS filings. PDF + CSV from your transaction records.</p>
+          </div>
+        </div>
+        <div className="grid gap-3 sm:grid-cols-[1fr_auto] items-end">
+          <Field label="Reporting period (month)">
+            <Input type="month" value={periodMonth} onChange={(e) => setPeriodMonth(e.target.value)} />
+          </Field>
+          <PrimaryBtn onClick={generateMonthlyReport} disabled={generating}>
+            {generating ? <><Loader2 size={12} className="animate-spin" /> Generating…</> : <><FileText size={12} /> Generate report</>}
+          </PrimaryBtn>
+        </div>
+        <p className="mt-3 text-xs" style={{ color: "var(--muted)" }}>
+          Report includes: every transaction in the selected month, customer + beneficiary names, amounts, currencies, status, and a summary. PDF is downloaded immediately; both PDF + CSV are also saved here for future access.
+        </p>
+      </Card>
+
+      <Card padding="none">
+        <div className="flex items-center justify-between p-4 flex-wrap gap-2" style={{ borderBottom: "1px solid var(--line)" }}>
+          <div className="font-semibold text-sm">{loading ? "Loading…" : `${reports.length} previously generated report${reports.length === 1 ? "" : "s"}`}</div>
+          <SecondaryBtn onClick={fetchReports} disabled={loading}><RefreshCw size={14} className={loading ? "animate-spin" : ""} /> Refresh</SecondaryBtn>
+        </div>
+        {reports.length === 0 ? (
+          <div className="p-12 text-center">
+            <FileText size={20} className="mx-auto mb-2" style={{ color: "var(--muted)" }} />
+            <h3 className="font-display text-lg font-semibold">No reports generated yet</h3>
+            <p className="mt-1.5 text-sm" style={{ color: "var(--muted)" }}>Generate your first report for the period above.</p>
+          </div>
+        ) : (
+          <div className="divide-y" style={{ borderColor: "var(--line)" }}>
+            {reports.map((r) => (
+              <div key={r.id} className="p-4 flex items-baseline justify-between gap-3 flex-wrap">
+                <div>
+                  <div className="font-semibold text-sm">{r.period_label}</div>
+                  <div className="font-mono text-[11px] mt-0.5" style={{ color: "var(--muted)" }}>
+                    {r.report_type.replace(/_/g, " ")} · {r.metadata?.totalCount || 0} transactions · {r.metadata?.totalVolumeText || ""}
+                  </div>
+                  <div className="font-mono text-[10px] mt-0.5" style={{ color: "var(--muted)" }}>Generated {relativeTime(r.generated_at)}</div>
+                </div>
+                <div className="flex gap-2">
+                  {r.pdf_url && (
+                    <a href={safeUrl(r.pdf_url)} target="_blank" rel="noreferrer" className="rounded-lg px-3 py-1.5 text-xs font-semibold transition" style={{ background: "var(--ink)", color: "var(--bone)" }}>
+                      <Download size={12} className="inline mr-1" /> PDF
+                    </a>
+                  )}
+                  {r.csv_url && (
+                    <a href={safeUrl(r.csv_url)} target="_blank" rel="noreferrer" className="rounded-lg px-3 py-1.5 text-xs font-semibold transition" style={{ background: "var(--bone)", color: "var(--ink)", border: "1px solid var(--line)" }}>
+                      <Download size={12} className="inline mr-1" /> CSV
+                    </a>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </Card>
+
+      <div className="rounded-xl p-4 text-xs" style={{ background: "rgba(15,95,63,0.05)", border: "1px solid rgba(15,95,63,0.15)" }}>
+        <div className="font-mono text-[10px] uppercase tracking-wider mb-1" style={{ color: "var(--emerald)" }}>Coming soon</div>
+        <p style={{ color: "var(--muted)" }}>
+          Quarterly Customer Activity Report (KYC status per customer, lifetime volume per period) and Suspicious Transaction Summary (transactions flagged by AI compliance review pre-formatted for STR submission) are next on the regulatory-reports roadmap.
+        </p>
+      </div>
+    </div>
+  );
+}
 
 function BDCBrandSettings() {
   const { push } = useToast();

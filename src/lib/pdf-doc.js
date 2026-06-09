@@ -1261,4 +1261,176 @@ export function downloadRecipientReceiptPdf(doc, quote) {
   doc.save(`payout-${id}-R-XaePay.pdf`);
 }
 
+// =============================================================================
+// Regulatory reports — monthly transaction summary, quarterly customer
+// activity, suspicious-transaction draft. Each report renders as a structured
+// PDF that operators can hand to their compliance officer / regulator.
+// =============================================================================
+
+function buildMonthlyTransactionReportPage(doc, { operator, transactions, period, summary }) {
+  drawHeader(doc, "Transaction Report");
+
+  let y = 38;
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(22);
+  doc.setTextColor(INK);
+  doc.text("Transaction Report", MARGIN, y);
+
+  doc.setFont("courier", "normal");
+  doc.setFontSize(11);
+  doc.setTextColor(MUTED);
+  doc.text(period.label || "Period", PAGE_W - MARGIN, y, { align: "right" });
+  y += 7;
+
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(9);
+  doc.setTextColor(MUTED);
+  doc.text(`Operator: ${operator?.name || "—"}`, MARGIN, y);
+  y += 4;
+  doc.text(`Generated: ${fmtDateTime(new Date().toISOString())}`, MARGIN, y);
+  y += 4;
+  doc.text(`Coverage: ${fmtDate(period.start)} → ${fmtDate(period.end)}`, MARGIN, y);
+  y += 14;
+
+  // Summary box
+  doc.setFillColor(EMERALD);
+  doc.roundedRect(MARGIN, y, CONTENT_W, 26, 3, 3, "F");
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(8.5);
+  doc.setTextColor("#d1fae5");
+  doc.text("SUMMARY", MARGIN + 6, y + 8);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(16);
+  doc.setTextColor("#ffffff");
+  const summaryText = `${summary.totalCount} transactions · ${summary.totalVolumeText}`;
+  doc.text(summaryText, MARGIN + 6, y + 18);
+  doc.setFont("courier", "normal");
+  doc.setFontSize(9);
+  doc.setTextColor("#d1fae5");
+  doc.text(`${summary.settledCount} settled · ${summary.pendingCount} pending`, PAGE_W - MARGIN - 6, y + 18, { align: "right" });
+  y += 34;
+
+  // Volume breakdown by currency
+  if (summary.volumesByCurrency && Object.keys(summary.volumesByCurrency).length > 0) {
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(10);
+    doc.setTextColor(INK);
+    doc.text("Volume by currency", MARGIN, y);
+    y += 6;
+    Object.entries(summary.volumesByCurrency).forEach(([ccy, vol]) => {
+      doc.setFont("courier", "normal");
+      doc.setFontSize(9);
+      doc.setTextColor(MUTED);
+      doc.text(ccy, MARGIN, y);
+      doc.setTextColor(INK);
+      doc.text(fmtMoney(vol, ccy), PAGE_W - MARGIN, y, { align: "right" });
+      y += 5;
+    });
+    y += 6;
+  }
+
+  // Transactions table
+  doc.setDrawColor(LINE);
+  doc.line(MARGIN, y, PAGE_W - MARGIN, y);
+  y += 6;
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(10);
+  doc.setTextColor(INK);
+  doc.text("Transactions", MARGIN, y);
+  y += 6;
+
+  // Column headers
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(7.5);
+  doc.setTextColor(MUTED);
+  doc.text("DATE", MARGIN, y);
+  doc.text("CUSTOMER", MARGIN + 24, y);
+  doc.text("BENEFICIARY", MARGIN + 75, y);
+  doc.text("DEST", MARGIN + 125, y);
+  doc.text("AMOUNT", MARGIN + 145, y, { align: "right" });
+  doc.text("STATUS", PAGE_W - MARGIN, y, { align: "right" });
+  y += 3;
+  doc.line(MARGIN, y, PAGE_W - MARGIN, y);
+  y += 5;
+
+  // Rows
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(8);
+  doc.setTextColor(INK);
+  transactions.forEach((t) => {
+    if (y > PAGE_H - 30) {
+      drawFooter(doc, doc.internal.getNumberOfPages(), 0);
+      doc.addPage();
+      drawHeader(doc, "Transaction Report (cont.)");
+      y = 38;
+    }
+    const dateStr = t.created_at ? new Date(t.created_at).toLocaleDateString("en-GB", { day: "2-digit", month: "short" }) : "—";
+    doc.setTextColor(MUTED);
+    doc.setFont("courier", "normal");
+    doc.text(dateStr, MARGIN, y);
+    doc.setTextColor(INK);
+    doc.setFont("helvetica", "normal");
+    const cust = (t.customer_name || "—").slice(0, 22);
+    doc.text(cust, MARGIN + 24, y);
+    const ben = (t.beneficiary || "—").slice(0, 22);
+    doc.text(ben, MARGIN + 75, y);
+    doc.setFont("courier", "normal");
+    doc.text((t.destination || "—").slice(0, 6), MARGIN + 125, y);
+    doc.text(`${t.currency} ${parseFloat(t.amount || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}`, MARGIN + 145, y, { align: "right" });
+    const status = ((t.cedar_request_status || "").toUpperCase().includes("COMPLETED") || t.status === "filled") ? "SETTLED" : (t.status || "—").toUpperCase().slice(0, 10);
+    doc.setTextColor(status === "SETTLED" ? EMERALD : MUTED);
+    doc.text(status, PAGE_W - MARGIN, y, { align: "right" });
+    y += 5;
+  });
+
+  // Footer
+  const noteY = PAGE_H - 24;
+  doc.setDrawColor(LINE);
+  doc.line(MARGIN, noteY, PAGE_W - MARGIN, noteY);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(7.5);
+  doc.setTextColor(MUTED);
+  doc.text(`This report was generated by XaePay on behalf of ${operator?.name || "the operator"} from their transaction records. It is intended as a starting point for compliance filings (CBN, SCUML, NFIU, FIRS). The operator is responsible for verifying accuracy and adapting format to specific regulatory requirements.`, MARGIN, noteY + 5, { maxWidth: CONTENT_W });
+  doc.text("XaePay is not a regulated entity; this report does not constitute a regulatory filing.", MARGIN, noteY + 13, { maxWidth: CONTENT_W });
+}
+
+export function generateMonthlyTransactionReportPdf(args) {
+  const doc = new jsPDF({ unit: "mm", format: "a4" });
+  buildMonthlyTransactionReportPage(doc, args);
+  drawFooter(doc, doc.internal.getNumberOfPages(), 0);
+  return doc;
+}
+
+export function downloadRegulatoryReportPdf(doc, type, periodLabel) {
+  const safePeriod = (periodLabel || "report").replace(/[^\w-]+/g, "_");
+  const safeType = (type || "regulatory").replace(/[^\w-]+/g, "_");
+  doc.save(`XaePay-${safeType}-${safePeriod}.pdf`);
+}
+
+// Build CSV from an array of transactions. Used alongside the PDF so the
+// operator can also paste into Excel / regulator portals.
+export function buildTransactionsCsv(transactions) {
+  const header = ["Date", "Customer", "Customer phone", "Beneficiary", "Destination", "Amount", "Currency", "Rate (NGN/$)", "NGN total", "Status", "Cedar status", "Reference"];
+  const rows = transactions.map((t) => [
+    t.created_at ? new Date(t.created_at).toISOString().slice(0, 10) : "",
+    t.customer_name || "",
+    t.customer_phone || "",
+    t.beneficiary || "",
+    t.destination || "",
+    t.amount ?? "",
+    t.currency || "",
+    t.rate ?? "",
+    t.ngn_total ?? "",
+    t.status || "",
+    t.cedar_request_status || "",
+    t.id ? `QU-${t.id.slice(0, 8).toUpperCase()}` : "",
+  ]);
+  const escape = (v) => {
+    const s = String(v ?? "");
+    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+  return [header, ...rows].map((row) => row.map(escape).join(",")).join("\n");
+}
+
 export const _refForFilename = ref;
