@@ -1,0 +1,25 @@
+name: Renew Vercel firewall pause
+
+# Vercel's "system mitigations" auto-DDoS protection occasionally blocks real
+# users on mobile carriers (notably Nigerian LTE carriers). The fix is to keep
+# the protection paused. Pause lasts 24h, so this job runs every 12h to renew
+# it with plenty of safety margin.
+#
+# To activate: set VERCEL_TOKEN repo secret (see README block at top of job).
+# Project + org IDs are committed inline because they're not secrets.
+
+on:
+  schedule:
+    - cron: "0 */12 * * *"  # Every 12 hours — 12h overlap on the 24h pause
+  workflow_dispatch:         # Allow manual runs from the Actions tab
+
+jobs:
+  renew:
+    runs-on: ubuntu-latest
+    env:
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      VERCEL_PROJECT_ID: prj_pzewWTELCenm9gEOXRdVXN62I8vM
+      VERCEL_ORG_ID: team_3G8XwoW6dv5DuxQzcbaapMxo
+    steps:
+      - name: Pause Vercel system mitigations
+        run: npx --yes vercel@latest firewall system-mitigations pause --token "$VERCEL_TOKEN" --yes
