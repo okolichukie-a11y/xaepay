@@ -5,6 +5,7 @@ import {
 } from "lucide-react";
 import { TIERS } from "../XaePay.jsx";
 import { supabase, sendEmail, getPlatformSetting } from "../lib/supabase.js";
+import { CorridorMap, OperatorDashboardMockup, FlowPipeline } from "./PageVisuals.jsx";
 
 // =============================================================================
 // XaePay user-focused sub-pages — each pitched to one audience.
@@ -129,6 +130,10 @@ export function OperatorsPage() {
         </div>
       </Section>
 
+      <Section eyebrow="The dashboard" title="What you'll see when you sign in" lede="Stats strip · pending quotes · compliance reminders surfaced by the agent. Everything you need on one screen.">
+        <OperatorDashboardMockup />
+      </Section>
+
       <Section eyebrow="Tier economics" title="Pick your tier per transaction" lede="You set your customer-facing markup above the tier minimum. Your share of that markup depends on how much compliance work you want XaePay doing.">
         <div className="overflow-x-auto rounded-2xl" style={{ border: "1px solid var(--line)" }}>
           <table className="w-full text-sm">
@@ -155,11 +160,11 @@ export function OperatorsPage() {
       </Section>
 
       <Section eyebrow="How it works" title="Onboard once, transact forever">
-        <div className="grid gap-4 sm:grid-cols-3">
-          <Step n="01" title="Apply" body="Five-step onboarding: license wrapper, business details, partner letter, risk disclosure. We verify and confirm within 1–3 business days." footer="One-time" />
-          <Step n="02" title="Refer your first customer" body="Customer's KYC routes through XaePay to a licensed provider. Approval timelines: 5–15 business days." footer="Per customer · first-time" />
-          <Step n="03" title="Quote, collect, settle" body="Customer messages you with a payment. You forward to XaePay, pick a tier, set your markup. They confirm, deposit NGN, provider settles." footer="Per transaction" />
-        </div>
+        <FlowPipeline steps={[
+          { n: "01", title: "Apply", body: "Five-step onboarding: license wrapper, business details, partner letter, risk disclosure. We verify within 1–3 business days.", footer: "One-time" },
+          { n: "02", title: "Refer your first customer", body: "Customer's KYC routes through XaePay to a licensed provider. Approval: 5–15 business days.", footer: "Per customer · first-time" },
+          { n: "03", title: "Quote, collect, settle", body: "Customer messages you. Forward to XaePay, pick a tier, set your markup. They confirm, deposit NGN, provider settles.", footer: "Per transaction" },
+        ]} />
       </Section>
 
       <Section eyebrow="FAQ" title="Common operator questions">
@@ -304,6 +309,8 @@ export function SendUsdToNgnPage() {
           <span className="text-xs opacity-70">· Send FROM Nigeria</span>
         </button>
       </div>
+
+      <CorridorMap />
 
       {isOut ? (
         <>
