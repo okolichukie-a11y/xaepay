@@ -9,7 +9,7 @@ import {
 } from "lucide-react";
 import { supabase, sendWhatsAppText, sendWhatsAppTemplate, fetchCedarRate, submitCustomerToCedar, submitRecipientToCedar, submitReceiverAccountToCedar, submitCedarTransaction, approveCedarQuote, confirmCedarDeposit, cancelCedarTransaction, uploadCedarFile, uploadFileBoth, uploadInvoicePdf, uploadInvoicePaymentProof, uploadReceiptPdf, uploadRecipientReceiptPdf, uploadBrandLogo, uploadRegulatoryReportFile, pickServiceProviderForQuote, runComplianceReview, runComplianceWatchman, submitDocumentToCedar, sendEmail, safeUrl, logAuditEvent, getPlatformSettingInt } from "./lib/supabase.js";
 import { generateQuotePdf, uploadQuotePdf, downloadQuotePdf } from "./lib/pdf.js";
-import { generateCompliancePackPdf, downloadCompliancePackPdf, generateTransactionConfirmationPdf, downloadTransactionConfirmationPdf, generateInvoicePdf, downloadInvoicePdf, generateReceiptPdf, downloadReceiptPdf, generateRecipientReceiptPdf, downloadRecipientReceiptPdf, generateMonthlyTransactionReportPdf, downloadRegulatoryReportPdf, buildTransactionsCsv } from "./lib/pdf-doc.js";
+import { generateCompliancePackPdf, downloadCompliancePackPdf, generateTransactionConfirmationPdf, downloadTransactionConfirmationPdf, generateInvoicePdf, downloadInvoicePdf, generateReceiptPdf, downloadReceiptPdf, generateRecipientReceiptPdf, downloadRecipientReceiptPdf, generateMonthlyTransactionReportPdf, downloadRegulatoryReportPdf, buildTransactionsCsv, generateQuarterlyCustomerActivityReportPdf, buildCustomerActivityCsv } from "./lib/pdf-doc.js";
 import { TermsOfService, PrivacyPolicy, DataDeletion, RefundPolicy, ServiceProviderMSA } from "./legal/LegalPages.jsx";
 import { OperatorsPage, CustomersPage, ProvidersPage, SendUsdToNgnPage } from "./legal/UserPages.jsx";
 import { CounselBriefPage } from "./legal/CounselBriefPage.jsx";
@@ -8104,6 +8104,18 @@ function BDCRegulatoryReports() {
   const now = new Date();
   const defaultMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
   const [periodMonth, setPeriodMonth] = useState(defaultMonth);
+  // Quarterly report — defaults to the most recently completed quarter so
+  // operators are usually clicking "generate" for the previous filing window
+  // rather than the in-progress one.
+  const defaultQuarter = (() => {
+    const m = now.getMonth(); // 0-11
+    const currentQ = Math.floor(m / 3) + 1; // 1-4
+    const prevQ = currentQ === 1 ? 4 : currentQ - 1;
+    const prevYear = currentQ === 1 ? now.getFullYear() - 1 : now.getFullYear();
+    return `${prevYear}-Q${prevQ}`;
+  })();
+  const [periodQuarter, setPeriodQuarter] = useState(defaultQuarter);
+  const [generatingQuarter, setGeneratingQuarter] = useState(false);
 
   const fetchReports = async () => {
     if (!isSignedIn) return;
@@ -8212,6 +8224,169 @@ function BDCRegulatoryReports() {
     } finally { setGenerating(false); }
   };
 
+  const generateQuarterlyReport = async () => {
+    if (generatingQuarter || !auth.user) return;
+    setGeneratingQuarter(true);
+    try {
+      const m = periodQuarter.match(/^(\d{4})-Q([1-4])$/);
+      if (!m) { push("Invalid quarter format", "warn"); setGeneratingQuarter(false); return; }
+      const year = Number(m[1]);
+      const q = Number(m[2]);
+      const startMonth = (q - 1) * 3;
+      const start = new Date(year, startMonth, 1);
+      const end = new Date(year, startMonth + 3, 0, 23, 59, 59, 999);
+      const startIso = start.toISOString();
+      const endIso = end.toISOString();
+      const periodLabel = `Q${q} ${year}`;
+
+      // Pull all transactions in the quarter — RLS scopes to operator's own.
+      const { data: txns, error: txErr } = await supabase
+        .from("quotes")
+        .select("id, customer_id, customer_name, amount, currency, ngn_total, status, cedar_request_status, created_at")
+        .gte("created_at", startIso)
+        .lte("created_at", endIso);
+      if (txErr) throw txErr;
+      const transactions = txns || [];
+      if (transactions.length === 0) {
+        push("No transactions in this quarter — nothing to report.", "info");
+        setGeneratingQuarter(false);
+        return;
+      }
+
+      // Group transactions by customer_id (or by name when customer_id is null,
+      // which happens for walk-ins / quotes that didn't register a customer row).
+      const customerGroups = new Map();
+      transactions.forEach((t) => {
+        const key = t.customer_id || `name:${t.customer_name || "unknown"}`;
+        if (!customerGroups.has(key)) {
+          customerGroups.set(key, { customer_id: t.customer_id, customer_name: t.customer_name, txns: [] });
+        }
+        customerGroups.get(key).txns.push(t);
+      });
+
+      // Pull customer rows for the IDs we have
+      const customerIds = Array.from(customerGroups.values()).map((g) => g.customer_id).filter(Boolean);
+      let customersById = new Map();
+      if (customerIds.length > 0) {
+        const { data: custRows } = await supabase
+          .from("customers")
+          .select("id, name, business_name, email, phone, type, kyc_status, kyc_tier, provider_kyc_status")
+          .in("id", customerIds);
+        (custRows || []).forEach((c) => customersById.set(c.id, c));
+      }
+
+      // Build per-customer activity rows
+      const rows = [];
+      const kycBreakdown = {};
+      let totalTxnCount = 0;
+      const globalVolumes = {};
+      customerGroups.forEach((group) => {
+        const cust = group.customer_id ? customersById.get(group.customer_id) : null;
+        const name = cust?.name || group.customer_name || "—";
+        const business_name = cust?.business_name || null;
+        const type = cust?.type || "—";
+        const kyc_status = (cust?.kyc_status || "unknown").toLowerCase();
+        const volumesByCurrency = {};
+        const dates = [];
+        group.txns.forEach((t) => {
+          const c = (t.currency || "USD").toUpperCase();
+          volumesByCurrency[c] = (volumesByCurrency[c] || 0) + parseFloat(t.amount || 0);
+          globalVolumes[c] = (globalVolumes[c] || 0) + parseFloat(t.amount || 0);
+          if (t.created_at) dates.push(t.created_at);
+        });
+        dates.sort();
+        const volumeText = Object.entries(volumesByCurrency)
+          .map(([c, v]) => `${c} ${v.toLocaleString(undefined, { maximumFractionDigits: 0 })}`)
+          .join(" · ");
+        kycBreakdown[kyc_status] = (kycBreakdown[kyc_status] || 0) + 1;
+        totalTxnCount += group.txns.length;
+        rows.push({
+          name,
+          business_name,
+          type,
+          phone: cust?.phone || null,
+          email: cust?.email || null,
+          kyc_status,
+          kyc_tier: cust?.kyc_tier || null,
+          provider_kyc_status: cust?.provider_kyc_status || null,
+          txnCount: group.txns.length,
+          volumesByCurrency,
+          volumeText,
+          firstTxn: dates[0] || null,
+          lastTxn: dates[dates.length - 1] || null,
+        });
+      });
+      // Sort by volume desc — biggest customers at top of the report
+      rows.sort((a, b) => b.txnCount - a.txnCount);
+
+      const totalVolumeText = Object.entries(globalVolumes)
+        .map(([c, v]) => `${c} ${v.toLocaleString(undefined, { maximumFractionDigits: 0 })}`)
+        .join(" · ");
+      const summary = {
+        customerCount: rows.length,
+        txnCount: totalTxnCount,
+        totalVolumeText,
+        kycBreakdown,
+      };
+
+      const operatorName = auth.user?.user_metadata?.company || "XaeccoX";
+
+      const pdf = generateQuarterlyCustomerActivityReportPdf({
+        operator: { name: operatorName },
+        rows,
+        period: { label: periodLabel, start: startIso, end: endIso },
+        summary,
+      });
+      const csvString = buildCustomerActivityCsv(rows);
+      const csvBlob = new Blob([csvString], { type: "text/csv" });
+      const pdfBlob = pdf.output("blob");
+      const [pdfUp, csvUp] = await Promise.all([
+        uploadRegulatoryReportFile(auth.user.id, "quarterly_customer_activity", periodLabel, pdfBlob, "pdf"),
+        uploadRegulatoryReportFile(auth.user.id, "quarterly_customer_activity", periodLabel, csvBlob, "csv"),
+      ]);
+      if (!pdfUp.ok) { push(`PDF upload failed: ${pdfUp.error}`, "warn"); }
+      if (!csvUp.ok) { push(`CSV upload failed: ${csvUp.error}`, "warn"); }
+
+      const { error: insertErr } = await supabase.from("regulatory_reports").insert({
+        operator_user_id: auth.user.id,
+        report_type: "quarterly_customer_activity",
+        period_label: periodLabel,
+        period_start: start.toISOString().slice(0, 10),
+        period_end: end.toISOString().slice(0, 10),
+        pdf_url: pdfUp.ok ? pdfUp.url : null,
+        pdf_path: pdfUp.ok ? pdfUp.path : null,
+        csv_url: csvUp.ok ? csvUp.url : null,
+        csv_path: csvUp.ok ? csvUp.path : null,
+        metadata: { ...summary, totalCount: totalTxnCount },
+        generated_by: auth.user.id,
+      });
+      if (insertErr) throw insertErr;
+
+      downloadRegulatoryReportPdf(pdf, "quarterly-customer-activity", periodLabel);
+      push(`Report generated for ${periodLabel} · ${rows.length} active customers`, "success");
+      fetchReports();
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error("Quarterly report generation failed:", err);
+      push(`Couldn't generate report: ${err?.message || err}`, "warn");
+    } finally { setGeneratingQuarter(false); }
+  };
+
+  // Build a list of selectable quarters going back 8 quarters from the
+  // current calendar quarter (gives operators ~2 years of historical filings)
+  const quarterOptions = (() => {
+    const opts = [];
+    const m = now.getMonth();
+    let currentQ = Math.floor(m / 3) + 1;
+    let currentY = now.getFullYear();
+    for (let i = 0; i < 8; i++) {
+      opts.push({ value: `${currentY}-Q${currentQ}`, label: `Q${currentQ} ${currentY}` });
+      currentQ -= 1;
+      if (currentQ === 0) { currentQ = 4; currentY -= 1; }
+    }
+    return opts;
+  })();
+
   return (
     <div className="space-y-6">
       <Card>
@@ -8234,6 +8409,31 @@ function BDCRegulatoryReports() {
         </div>
         <p className="mt-3 text-xs" style={{ color: "var(--muted)" }}>
           Report includes: every transaction in the selected month, customer + beneficiary names, amounts, currencies, status, and a summary. PDF is downloaded immediately; both PDF + CSV are also saved here for future access.
+        </p>
+      </Card>
+
+      <Card>
+        <div className="flex items-baseline justify-between mb-2 flex-wrap gap-2">
+          <div>
+            <h3 className="font-display text-lg font-semibold flex items-center gap-2">
+              Quarterly Customer Activity Report
+              <span className="rounded-full px-2 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-wider" style={{ background: "var(--lime)", color: "var(--ink)" }}>Business</span>
+            </h3>
+            <p className="text-sm mt-1" style={{ color: "var(--muted)" }}>One row per customer who transacted in the quarter — KYC status, transaction count, volume per currency. Maps to CBN/SCUML AML reporting needs.</p>
+          </div>
+        </div>
+        <div className="grid gap-3 sm:grid-cols-[1fr_auto] items-end">
+          <Field label="Reporting period (quarter)">
+            <Select value={periodQuarter} onChange={(e) => setPeriodQuarter(e.target.value)}>
+              {quarterOptions.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </Select>
+          </Field>
+          <PrimaryBtn onClick={generateQuarterlyReport} disabled={generatingQuarter}>
+            {generatingQuarter ? <><Loader2 size={12} className="animate-spin" /> Generating…</> : <><FileText size={12} /> Generate report</>}
+          </PrimaryBtn>
+        </div>
+        <p className="mt-3 text-xs" style={{ color: "var(--muted)" }}>
+          Customers are grouped by their record (or by name for walk-ins). Sorted by transaction count. Walk-in customers with no compliance record appear with KYC status "unknown" — surface these for follow-up.
         </p>
       </Card>
 
@@ -8280,7 +8480,7 @@ function BDCRegulatoryReports() {
       <div className="rounded-xl p-4 text-xs" style={{ background: "rgba(15,95,63,0.05)", border: "1px solid rgba(15,95,63,0.15)" }}>
         <div className="font-mono text-[10px] uppercase tracking-wider mb-1" style={{ color: "var(--emerald)" }}>Coming soon</div>
         <p style={{ color: "var(--muted)" }}>
-          Quarterly Customer Activity Report (KYC status per customer, lifetime volume per period) and Suspicious Transaction Summary (transactions flagged by AI compliance review pre-formatted for STR submission) are next on the regulatory-reports roadmap.
+          Suspicious Transaction Summary — transactions flagged by AI compliance review, pre-formatted for STR submission — is next on the regulatory-reports roadmap.
         </p>
       </div>
     </div>

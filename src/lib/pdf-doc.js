@@ -1408,6 +1408,183 @@ export function downloadRegulatoryReportPdf(doc, type, periodLabel) {
   doc.save(`XaePay-${safeType}-${safePeriod}.pdf`);
 }
 
+// =============================================================================
+// Quarterly Customer Activity Report — for CBN / SCUML AML obligations.
+// One row per customer who transacted in the quarter, with KYC status, count,
+// volume per currency, and first/last transaction dates.
+// =============================================================================
+
+function buildQuarterlyCustomerActivityReportPage(doc, { operator, rows, period, summary }) {
+  drawHeader(doc, "Customer Activity");
+
+  let y = 38;
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(22);
+  doc.setTextColor(INK);
+  doc.text("Customer Activity", MARGIN, y);
+
+  doc.setFont("courier", "normal");
+  doc.setFontSize(11);
+  doc.setTextColor(MUTED);
+  doc.text(period.label || "Quarter", PAGE_W - MARGIN, y, { align: "right" });
+  y += 7;
+
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(9);
+  doc.setTextColor(MUTED);
+  doc.text(`Operator: ${operator?.name || "—"}`, MARGIN, y);
+  y += 4;
+  doc.text(`Generated: ${fmtDateTime(new Date().toISOString())}`, MARGIN, y);
+  y += 4;
+  doc.text(`Coverage: ${fmtDate(period.start)} → ${fmtDate(period.end)}`, MARGIN, y);
+  y += 14;
+
+  // Summary box
+  doc.setFillColor(EMERALD);
+  doc.roundedRect(MARGIN, y, CONTENT_W, 26, 3, 3, "F");
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(8.5);
+  doc.setTextColor("#d1fae5");
+  doc.text("SUMMARY", MARGIN + 6, y + 8);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(16);
+  doc.setTextColor("#ffffff");
+  doc.text(`${summary.customerCount} active customers · ${summary.txnCount} transactions`, MARGIN + 6, y + 18);
+  doc.setFont("courier", "normal");
+  doc.setFontSize(9);
+  doc.setTextColor("#d1fae5");
+  doc.text(summary.totalVolumeText || "", PAGE_W - MARGIN - 6, y + 18, { align: "right" });
+  y += 34;
+
+  // KYC status breakdown
+  if (summary.kycBreakdown && Object.keys(summary.kycBreakdown).length > 0) {
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(10);
+    doc.setTextColor(INK);
+    doc.text("KYC status across active customers", MARGIN, y);
+    y += 6;
+    Object.entries(summary.kycBreakdown).forEach(([status, count]) => {
+      doc.setFont("courier", "normal");
+      doc.setFontSize(9);
+      doc.setTextColor(MUTED);
+      doc.text(status, MARGIN, y);
+      doc.setTextColor(INK);
+      doc.text(`${count}`, PAGE_W - MARGIN, y, { align: "right" });
+      y += 5;
+    });
+    y += 6;
+  }
+
+  // Customer table
+  doc.setDrawColor(LINE);
+  doc.line(MARGIN, y, PAGE_W - MARGIN, y);
+  y += 6;
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(10);
+  doc.setTextColor(INK);
+  doc.text("Active customers", MARGIN, y);
+  y += 6;
+
+  // Headers
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(7.5);
+  doc.setTextColor(MUTED);
+  doc.text("CUSTOMER", MARGIN, y);
+  doc.text("TYPE", MARGIN + 65, y);
+  doc.text("KYC", MARGIN + 82, y);
+  doc.text("TXNS", MARGIN + 105, y, { align: "right" });
+  doc.text("VOLUME", PAGE_W - MARGIN, y, { align: "right" });
+  y += 3;
+  doc.line(MARGIN, y, PAGE_W - MARGIN, y);
+  y += 5;
+
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(8);
+  doc.setTextColor(INK);
+  rows.forEach((r) => {
+    if (y > PAGE_H - 30) {
+      drawFooter(doc, doc.internal.getNumberOfPages(), 0);
+      doc.addPage();
+      drawHeader(doc, "Customer Activity (cont.)");
+      y = 38;
+    }
+    const nameLine = (r.business_name || r.name || "—").slice(0, 30);
+    doc.setTextColor(INK);
+    doc.setFont("helvetica", "normal");
+    doc.text(nameLine, MARGIN, y);
+
+    doc.setFont("courier", "normal");
+    doc.setTextColor(MUTED);
+    doc.text((r.type || "—").slice(0, 8), MARGIN + 65, y);
+    const kyc = (r.kyc_status || "—").toUpperCase().slice(0, 12);
+    const kycColor = kyc === "VALID" || kyc === "APPROVED" ? EMERALD : MUTED;
+    doc.setTextColor(kycColor);
+    doc.text(kyc, MARGIN + 82, y);
+
+    doc.setTextColor(INK);
+    doc.text(`${r.txnCount}`, MARGIN + 105, y, { align: "right" });
+
+    doc.setFont("courier", "normal");
+    doc.setTextColor(INK);
+    doc.text(r.volumeText || "—", PAGE_W - MARGIN, y, { align: "right" });
+    y += 5;
+
+    // Secondary line: phone + email + first/last txn date
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(7);
+    doc.setTextColor(MUTED);
+    const meta = [r.phone, r.email, r.firstTxn ? `first ${fmtDate(r.firstTxn)}` : null, r.lastTxn ? `last ${fmtDate(r.lastTxn)}` : null].filter(Boolean).join(" · ");
+    doc.text(meta.slice(0, 110), MARGIN, y);
+    doc.setFontSize(8);
+    y += 5;
+  });
+
+  // Footer
+  const noteY = PAGE_H - 24;
+  doc.setDrawColor(LINE);
+  doc.line(MARGIN, noteY, PAGE_W - MARGIN, noteY);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(7.5);
+  doc.setTextColor(MUTED);
+  doc.text(`This report was generated by XaePay on behalf of ${operator?.name || "the operator"} from their customer + transaction records. Intended as a starting point for AML/KYC filings (CBN, SCUML, NFIU). The operator is responsible for verifying accuracy.`, MARGIN, noteY + 5, { maxWidth: CONTENT_W });
+  doc.text("XaePay is not a regulated entity; this report does not constitute a regulatory filing.", MARGIN, noteY + 13, { maxWidth: CONTENT_W });
+}
+
+export function generateQuarterlyCustomerActivityReportPdf(args) {
+  const doc = new jsPDF({ unit: "mm", format: "a4" });
+  buildQuarterlyCustomerActivityReportPage(doc, args);
+  drawFooter(doc, doc.internal.getNumberOfPages(), 0);
+  return doc;
+}
+
+// Build CSV from quarterly customer activity rows.
+export function buildCustomerActivityCsv(rows) {
+  const header = ["Customer", "Business name", "Type", "Phone", "Email", "KYC status", "KYC tier", "Provider KYC", "Transactions", "Volume (USD)", "Volume (GBP)", "Volume (EUR)", "Volume (NGN)", "First transaction", "Last transaction"];
+  const csvRows = rows.map((r) => [
+    r.name || "",
+    r.business_name || "",
+    r.type || "",
+    r.phone || "",
+    r.email || "",
+    r.kyc_status || "",
+    r.kyc_tier || "",
+    r.provider_kyc_status || "",
+    r.txnCount ?? 0,
+    r.volumesByCurrency?.USD ?? "",
+    r.volumesByCurrency?.GBP ?? "",
+    r.volumesByCurrency?.EUR ?? "",
+    r.volumesByCurrency?.NGN ?? "",
+    r.firstTxn || "",
+    r.lastTxn || "",
+  ]);
+  const escape = (v) => {
+    const s = String(v ?? "");
+    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+  return [header, ...csvRows].map((row) => row.map(escape).join(",")).join("\n");
+}
+
 // Build CSV from an array of transactions. Used alongside the PDF so the
 // operator can also paste into Excel / regulator portals.
 export function buildTransactionsCsv(transactions) {
