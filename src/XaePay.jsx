@@ -1205,7 +1205,7 @@ function TopBar({ view, setView, mobileOpen, setMobileOpen, onSignIn, onRequestA
   const onLanding = view === "landing";
   return (
     <div className="sticky top-0 z-50 backdrop-blur-xl safe-top" style={{ background: onLanding ? "rgba(10,11,13,0.72)" : "rgba(252,251,247,0.85)", borderBottom: `1px solid ${onLanding ? "rgba(255,255,255,0.06)" : "var(--line)"}`, color: onLanding ? "var(--bone)" : "var(--ink)" }}>
-      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+      <div className="mx-auto max-w-screen-2xl px-4 sm:px-6 lg:px-8">
         <div className="flex h-16 items-center justify-between">
           <button onClick={() => setView(authUser ? "bdc" : "landing")} className="flex items-center gap-2.5">
             <div className="flex h-8 w-8 items-center justify-center rounded-lg" style={{ background: "linear-gradient(135deg, var(--emerald), var(--emerald-deep))" }}>
@@ -2596,7 +2596,7 @@ function WhoItsFor() {
   ];
   return (
     <section className="border-b" style={{ borderColor: "var(--line)", background: "var(--bone)" }}>
-      <div className="mx-auto max-w-5xl px-4 py-20 sm:px-6 lg:px-8 lg:py-24">
+      <div className="mx-auto max-w-6xl px-4 py-20 sm:px-6 lg:px-8 lg:py-24">
         <div className="mb-12 text-center">
           <div className="inline-flex items-center gap-2 rounded-full border px-3 py-1 mb-5" style={{ borderColor: "rgba(15,95,63,0.18)", background: "rgba(15,95,63,0.04)" }}>
             <div className="h-1.5 w-1.5 rounded-full pulse-dot" style={{ background: "var(--emerald)", boxShadow: "0 0 6px var(--emerald)" }} />
@@ -2656,7 +2656,7 @@ function CapabilityStrip() {
     { icon: Layers, title: "Multi-provider rails", body: "Multiple licensed providers competing for routing. Best fit per transaction based on corridor, cost, and speed." },
   ];
   return (
-    <section className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8 lg:py-20">
+    <section className="mx-auto max-w-screen-2xl px-4 py-16 sm:px-6 lg:px-8 lg:py-20">
       <div className="mb-10 max-w-2xl">
         <SectionEyebrow>Capabilities</SectionEyebrow>
         <h2 className="font-display mt-3 text-4xl font-[450] leading-[1.05] tracking-tight sm:text-5xl">Everything in <span className="italic" style={{ color: "var(--emerald)" }}>one platform.</span></h2>
@@ -2686,7 +2686,7 @@ function StructureSection() {
   ];
   return (
     <section className="border-b" style={{ borderColor: "var(--line)", background: "var(--bone)" }}>
-      <div className="mx-auto max-w-7xl px-4 py-20 sm:px-6 lg:px-8 lg:py-28">
+      <div className="mx-auto max-w-screen-2xl px-4 py-20 sm:px-6 lg:px-8 lg:py-28">
         <div className="grid gap-12 lg:grid-cols-12">
           <div className="lg:col-span-5">
             <SectionEyebrow>§04  How we're structured</SectionEyebrow>
@@ -2719,7 +2719,7 @@ function Hero({ onGetStarted, onCustomerSignup }) {
   return (
     <section className="relative overflow-hidden hero-mesh" style={{ color: "var(--bone)" }}>
       <div className="absolute inset-0 hero-grid" />
-      <div className="relative mx-auto max-w-7xl px-4 py-20 sm:px-6 lg:px-8 lg:py-28">
+      <div className="relative mx-auto max-w-screen-2xl px-4 py-20 sm:px-6 lg:px-8 lg:py-28">
         <div className="grid gap-14 lg:grid-cols-12 lg:gap-10">
           <div className="lg:col-span-7">
             <div className="rise inline-flex items-center gap-2 rounded-full border px-3 py-1 mb-6" style={{ borderColor: "rgba(197,242,74,0.3)", background: "rgba(197,242,74,0.05)" }}>
@@ -2903,7 +2903,7 @@ function HowItWorks() {
   // play — sees where they fit. Audience-specific deep how-it-works content
   // lives on the /?p=operators, /?p=customers, etc. sub-pages.
   return (
-    <section className="border-y mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8 lg:py-20" style={{ borderColor: "var(--line)" }}>
+    <section className="border-y mx-auto max-w-screen-2xl px-4 py-16 sm:px-6 lg:px-8 lg:py-20" style={{ borderColor: "var(--line)" }}>
       <div className="mb-10 max-w-2xl">
         <SectionEyebrow>How it works</SectionEyebrow>
         <h2 className="font-display mt-3 text-4xl font-[450] leading-[1.05] tracking-tight sm:text-5xl">Three layers. <span className="italic" style={{ color: "var(--emerald)" }}>One transaction.</span></h2>
@@ -2938,7 +2938,7 @@ function HowItWorks() {
 function FourTiers({ onGetStarted }) {
   return (
     <section className="border-y" style={{ borderColor: "var(--line)", background: "var(--bone)" }}>
-      <div className="mx-auto max-w-7xl px-4 py-20 sm:px-6 lg:px-8 lg:py-28">
+      <div className="mx-auto max-w-screen-2xl px-4 py-20 sm:px-6 lg:px-8 lg:py-28">
         <div className="mb-14 max-w-2xl">
           <SectionEyebrow>Service tiers</SectionEyebrow>
           <h2 className="font-display mt-4 text-4xl font-[450] leading-[1.05] tracking-tight sm:text-5xl">Five tiers. <span className="italic" style={{ color: "var(--emerald)" }}>You pick</span> per transaction.</h2>
@@ -3035,7 +3035,7 @@ const TIER_FEATURES = {
 
 function PartnerEconomics({ onGetStarted }) {
   return (
-    <section className="mx-auto max-w-7xl px-4 py-20 sm:px-6 lg:px-8 lg:py-28">
+    <section className="mx-auto max-w-screen-2xl px-4 py-20 sm:px-6 lg:px-8 lg:py-28">
       <div className="grid gap-12 lg:grid-cols-12 lg:gap-16">
         <div className="lg:col-span-5">
           <SectionEyebrow>Your economics</SectionEyebrow>
@@ -3081,7 +3081,7 @@ function PartnerEconomics({ onGetStarted }) {
 function CTA({ onGetStarted, onCustomerSignup }) {
   return (
     <section className="border-t" style={{ borderColor: "var(--line)", background: "var(--bone)" }}>
-      <div className="mx-auto max-w-7xl px-4 py-20 sm:px-6 lg:px-8 lg:py-24">
+      <div className="mx-auto max-w-screen-2xl px-4 py-20 sm:px-6 lg:px-8 lg:py-24">
         <div className="text-center max-w-2xl mx-auto">
           <h2 className="font-display text-4xl font-[450] leading-[1.05] tracking-tight sm:text-5xl">Ready to plug in?</h2>
           <p className="mt-5 text-base leading-relaxed" style={{ color: "var(--muted)" }}>Pick the role you're playing — operator, customer, or licensed payment provider. Each gets its own dashboard, its own economics, and its own way in.</p>
@@ -3154,7 +3154,7 @@ function Ticker() {
   ];
   return (
     <section className="overflow-hidden" style={{ background: "var(--ink)", color: "var(--bone)", borderBottom: "1px solid var(--line)" }}>
-      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+      <div className="mx-auto max-w-screen-2xl px-4 sm:px-6 lg:px-8">
         <div className="flex items-center gap-8 overflow-x-auto py-4 sm:gap-12">
           {data.map((d, i) => (
             <div key={i} className="flex flex-shrink-0 items-baseline gap-2 whitespace-nowrap">
@@ -3177,7 +3177,7 @@ function ProblemSection() {
     { icon: Shield, title: "Quarterly partner reviews", body: "Audit evidence packs prepared and delivered to our licensed payment provider each quarter. Missing docs risks rail access." },
   ];
   return (
-    <section className="mx-auto max-w-7xl px-4 py-20 sm:px-6 lg:px-8 lg:py-28">
+    <section className="mx-auto max-w-screen-2xl px-4 py-20 sm:px-6 lg:px-8 lg:py-28">
       <div className="grid gap-14 lg:grid-cols-12">
         <div className="lg:col-span-5">
           <SectionEyebrow>§01  The problem</SectionEyebrow>
@@ -3209,7 +3209,7 @@ function RailsSection() {
   ];
   return (
     <section className="border-y" style={{ borderColor: "var(--line)", background: "var(--bone)" }}>
-      <div className="mx-auto max-w-7xl px-4 py-20 sm:px-6 lg:px-8 lg:py-28">
+      <div className="mx-auto max-w-screen-2xl px-4 py-20 sm:px-6 lg:px-8 lg:py-28">
         <div className="grid gap-12 lg:grid-cols-12">
           <div className="lg:col-span-5">
             <SectionEyebrow>§02  Payment infrastructure</SectionEyebrow>
@@ -3246,7 +3246,7 @@ function AgentsSection() {
   ];
   return (
     <section className="border-b" style={{ borderColor: "var(--line)" }}>
-      <div className="mx-auto max-w-7xl px-4 py-20 sm:px-6 lg:px-8 lg:py-28">
+      <div className="mx-auto max-w-screen-2xl px-4 py-20 sm:px-6 lg:px-8 lg:py-28">
         <div className="mb-14 max-w-2xl">
           <SectionEyebrow>§03  The agents</SectionEyebrow>
           <h2 className="font-display mt-4 text-4xl font-[450] leading-[1.05] tracking-tight sm:text-5xl">Six AI agents.<br />One <span className="italic" style={{ color: "var(--emerald)" }}>defensible</span> transaction.</h2>
@@ -3269,7 +3269,7 @@ function AgentsSection() {
 
 function SidesSection({ setView }) {
   return (
-    <section className="mx-auto max-w-7xl px-4 py-20 sm:px-6 lg:px-8 lg:py-28">
+    <section className="mx-auto max-w-screen-2xl px-4 py-20 sm:px-6 lg:px-8 lg:py-28">
       <div className="mb-14 max-w-2xl">
         <SectionEyebrow>§05  Who it serves</SectionEyebrow>
         <h2 className="font-display mt-4 text-4xl font-[450] leading-[1.05] tracking-tight sm:text-5xl">Six sides. One<br /><span className="italic" style={{ color: "var(--emerald)" }}>infrastructure</span>.</h2>
@@ -3307,7 +3307,7 @@ function PricingSection({ onRequestAccess, onWaitlist }) {
   const [audience, setAudience] = useState("business");
   return (
     <section className="border-y" style={{ borderColor: "var(--line)", background: "var(--bone)" }}>
-      <div className="mx-auto max-w-7xl px-4 py-20 sm:px-6 lg:px-8 lg:py-28">
+      <div className="mx-auto max-w-screen-2xl px-4 py-20 sm:px-6 lg:px-8 lg:py-28">
         <div className="mb-10 max-w-2xl">
           <SectionEyebrow>§06  Pricing</SectionEyebrow>
           <h2 className="font-display mt-4 text-4xl font-[450] leading-[1.05] tracking-tight sm:text-5xl">You pay for the <span className="italic" style={{ color: "var(--emerald)" }}>work</span>.<br />Not for the wire.</h2>
@@ -3534,7 +3534,7 @@ function Footer({ onWaitlist }) {
   return (
     <footer className="relative overflow-hidden" style={{ background: "var(--ink)", color: "var(--bone)" }}>
       <div className="absolute inset-0 hero-grid opacity-50" />
-      <div className="relative mx-auto max-w-7xl px-4 py-14 sm:px-6 lg:px-8">
+      <div className="relative mx-auto max-w-screen-2xl px-4 py-14 sm:px-6 lg:px-8">
         <div className="grid gap-10 md:grid-cols-12">
           <div className="md:col-span-6">
             <div className="flex items-center gap-2.5">
@@ -6217,7 +6217,7 @@ function ProviderPortal({ session, memberships }) {
   ];
 
   return (
-    <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8 lg:py-10">
+    <div className="mx-auto max-w-screen-2xl px-4 py-6 sm:px-6 lg:px-8 lg:py-10">
       <div className="mb-6 flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-end">
         <div className="rise">
           <SectionEyebrow>Service provider portal</SectionEyebrow>
@@ -7109,7 +7109,7 @@ function BDCDashboard({ session, initialCustomerId, onInitialCustomerHandled }) 
     ? `Agent operator · ${session.wrapper}`
     : "Agent operator · Account active";
   return (
-    <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8 lg:py-10">
+    <div className="mx-auto max-w-screen-2xl px-4 py-6 sm:px-6 lg:px-8 lg:py-10">
       <div className="mb-6 flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-end">
         <div className="rise">
           <SectionEyebrow>Operator dashboard</SectionEyebrow>
@@ -13767,7 +13767,7 @@ function LPDashboard({ session }) {
     { id: "MT-8811", bdc: "Dula Global BDC", amount: 60000, rate: "₦1,390", ngnReceivable: "₦83,400,000", status: "settled", date: "Apr 18" },
   ];
   return (
-    <div className="mx-auto max-w-7xl px-4 py-10 sm:px-6 lg:px-8 lg:py-14">
+    <div className="mx-auto max-w-screen-2xl px-4 py-10 sm:px-6 lg:px-8 lg:py-14">
       <div className="mb-6 flex items-start justify-between gap-4">
         <div className="rise">
           <div className="flex items-center gap-2">

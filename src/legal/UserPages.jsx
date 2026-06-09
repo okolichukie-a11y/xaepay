@@ -5,7 +5,7 @@ import {
 } from "lucide-react";
 import { TIERS } from "../XaePay.jsx";
 import { supabase, sendEmail, getPlatformSetting } from "../lib/supabase.js";
-import { CorridorMap, OperatorDashboardMockup, FlowPipeline } from "./PageVisuals.jsx";
+import { CorridorMap, OperatorDashboardMockup, CustomerPortalMockup, ProviderQueueMockup, FlowPipeline } from "./PageVisuals.jsx";
 
 // =============================================================================
 // XaePay user-focused sub-pages — each pitched to one audience.
@@ -28,7 +28,7 @@ function PageShell({ eyebrow, title, lede, primaryCta, secondaryCta, children })
 
       <section className="relative overflow-hidden hero-mesh" style={{ color: "var(--bone)" }}>
         <div className="absolute inset-0 hero-grid" />
-        <div className="relative mx-auto max-w-5xl px-4 py-20 sm:px-6 lg:px-8">
+        <div className="relative mx-auto max-w-7xl px-4 py-20 sm:px-6 lg:px-8">
           <a href="/" className="font-mono text-[11px] uppercase tracking-wider underline" style={{ color: "rgba(247,245,240,0.5)" }}>← xaepay.com</a>
           <div className="rise mt-6 inline-flex items-center gap-2 rounded-full border px-3 py-1" style={{ borderColor: "rgba(197,242,74,0.3)", background: "rgba(197,242,74,0.05)" }}>
             <div className="h-1.5 w-1.5 rounded-full pulse-dot" style={{ background: "var(--lime)", boxShadow: "0 0 8px var(--lime)" }} />
@@ -52,10 +52,10 @@ function PageShell({ eyebrow, title, lede, primaryCta, secondaryCta, children })
         </div>
       </section>
 
-      <div className="mx-auto max-w-5xl px-4 py-16 sm:px-6 lg:px-8">{children}</div>
+      <div className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8">{children}</div>
 
       <footer className="border-t" style={{ borderColor: "var(--line)", background: "var(--bone)" }}>
-        <div className="mx-auto max-w-5xl px-4 py-8 sm:px-6 lg:px-8 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between font-mono text-[10px] uppercase tracking-wider" style={{ color: "var(--muted)" }}>
+        <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between font-mono text-[10px] uppercase tracking-wider" style={{ color: "var(--muted)" }}>
           <div>© 2026 XaePay · Lagos · Los Angeles</div>
           <div className="flex gap-5">
             <a href="/?p=terms" style={{ color: "inherit" }} className="underline">Terms</a>
@@ -215,12 +215,16 @@ export function CustomersPage() {
         </div>
       </Section>
 
+      <Section eyebrow="In your portal" title="What paying looks like" lede="One invoice, multiple ways to pay, receipt at both ends. The cross-border complexity stays out of your way.">
+        <CustomerPortalMockup />
+      </Section>
+
       <Section eyebrow="How it works" title="Three steps">
-        <div className="grid gap-4 sm:grid-cols-3">
-          <Step n="01" title="Get matched with an operator" body="Tell us who you are and what you need to pay. We connect you with a vetted operator. Your operator handles KYC + onboarding with the payment provider." footer="One-time" />
-          <Step n="02" title="Request a quote" body="In your portal, request a quote with the amount, recipient details, and (if you have one) the supplier's invoice. Your operator prices it and sends back a quote you have 4 minutes to approve." footer="Per transaction" />
-          <Step n="03" title="Pay, receive proof" body="Deposit NGN to the funding instructions. The licensed provider executes the wire. You get a receipt + payment confirmation — forwardable to your supplier directly." footer="Same-day execution" />
-        </div>
+        <FlowPipeline steps={[
+          { n: "01", title: "Get matched with an operator", body: "Tell us who you are and what you need to pay. We connect you with a vetted operator who handles KYC + onboarding with the provider.", footer: "One-time" },
+          { n: "02", title: "Request a quote", body: "Request a quote with the amount, recipient details, and (if you have one) the supplier's invoice. Your operator prices it; you have 4 minutes to approve.", footer: "Per transaction" },
+          { n: "03", title: "Pay, receive proof", body: "Deposit NGN to the funding instructions. The licensed provider executes the wire. You get a receipt + payment confirmation — forwardable to your supplier.", footer: "Same-day execution" },
+        ]} />
       </Section>
 
       <Section eyebrow="Local invoices" title="More than just cross-border" lede="Operators also use XaePay to bill you for local services and goods. Pay them via Zelle, ACH, wire, bank transfer, USSD, card link, or international wire — all from one invoice with a single 'I've paid' button.">
@@ -330,12 +334,12 @@ export function SendUsdToNgnPage() {
           </Section>
 
           <Section eyebrow="How it works" title="Four steps to NGN at the destination">
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-              <Step n="01" title="Sign up" body="Tell us who you are and who you're sending to. KYC takes 5–15 business days the first time; instant after that." footer="One-time per sender" />
-              <Step n="02" title="Quote a payment" body="Pick the USD amount you're sending. Your operator quotes a locked NGN rate within minutes." footer="Per transaction" />
-              <Step n="03" title="Send the USD" body="Wire / ACH / Zelle / card from your US (or other) account to the licensed payment provider's USD collection account. You don't send NGN — that's our problem." footer="Same-day clearing" />
-              <Step n="04" title="Recipient receives NGN" body="Once your USD clears, the licensed provider executes the NGN payout to your recipient's Nigerian bank account. Receipt issued automatically." footer="Same-day landing" />
-            </div>
+            <FlowPipeline steps={[
+              { n: "01", title: "Sign up", body: "Tell us who you are and who you're sending to. KYC takes 5–15 business days the first time; instant after that.", footer: "One-time per sender" },
+              { n: "02", title: "Quote a payment", body: "Pick the USD amount you're sending. Your operator quotes a locked NGN rate within minutes.", footer: "Per transaction" },
+              { n: "03", title: "Send the USD", body: "Wire / ACH / Zelle / card to the licensed provider's USD collection account. You don't send NGN — that's our problem.", footer: "Same-day clearing" },
+              { n: "04", title: "Recipient receives NGN", body: "Once your USD clears, the licensed provider executes the NGN payout to your recipient's Nigerian bank account.", footer: "Same-day landing" },
+            ]} />
           </Section>
         </>
       ) : (
@@ -356,12 +360,12 @@ export function SendUsdToNgnPage() {
           </Section>
 
           <Section eyebrow="How it works" title="Four steps to USD at the destination">
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-              <Step n="01" title="Sign up" body="Tell us who you are and who you're paying. KYC + supporting documents (invoice / Form M / supplier confirmation) the first time; faster after that." footer="One-time per sender" />
-              <Step n="02" title="Quote a payment" body="Tell us the USD amount your beneficiary needs to receive. Your operator locks the NGN rate you'll pay within minutes." footer="Per transaction" />
-              <Step n="03" title="Deposit the NGN" body="Transfer NGN to the licensed provider's NGN collection account in Nigeria. Funding instructions appear when you confirm." footer="Same-day clearing" />
-              <Step n="04" title="Beneficiary receives USD" body="Once NGN clears, the licensed provider executes the USD payout to the beneficiary's foreign bank account. Receipt issued automatically." footer="Same-day landing" />
-            </div>
+            <FlowPipeline steps={[
+              { n: "01", title: "Sign up", body: "Tell us who you are and who you're paying. KYC + supporting documents (invoice / Form M / supplier confirmation) the first time.", footer: "One-time per sender" },
+              { n: "02", title: "Quote a payment", body: "Tell us the USD amount your beneficiary needs to receive. Your operator locks the NGN rate you'll pay within minutes.", footer: "Per transaction" },
+              { n: "03", title: "Deposit the NGN", body: "Transfer NGN to the licensed provider's NGN collection account in Nigeria. Funding instructions appear when you confirm.", footer: "Same-day clearing" },
+              { n: "04", title: "Beneficiary receives USD", body: "Once NGN clears, the licensed provider executes the USD payout to the beneficiary's foreign bank account.", footer: "Same-day landing" },
+            ]} />
           </Section>
         </>
       )}
@@ -459,12 +463,16 @@ export function ProvidersPage() {
         </div>
       </Section>
 
+      <Section eyebrow="Your queue" title="What you'll work in" lede="Pre-screened KYC packages on your desk. Approve / reject with one click. Webhook-driven status syncs back to the operator automatically.">
+        <ProviderQueueMockup />
+      </Section>
+
       <Section eyebrow="How it works" title="Three steps to start receiving routed flow">
-        <div className="grid gap-4 sm:grid-cols-3">
-          <Step n="01" title="Onboarding diligence" body="Share your licenses, supported corridors, and integration profile. We confirm fit and reserve your slot in the routing pool." footer="One-time" />
-          <Step n="02" title="Counterpart signed" body="Master Service Agreement, service levels, and pricing schedule signed by both parties. API keys / portal access provisioned." footer="One-time" />
-          <Step n="03" title="Receive routed flow" body="Operators' transactions start arriving in your queue, fully documented. You review KYC, execute the leg, and statuses sync back to the operator." footer="Per transaction" />
-        </div>
+        <FlowPipeline steps={[
+          { n: "01", title: "Onboarding diligence", body: "Share your licenses, supported corridors, and integration profile. We confirm fit and reserve your slot in the routing pool.", footer: "One-time" },
+          { n: "02", title: "Counterpart signed", body: "Master Service Agreement, service levels, and pricing schedule signed by both parties. API keys / portal access provisioned.", footer: "One-time" },
+          { n: "03", title: "Receive routed flow", body: "Operators' transactions start arriving in your queue, fully documented. You review KYC, execute the leg, and statuses sync back automatically.", footer: "Per transaction" },
+        ]} />
       </Section>
 
       <Section eyebrow="FAQ" title="Common provider questions">

@@ -238,6 +238,150 @@ export function OperatorDashboardMockup() {
 }
 
 // -----------------------------------------------------------------------------
+// CustomerPortalMockup — fake customer portal showing an active invoice with
+// multi-method payment options. Used on /?p=customers.
+// -----------------------------------------------------------------------------
+export function CustomerPortalMockup() {
+  return (
+    <BrowserMockup url="xaepay.com/portal" title="Customer portal">
+      <div className="p-4 sm:p-6" style={{ background: "var(--paper)" }}>
+        <div className="rounded-xl p-5" style={{ background: "white", border: "1px solid var(--line)" }}>
+          {/* Invoice header */}
+          <div className="flex items-start justify-between gap-3 mb-4 pb-4" style={{ borderBottom: "1px solid var(--line)" }}>
+            <div>
+              <div className="font-mono text-[10px] uppercase tracking-wider" style={{ color: "var(--muted)" }}>Invoice · INV-2147</div>
+              <div className="font-display text-xl font-semibold mt-1">Shenzhen Hardware Co.</div>
+              <div className="text-xs mt-0.5" style={{ color: "var(--muted)" }}>USD wire · supplier payment · due Jun 12</div>
+            </div>
+            <div className="text-right">
+              <div className="font-display text-2xl font-semibold">$25,000.00</div>
+              <div className="font-mono text-[10px] mt-0.5" style={{ color: "var(--emerald)" }}>Rate locked · ₦1,400/$</div>
+            </div>
+          </div>
+
+          {/* NGN total + reference */}
+          <div className="grid grid-cols-2 gap-3 mb-4">
+            <div className="rounded-lg p-3" style={{ background: "var(--bone)" }}>
+              <div className="font-mono text-[9px] uppercase tracking-wider" style={{ color: "var(--muted)" }}>NGN total</div>
+              <div className="font-display text-lg font-semibold mt-0.5">₦35,000,000</div>
+            </div>
+            <div className="rounded-lg p-3" style={{ background: "var(--bone)" }}>
+              <div className="font-mono text-[9px] uppercase tracking-wider" style={{ color: "var(--muted)" }}>Tier · audit pack</div>
+              <div className="font-display text-lg font-semibold mt-0.5">Documented</div>
+            </div>
+          </div>
+
+          {/* Payment options */}
+          <div className="font-mono text-[10px] uppercase tracking-wider mb-2" style={{ color: "var(--muted)" }}>Pay via</div>
+          <div className="grid grid-cols-2 gap-2 mb-4">
+            {[
+              { label: "Bank transfer", sub: "Zenith · GTB · Access" },
+              { label: "Card", sub: "Visa · Mastercard · Verve" },
+              { label: "USSD", sub: "*737# · *894# · *901#" },
+              { label: "Zelle / ACH", sub: "If you hold USD" },
+            ].map((p) => (
+              <div key={p.label} className="rounded-lg p-2.5 flex items-center justify-between" style={{ border: "1px solid var(--line)" }}>
+                <div>
+                  <div className="text-xs font-semibold">{p.label}</div>
+                  <div className="font-mono text-[9px] mt-0.5" style={{ color: "var(--muted)" }}>{p.sub}</div>
+                </div>
+                <ArrowRight size={12} style={{ color: "var(--muted)" }} />
+              </div>
+            ))}
+          </div>
+
+          {/* I've paid button + supporting docs */}
+          <div className="rounded-lg p-3 flex items-center justify-between" style={{ background: "var(--ink)", color: "var(--bone)" }}>
+            <div>
+              <div className="text-xs font-semibold">I've paid · upload proof</div>
+              <div className="font-mono text-[9px] mt-0.5" style={{ color: "rgba(247,245,240,0.6)" }}>Operator confirms · receipt issued in &lt;15 min</div>
+            </div>
+            <CheckCircle2 size={16} style={{ color: "var(--lime)" }} />
+          </div>
+
+          {/* Documents row */}
+          <div className="mt-4 pt-3 flex items-center justify-between flex-wrap gap-2" style={{ borderTop: "1px solid var(--line)" }}>
+            <div className="flex items-center gap-2">
+              <FileText size={12} style={{ color: "var(--muted)" }} />
+              <span className="font-mono text-[10px]" style={{ color: "var(--muted)" }}>supplier-invoice.pdf · packing-list.pdf · form-m-ref</span>
+            </div>
+            <span className="font-mono text-[10px] uppercase tracking-wider" style={{ color: "var(--emerald)" }}>Compliance pack ready</span>
+          </div>
+        </div>
+      </div>
+    </BrowserMockup>
+  );
+}
+
+// -----------------------------------------------------------------------------
+// ProviderQueueMockup — fake provider portal showing the KYC review queue
+// with pending customer + recipient entities ready to approve/reject.
+// -----------------------------------------------------------------------------
+export function ProviderQueueMockup() {
+  return (
+    <BrowserMockup url="xaepay.com/provider" title="Provider portal">
+      <div className="p-4 sm:p-5" style={{ background: "var(--paper)" }}>
+        {/* Stats */}
+        <div className="grid grid-cols-3 gap-3 mb-4">
+          {[
+            { label: "Today's volume", value: "$1.2M", sub: "12 transactions" },
+            { label: "KYC queue", value: "8", sub: "5 customers · 3 recipients", hot: true },
+            { label: "Routing fee MTD", value: "$4,180", sub: "auto-statement Jun 30" },
+          ].map((s) => (
+            <div key={s.label} className="rounded-lg p-3" style={{ background: "white", border: "1px solid var(--line)" }}>
+              <div className="font-mono text-[9px] uppercase tracking-wider" style={{ color: "var(--muted)" }}>{s.label}</div>
+              <div className="font-display text-lg sm:text-xl font-semibold mt-0.5" style={{ color: s.hot ? "#92400e" : "var(--ink)" }}>{s.value}</div>
+              <div className="font-mono text-[10px] mt-0.5" style={{ color: "var(--muted)" }}>{s.sub}</div>
+            </div>
+          ))}
+        </div>
+
+        {/* KYC queue table */}
+        <div className="rounded-lg overflow-hidden" style={{ background: "white", border: "1px solid var(--line)" }}>
+          <div className="flex items-center justify-between px-3 py-2.5" style={{ borderBottom: "1px solid var(--line)", background: "var(--bone)" }}>
+            <span className="font-display text-xs font-semibold">KYC review queue</span>
+            <span className="font-mono text-[9px] uppercase tracking-wider" style={{ color: "var(--muted)" }}>8 pending · operator: Adaeze (XaeccoX)</span>
+          </div>
+          <div className="divide-y" style={{ borderColor: "var(--line)" }}>
+            {[
+              { type: "Customer", name: "Lagos Imports Co.", docs: "ID · CAC · BVN · address", risk: "low", action: "approve" },
+              { type: "Customer", name: "Adekunle Foods Ltd", docs: "ID · CAC · BVN · UBO", risk: "low", action: "approve" },
+              { type: "Recipient", name: "Shenzhen Hardware Co.", docs: "business-reg · bank-verif", risk: "medium", action: "review" },
+              { type: "Customer", name: "Olumide A. (individual)", docs: "ID · address · selfie", risk: "low", action: "approve" },
+            ].map((r) => (
+              <div key={r.name} className="flex items-center justify-between gap-3 px-3 py-2.5 text-xs">
+                <div className="flex items-center gap-2 min-w-0 flex-1">
+                  <span className="rounded px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-wider" style={{ background: r.type === "Customer" ? "rgba(15,95,63,0.08)" : "rgba(197,242,74,0.15)", color: r.type === "Customer" ? "var(--emerald)" : "var(--ink)" }}>{r.type}</span>
+                  <div className="truncate">
+                    <div className="font-semibold">{r.name}</div>
+                    <div className="font-mono text-[9px]" style={{ color: "var(--muted)" }}>{r.docs}</div>
+                  </div>
+                </div>
+                <span className="rounded-md px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-wider" style={{
+                  background: r.risk === "low" ? "rgba(15,95,63,0.08)" : "#fef3c7",
+                  color: r.risk === "low" ? "var(--emerald)" : "#92400e",
+                }}>Risk: {r.risk}</span>
+                <button className="rounded-md px-2 py-1 font-mono text-[10px] uppercase tracking-wider font-semibold" style={{
+                  background: r.action === "approve" ? "var(--ink)" : "var(--bone)",
+                  color: r.action === "approve" ? "var(--bone)" : "var(--ink)",
+                  border: r.action === "approve" ? "1px solid var(--ink)" : "1px solid var(--line)",
+                }}>{r.action}</button>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Webhook ribbon */}
+        <div className="mt-3 rounded-lg p-2.5 flex items-center gap-2" style={{ background: "rgba(15,95,63,0.04)", border: "1px solid rgba(15,95,63,0.15)" }}>
+          <ShieldCheck size={12} style={{ color: "var(--emerald)" }} />
+          <span className="font-mono text-[10px]" style={{ color: "var(--ink)" }}>Webhook · last status delivered 12s ago to https://your-api/cedar/xaepay</span>
+        </div>
+      </div>
+    </BrowserMockup>
+  );
+}
+
+// -----------------------------------------------------------------------------
 // FlowPipeline — horizontal version of the AgentPipeline aesthetic. Used as a
 // drop-in replacement for the "Step 01/02/03" cards on landing pages. Renders
 // connected nodes that animate in sequence, with optional captions.
