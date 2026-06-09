@@ -2570,30 +2570,30 @@ function Landing({ setView, onRequestAccess, onCustomerSignup, onWaitlist }) {
 function WhoItsFor() {
   const paths = [
     {
-      verb: "Send money",
-      object: "across the Nigeria corridor",
-      detail: "Pay a supplier, send to family, settle school fees. USD ↔ NGN, locked rate, same-day.",
+      title: "Send & receive across the Nigeria corridor",
+      detail: "USD ↔ NGN, plus GBP / EUR / CNY routes. Locked rate, agent-assembled compliance pack, receipts at both ends. Same-day settlement through a licensed BDC operator + licensed payment provider.",
+      tags: ["Multi-currency", "Locked rate", "Same-day", "Receipts both ways"],
       href: "/?p=send-usd-ngn",
       hotkey: "01",
     },
     {
-      verb: "Bill clients",
-      object: "in foreign currency",
-      detail: "Issue invoices to your overseas clients, collect in USD/GBP/EUR, settle in NGN. Multi-method payment links.",
+      title: "Bill clients in any currency",
+      detail: "Issue branded invoices in USD / GBP / EUR / CNY. Collect via card, wire, or shareable WhatsApp link. Settle to NGN automatically. Receipts + audit trail generated for you.",
+      tags: ["Branded invoices", "Multi-method collection", "Auto receipts", "Reports for regulators"],
       href: "/?p=customers",
       hotkey: "02",
     },
     {
-      verb: "Run my BDC",
-      object: "on better tools",
-      detail: "Bring your customers. Set your rates. Let the compliance + routing agents do the rest. Keep up to 70%.",
+      title: "Run a cross-border practice",
+      detail: "Operator dashboard for BDCs, IMTOs, freight forwarders, independent agents. AI compliance review, multi-provider routing, recurring billing, quarterly customer-activity reports — wired in. Keep 30–70% of every quote.",
+      tags: ["BDC / IMTO / agent", "AI compliance agent", "Multi-provider routing", "30–70% of margin"],
       href: "/?p=operators",
       hotkey: "03",
     },
     {
-      verb: "Integrate as",
-      object: "a licensed provider",
-      detail: "Receive pre-screened, KYC-completed transactions routed to your desk. API or portal — your call.",
+      title: "Plug in as a licensed provider",
+      detail: "Cedar today, more on the way. Receive KYC-completed, document-attached transactions on your desk via API or portal. Webhook-driven status. You only see deals matching your corridors, currencies, and caps.",
+      tags: ["API or portal", "Webhooks", "Corridor + currency filters", "Pre-screened deals"],
       href: "/?p=providers",
       hotkey: "04",
     },
@@ -2622,19 +2622,23 @@ function WhoItsFor() {
           <ul className="divide-y" style={{ borderColor: "var(--line)" }}>
             {paths.map((p) => (
               <li key={p.href}>
-                <a href={p.href} className="group flex items-center gap-4 px-5 py-5 transition-colors" style={{ color: "var(--ink)" }}
+                <a href={p.href} className="group flex items-start gap-4 px-5 py-5 transition-colors" style={{ color: "var(--ink)" }}
                   onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(15,95,63,0.04)"; }}
                   onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}>
-                  <span className="font-mono text-[10px] uppercase tracking-wider flex-shrink-0 w-8 text-center" style={{ color: "var(--muted)" }}>{p.hotkey}</span>
-                  <ArrowRight size={14} className="flex-shrink-0 transition-transform group-hover:translate-x-1" style={{ color: "var(--emerald)" }} />
+                  <span className="font-mono text-[10px] uppercase tracking-wider flex-shrink-0 w-8 text-center pt-1" style={{ color: "var(--muted)" }}>{p.hotkey}</span>
+                  <ArrowRight size={14} className="flex-shrink-0 mt-1.5 transition-transform group-hover:translate-x-1" style={{ color: "var(--emerald)" }} />
                   <div className="min-w-0 flex-1">
-                    <div className="text-base sm:text-lg">
-                      <span className="font-display font-semibold" style={{ color: "var(--ink)" }}>{p.verb}</span>
-                      <span className="font-display ml-2" style={{ color: "var(--muted)" }}>{p.object}</span>
-                    </div>
-                    <div className="text-xs sm:text-sm mt-1" style={{ color: "var(--muted)" }}>{p.detail}</div>
+                    <div className="font-display text-base sm:text-lg font-semibold" style={{ color: "var(--ink)" }}>{p.title}</div>
+                    <div className="text-xs sm:text-sm mt-1.5 leading-relaxed" style={{ color: "var(--muted)" }}>{p.detail}</div>
+                    {p.tags && p.tags.length > 0 && (
+                      <div className="mt-3 flex flex-wrap gap-1.5">
+                        {p.tags.map((t) => (
+                          <span key={t} className="rounded-md px-2 py-0.5 font-mono text-[10px] uppercase tracking-wider" style={{ background: "var(--bone)", color: "var(--muted)", border: "1px solid var(--line)" }}>{t}</span>
+                        ))}
+                      </div>
+                    )}
                   </div>
-                  <span className="font-mono text-[10px] uppercase tracking-wider hidden sm:inline-flex items-center gap-1 flex-shrink-0" style={{ color: "var(--muted)" }}>↵</span>
+                  <span className="font-mono text-[10px] uppercase tracking-wider hidden sm:inline-flex items-center gap-1 flex-shrink-0 pt-1.5" style={{ color: "var(--muted)" }}>↵</span>
                 </a>
               </li>
             ))}
@@ -2875,15 +2879,14 @@ function AgentPipeline() {
                     </div>
                   </div>
                 </div>
-                {(isActive || isDone) && (
-                  <div className="mt-2 ml-8 rounded-md px-2.5 py-1.5 font-mono text-[10.5px] truncate" style={{
-                    background: "rgba(0,0,0,0.4)",
-                    color: isActive ? "var(--lime)" : "rgba(247,245,240,0.55)",
-                    border: "1px solid rgba(255,255,255,0.04)",
-                  }}>
-                    {isActive ? s.caption : s.output}
-                  </div>
-                )}
+                <div className="mt-2 ml-8 rounded-md px-2.5 py-1.5 font-mono text-[10.5px] truncate transition-colors duration-300" style={{
+                  background: isPending ? "rgba(255,255,255,0.015)" : "rgba(0,0,0,0.4)",
+                  color: isActive ? "var(--lime)" : isDone ? "rgba(247,245,240,0.55)" : "rgba(247,245,240,0.18)",
+                  border: `1px solid ${isPending ? "rgba(255,255,255,0.03)" : "rgba(255,255,255,0.04)"}`,
+                  minHeight: "26px",
+                }}>
+                  {isActive ? s.caption : isDone ? s.output : s.output}
+                </div>
               </div>
               {i < steps.length - 1 && (
                 <div className="flex ml-[18px] py-0.5">
