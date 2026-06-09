@@ -9683,11 +9683,54 @@ function RecipientReceiptPanel({ tx, onChanged }) {
 // Tiny inline lookup for the recipient row attached to a quote. Renders the
 // recipient details + photo ID / business invoice if the customer attached one.
 // Empty/silent if the recipient was the legacy Cedar-shape type (operator-added).
+// Cross-operator reputation badge for a recipient. Shows network-effect data
+// — how many times this recipient has been transacted with across ALL operators
+// on XaePay, how many of those settled, how many were flagged. Renders nothing
+// if the recipient has no transaction history (i.e. first time being paid).
+function RecipientReputationBadge({ recipient }) {
+  if (!recipient || !recipient.rep_total_txn || recipient.rep_total_txn < 1) return null;
+  const total = recipient.rep_total_txn;
+  const settled = recipient.rep_settled_count || 0;
+  const flagged = recipient.rep_flagged_count || 0;
+  const rejected = recipient.rep_rejected_count || 0;
+  const operators = recipient.rep_distinct_operators || 0;
+  // Risk band: based on flag/reject ratio + settlement consistency
+  const issueRate = (flagged + rejected) / total;
+  const settleRate = settled / total;
+  let band;
+  if (total < 3) band = { label: "Limited history", bg: "#f3f4f6", color: "#6b7280" };
+  else if (issueRate > 0.2 || rejected > 0) band = { label: "High risk", bg: "#fee2e2", color: "#991b1b" };
+  else if (issueRate > 0.1 || settleRate < 0.6) band = { label: "Medium risk", bg: "#fef3c7", color: "#92400e" };
+  else band = { label: "Trusted", bg: "#d1fae5", color: "#065f46" };
+
+  return (
+    <div className="rounded-xl p-3 text-xs space-y-2" style={{ background: "rgba(15,95,63,0.04)", border: "1px solid rgba(15,95,63,0.15)" }}>
+      <div className="flex items-center justify-between gap-2">
+        <span className="font-mono text-[10px] uppercase tracking-wider" style={{ color: "var(--emerald)" }}>XaePay network reputation</span>
+        <span className="rounded-full px-2 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-wider" style={{ background: band.bg, color: band.color }}>{band.label}</span>
+      </div>
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 font-mono text-[10px]">
+        <div><div style={{ color: "var(--muted)" }}>Total</div><div className="font-semibold" style={{ color: "var(--ink)" }}>{total} txn{total === 1 ? "" : "s"}</div></div>
+        <div><div style={{ color: "var(--muted)" }}>Settled</div><div className="font-semibold" style={{ color: "var(--emerald)" }}>{settled}</div></div>
+        <div><div style={{ color: "var(--muted)" }}>Flagged</div><div className="font-semibold" style={{ color: flagged > 0 ? "#92400e" : "var(--muted)" }}>{flagged}</div></div>
+        <div><div style={{ color: "var(--muted)" }}>Operators</div><div className="font-semibold" style={{ color: "var(--ink)" }}>{operators}</div></div>
+      </div>
+      {recipient.rep_avg_settlement_hours != null && (
+        <div className="font-mono text-[10px]" style={{ color: "var(--muted)" }}>
+          Average settlement: {recipient.rep_avg_settlement_hours < 24
+            ? `${recipient.rep_avg_settlement_hours.toFixed(1)}h`
+            : `${(recipient.rep_avg_settlement_hours / 24).toFixed(1)} days`}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function CustomerAddedRecipientPanel({ recipientId }) {
   const [r, setR] = useState(null);
   useEffect(() => {
     if (!recipientId) { setR(null); return; }
-    supabase.from("recipients").select("id, recipient_type, full_name, legal_business_name, bank_name, bank_account_number, bank_account_currency, contact_phone, photo_id_url, business_invoice_url, added_by_customer_id").eq("id", recipientId).maybeSingle().then(({ data }) => setR(data));
+    supabase.from("recipients").select("id, recipient_type, full_name, legal_business_name, bank_name, bank_account_number, bank_account_currency, contact_phone, photo_id_url, business_invoice_url, added_by_customer_id, rep_total_txn, rep_settled_count, rep_flagged_count, rep_rejected_count, rep_distinct_operators, rep_avg_settlement_hours").eq("id", recipientId).maybeSingle().then(({ data }) => setR(data));
   }, [recipientId]);
   if (!r) return null;
   // Operator-managed Cedar recipients are already covered elsewhere in the
@@ -9713,6 +9756,7 @@ function CustomerAddedRecipientPanel({ recipientId }) {
           <Paperclip size={11} /> {r.photo_id_url ? "View photo ID" : "View business invoice"}
         </a>
       )}
+      <RecipientReputationBadge recipient={r} />
     </div>
   );
 }
@@ -11069,6 +11113,13 @@ function dbRecipientToUi(row) {
     recipientType: row.recipient_type,
     fullName: row.full_name,
     addedByCustomerId: row.added_by_customer_id,
+    // Network-effect reputation (computed across all operators)
+    rep_total_txn: row.rep_total_txn,
+    rep_settled_count: row.rep_settled_count,
+    rep_flagged_count: row.rep_flagged_count,
+    rep_rejected_count: row.rep_rejected_count,
+    rep_distinct_operators: row.rep_distinct_operators,
+    rep_avg_settlement_hours: row.rep_avg_settlement_hours,
   };
 }
 
@@ -11486,6 +11537,7 @@ function RecipientDrawer({ recipient, onClose }) {
     <Drawer open={open} onClose={onClose} title={recipient.legalBusinessName}>
       {/* Identity */}
       <div className="space-y-3 text-sm">
+        <RecipientReputationBadge recipient={recipient} />
         <div className="grid grid-cols-2 gap-3">
           <div>
             <div className="font-mono text-[9px] uppercase tracking-wider" style={{ color: "var(--muted)" }}>Cedar KYC</div>
