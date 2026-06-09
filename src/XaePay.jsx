@@ -2570,8 +2570,8 @@ function Landing({ setView, onRequestAccess, onCustomerSignup, onWaitlist }) {
 function WhoItsFor() {
   const paths = [
     {
-      title: "Send between USD and NGN",
-      detail: "Pay a supplier, send to family, settle school fees, move USD income. Both directions through a licensed BDC + provider — locked rate, same-day, receipt at both ends.",
+      title: "Send between NGN and a foreign currency",
+      detail: "USD ↔ NGN is live today; GBP / EUR / CNY / AED / INR come online as we expand into those regions. Both directions, locked rate, receipt at both ends, through a licensed BDC + provider.",
       href: "/?p=send-usd-ngn",
       hotkey: "01",
     },
@@ -2642,19 +2642,102 @@ function WhoItsFor() {
   );
 }
 
+// Mini-visual: tiny corridor map for the "Cross-border routing" capability card
+function MiniCorridor() {
+  return (
+    <svg viewBox="0 0 280 80" className="w-full h-auto" style={{ maxHeight: "100px" }}>
+      <defs>
+        <radialGradient id="miniHub" cx="50%" cy="50%">
+          <stop offset="0%" stopColor="#0f5f3f" stopOpacity="0.6" />
+          <stop offset="100%" stopColor="#0f5f3f" stopOpacity="0" />
+        </radialGradient>
+      </defs>
+      {/* NGN hub */}
+      <circle cx="40" cy="40" r="28" fill="url(#miniHub)" />
+      <circle cx="40" cy="40" r="16" fill="rgba(15,95,63,0.08)" stroke="rgba(15,95,63,0.5)" strokeWidth="1" />
+      <text x="40" y="44" textAnchor="middle" style={{ fontFamily: "ui-monospace, monospace", fontSize: "10px", fontWeight: 700, fill: "#0f5f3f" }}>NGN</text>
+      {["USD", "GBP", "EUR", "CNY", "AED"].map((c, i) => {
+        const y = 12 + i * 14;
+        const x = 240;
+        const pathId = `mini-${c}`;
+        return (
+          <g key={c}>
+            <path id={pathId} d={`M 56 40 Q 150 ${y}, ${x - 14} ${y}`} fill="none" stroke="rgba(15,95,63,0.25)" strokeWidth="1" />
+            <circle r="1.8" fill="#0f5f3f">
+              <animateMotion dur="3s" repeatCount="indefinite" begin={`${i * 0.4}s`}>
+                <mpath href={`#${pathId}`} />
+              </animateMotion>
+            </circle>
+            <circle cx={x} cy={y} r="8" fill="rgba(52,211,153,0.1)" stroke="rgba(52,211,153,0.5)" strokeWidth="0.8" />
+            <text x={x} y={y + 2} textAnchor="middle" style={{ fontFamily: "ui-monospace, monospace", fontSize: "7px", fontWeight: 600, fill: "#0f5f3f" }}>{c}</text>
+          </g>
+        );
+      })}
+    </svg>
+  );
+}
+
+// Mini-visual: stacked document icons with checkmarks for "Compliance documentation"
+function MiniComplianceDocs() {
+  return (
+    <div className="relative h-[100px]">
+      {[0, 1, 2].map((i) => (
+        <div key={i} className="absolute rounded-lg p-2.5 flex items-center gap-2" style={{
+          background: "white",
+          border: "1px solid var(--line)",
+          width: "70%",
+          left: `${i * 12}%`,
+          top: `${i * 10}px`,
+          boxShadow: "0 4px 12px rgba(15,18,20,0.04)",
+          transform: `rotate(${(i - 1) * 1.5}deg)`,
+        }}>
+          <div className="h-2 w-2 rounded-full flex-shrink-0" style={{ background: i === 2 ? "var(--lime)" : "var(--emerald)" }} />
+          <div className="flex-1">
+            <div className="h-1 rounded-full" style={{ background: "var(--line)", width: "70%" }} />
+            <div className="h-1 rounded-full mt-1" style={{ background: "var(--line)", width: "45%" }} />
+          </div>
+          <CheckCircle2 size={11} style={{ color: "var(--emerald)" }} />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// Mini-visual: provider network nodes for "Multi-provider rails"
+function MiniProviderNodes() {
+  return (
+    <svg viewBox="0 0 240 100" className="w-full h-auto" style={{ maxHeight: "100px" }}>
+      {/* Hub */}
+      <circle cx="120" cy="50" r="14" fill="rgba(15,95,63,0.08)" stroke="rgba(15,95,63,0.4)" strokeWidth="1" />
+      <text x="120" y="53" textAnchor="middle" style={{ fontFamily: "ui-monospace, monospace", fontSize: "8px", fontWeight: 600, fill: "#0f5f3f" }}>XAE</text>
+      {/* Provider nodes */}
+      {[
+        { x: 30,  y: 25,  label: "Cedar", live: true },
+        { x: 30,  y: 75,  label: "PSP-B", live: false },
+        { x: 210, y: 25,  label: "PSP-C", live: false },
+        { x: 210, y: 75,  label: "PSP-D", live: false },
+      ].map((p, i) => (
+        <g key={p.label}>
+          <line x1="120" y1="50" x2={p.x} y2={p.y} stroke={p.live ? "rgba(197,242,74,0.6)" : "rgba(15,18,20,0.08)"} strokeWidth="1" strokeDasharray={p.live ? "0" : "2 2"} />
+          {p.live && (
+            <circle r="2" fill="var(--lime)">
+              <animateMotion dur="2.5s" repeatCount="indefinite" begin={`${i * 0.3}s`} path={`M 120 50 L ${p.x} ${p.y}`} />
+            </circle>
+          )}
+          <circle cx={p.x} cy={p.y} r="11" fill={p.live ? "rgba(197,242,74,0.12)" : "rgba(15,18,20,0.03)"} stroke={p.live ? "rgba(197,242,74,0.5)" : "rgba(15,18,20,0.15)"} strokeWidth="1" />
+          <text x={p.x} y={p.y + 2} textAnchor="middle" style={{ fontFamily: "ui-monospace, monospace", fontSize: "7px", fontWeight: 600, fill: p.live ? "#0f5f3f" : "var(--muted)" }}>{p.label}</text>
+        </g>
+      ))}
+    </svg>
+  );
+}
+
 // =============================================================================
-// CapabilityStrip — what the platform actually does, in compact form. Shows
-// breadth without forcing a visitor to read deeply.
+// CapabilityStrip — bento-grid layout. Six capabilities; the three with the
+// richest stories get mini-visuals embedded; the others stay compact-text.
+// Mixed sizes break the uniform-grid monotony the homepage had previously.
 // =============================================================================
 function CapabilityStrip() {
-  const items = [
-    { icon: ArrowLeftRight, title: "Cross-border routing", body: "NGN ↔ USD, GBP, EUR, CNY, AED, INR. Routed through licensed providers; locked rates; same-day settlement." },
-    { icon: Receipt, title: "Invoicing tools", body: "Operators bill customers. Business customers bill their own clients. Multi-method payment options on every invoice." },
-    { icon: Shield, title: "Compliance documentation", body: "Auto-assembled audit packs, RFI prevention agent, customer + recipient KYC orchestration. Tier-aware deliverables." },
-    { icon: CheckCircle2, title: "Receipts both ways", body: "Customer receipt when they pay an invoice. Recipient receipt when a payout settles. Issued automatically, downloadable." },
-    { icon: User, title: "Customer portals", body: "Customers see their own quotes, invoices, claims, and receipts in one place. WhatsApp + email + portal — three channels per critical message." },
-    { icon: Layers, title: "Multi-provider rails", body: "Multiple licensed providers competing for routing. Best fit per transaction based on corridor, cost, and speed." },
-  ];
   return (
     <section className="mx-auto max-w-screen-2xl px-4 py-16 sm:px-6 lg:px-8 lg:py-20">
       <div className="mb-10 max-w-2xl">
@@ -2662,17 +2745,65 @@ function CapabilityStrip() {
         <h2 className="font-display mt-3 text-4xl font-[450] leading-[1.05] tracking-tight sm:text-5xl">Everything in <span className="italic" style={{ color: "var(--emerald)" }}>one platform.</span></h2>
         <p className="mt-4 max-w-xl text-base leading-relaxed" style={{ color: "var(--muted)" }}>The product surface keeps growing. Today, all of this is live.</p>
       </div>
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {items.map((it) => {
-          const Icon = it.icon;
-          return (
-            <div key={it.title} className="rounded-2xl p-5" style={{ background: "white", border: "1px solid var(--line)" }}>
-              <div className="flex h-9 w-9 items-center justify-center rounded-lg" style={{ background: "var(--bone-2)", color: "var(--emerald)" }}><Icon size={16} /></div>
-              <h3 className="font-display mt-3 text-base font-semibold">{it.title}</h3>
-              <p className="mt-2 text-sm leading-relaxed" style={{ color: "var(--muted)" }}>{it.body}</p>
+
+      {/* Bento grid — 6 cards, 3 sizes */}
+      <div className="grid gap-4 lg:grid-cols-3 lg:auto-rows-[minmax(220px,auto)]">
+        {/* Row 1: BIG (corridor) + MEDIUM (invoicing) */}
+        <div className="lg:col-span-2 rounded-2xl p-5 sm:p-6 relative overflow-hidden" style={{ background: "white", border: "1px solid var(--line)" }}>
+          <div className="grid gap-5 sm:grid-cols-[1fr_240px] items-center h-full">
+            <div>
+              <div className="flex h-9 w-9 items-center justify-center rounded-lg mb-3" style={{ background: "var(--bone-2)", color: "var(--emerald)" }}><ArrowLeftRight size={16} /></div>
+              <h3 className="font-display text-lg font-semibold">Cross-border routing</h3>
+              <p className="mt-2 text-sm leading-relaxed" style={{ color: "var(--muted)" }}>NGN ↔ USD live today. GBP, EUR, CNY, AED, INR routes come online as we expand. Locked rates, same-day settlement through licensed providers.</p>
             </div>
-          );
-        })}
+            <div className="hidden sm:block"><MiniCorridor /></div>
+          </div>
+        </div>
+
+        <div className="rounded-2xl p-5 sm:p-6" style={{ background: "white", border: "1px solid var(--line)" }}>
+          <div className="flex h-9 w-9 items-center justify-center rounded-lg mb-3" style={{ background: "var(--bone-2)", color: "var(--emerald)" }}><Receipt size={16} /></div>
+          <h3 className="font-display text-lg font-semibold">Invoicing tools</h3>
+          <p className="mt-2 text-sm leading-relaxed" style={{ color: "var(--muted)" }}>Operators bill customers. Business customers bill their own clients. Multi-method payment options on every invoice — bank, card, USSD, link.</p>
+        </div>
+
+        {/* Row 2: MEDIUM (compliance, with mini-viz) + BIG (multi-provider with viz) */}
+        <div className="rounded-2xl p-5 sm:p-6 relative overflow-hidden" style={{ background: "white", border: "1px solid var(--line)" }}>
+          <div className="flex h-9 w-9 items-center justify-center rounded-lg mb-3" style={{ background: "var(--bone-2)", color: "var(--emerald)" }}><Shield size={16} /></div>
+          <h3 className="font-display text-lg font-semibold">Compliance documentation</h3>
+          <p className="mt-2 text-sm leading-relaxed" style={{ color: "var(--muted)" }}>Auto-assembled audit packs, RFI-prevention agent, customer + recipient KYC orchestration. Tier-aware.</p>
+          <div className="mt-4"><MiniComplianceDocs /></div>
+        </div>
+
+        <div className="lg:col-span-2 rounded-2xl p-5 sm:p-6 relative overflow-hidden" style={{ background: "var(--ink)", color: "var(--bone)", border: "1px solid var(--ink)" }}>
+          <div className="absolute -right-20 -top-20 h-40 w-40 rounded-full blur-3xl opacity-30" style={{ background: "var(--lime)" }} />
+          <div className="relative grid gap-5 sm:grid-cols-[1fr_280px] items-center h-full">
+            <div>
+              <div className="flex h-9 w-9 items-center justify-center rounded-lg mb-3" style={{ background: "rgba(197,242,74,0.15)", color: "var(--lime)" }}><Layers size={16} /></div>
+              <h3 className="font-display text-lg font-semibold">Multi-provider rails</h3>
+              <p className="mt-2 text-sm leading-relaxed" style={{ color: "rgba(247,245,240,0.7)" }}>Cedar is live. The routing engine picks the best-fit per transaction based on corridor + cost + speed as more providers come online.</p>
+            </div>
+            <div className="hidden sm:block"><MiniProviderNodes /></div>
+          </div>
+        </div>
+
+        {/* Row 3: 3 equal — receipts, portals, agents */}
+        <div className="rounded-2xl p-5 sm:p-6" style={{ background: "white", border: "1px solid var(--line)" }}>
+          <div className="flex h-9 w-9 items-center justify-center rounded-lg mb-3" style={{ background: "var(--bone-2)", color: "var(--emerald)" }}><CheckCircle2 size={16} /></div>
+          <h3 className="font-display text-lg font-semibold">Receipts both ways</h3>
+          <p className="mt-2 text-sm leading-relaxed" style={{ color: "var(--muted)" }}>Customer receipt on payment. Recipient receipt on settlement. Issued automatically, downloadable, forwardable.</p>
+        </div>
+
+        <div className="rounded-2xl p-5 sm:p-6" style={{ background: "white", border: "1px solid var(--line)" }}>
+          <div className="flex h-9 w-9 items-center justify-center rounded-lg mb-3" style={{ background: "var(--bone-2)", color: "var(--emerald)" }}><User size={16} /></div>
+          <h3 className="font-display text-lg font-semibold">Customer portals</h3>
+          <p className="mt-2 text-sm leading-relaxed" style={{ color: "var(--muted)" }}>Customers see their quotes, invoices, claims, receipts. WhatsApp + email + portal — three channels per critical message.</p>
+        </div>
+
+        <div className="rounded-2xl p-5 sm:p-6 relative overflow-hidden" style={{ background: "white", border: "1px solid var(--line)" }}>
+          <div className="flex h-9 w-9 items-center justify-center rounded-lg mb-3" style={{ background: "rgba(197,242,74,0.15)", color: "var(--ink)" }}><Sparkles size={16} /></div>
+          <h3 className="font-display text-lg font-semibold">AI compliance + reporting agents</h3>
+          <p className="mt-2 text-sm leading-relaxed" style={{ color: "var(--muted)" }}>Claude-powered invoice review, RFI-prevention agent, recurring-quote runner, auto-generated regulatory reports.</p>
+        </div>
       </div>
     </section>
   );
@@ -2897,11 +3028,108 @@ function AgentPipeline() {
   );
 }
 
+// LayerStack — replaces the 3 plain HowItWorks cards with a layered system
+// diagram: 3 horizontal bands (Customer / Operator / Provider) stacked
+// vertically, with animated data flowing between them. Reads as "this is how
+// the system is built" instead of "here's another bullet card."
+function LayerStack() {
+  const layers = [
+    {
+      role: "Customer",
+      tag: "The payer",
+      title: "Initiates the request",
+      body: "Pay a supplier · send to family · issue an invoice to a downstream client. Through the portal, WhatsApp, or a shared invoice link.",
+      chips: ["Portal", "WhatsApp", "Invoice link"],
+      glow: "rgba(52,211,153,0.10)",
+      accent: "var(--emerald)",
+    },
+    {
+      role: "Operator",
+      tag: "The relationship",
+      title: "Quotes, captures, routes",
+      body: "BDC, IMTO, freight forwarder, agent. Vets the customer, sets the rate, captures KYC + trade docs, routes the transaction. Earns 30–70% of the markup.",
+      chips: ["Rate", "KYC", "Docs", "Routing"],
+      glow: "rgba(197,242,74,0.10)",
+      accent: "var(--lime)",
+    },
+    {
+      role: "Provider",
+      tag: "The rail",
+      title: "Executes the regulated leg",
+      body: "Licensed payment provider receives the KYC-completed transaction. Executes the wire / ACH / settlement. Status syncs back to operator + customer in real time.",
+      chips: ["Wire", "ACH", "Webhook", "Settlement"],
+      glow: "rgba(52,211,153,0.10)",
+      accent: "var(--emerald)",
+    },
+  ];
+
+  return (
+    <div className="rounded-3xl overflow-hidden" style={{ background: "var(--ink)", border: "1px solid var(--line)" }}>
+      <div className="flex items-center justify-between px-5 py-3" style={{ borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
+        <div className="flex items-center gap-2">
+          <div className="h-1.5 w-1.5 rounded-full pulse-dot" style={{ background: "var(--lime)", boxShadow: "0 0 8px var(--lime)" }} />
+          <span className="font-mono text-[10px] uppercase tracking-wider" style={{ color: "var(--lime)" }}>System · 3 layers · 1 transaction</span>
+        </div>
+        <span className="font-mono text-[10px] uppercase tracking-wider" style={{ color: "rgba(247,245,240,0.4)" }}>Orchestrated by XaePay</span>
+      </div>
+
+      <div className="p-4 sm:p-6 space-y-1">
+        {layers.map((l, i) => (
+          <React.Fragment key={l.role}>
+            <div className="rounded-2xl p-4 sm:p-5 relative overflow-hidden" style={{ background: l.glow, border: `1px solid ${l.accent === "var(--lime)" ? "rgba(197,242,74,0.25)" : "rgba(52,211,153,0.25)"}` }}>
+              {/* Glow accent in corner */}
+              <div className="absolute -right-12 -top-12 h-32 w-32 rounded-full blur-3xl opacity-50" style={{ background: l.accent }} />
+              <div className="relative grid gap-4 sm:grid-cols-[180px_1fr_auto]">
+                <div>
+                  <div className="font-mono text-[10px] uppercase tracking-wider mb-1" style={{ color: "rgba(247,245,240,0.5)" }}>0{i + 1} · {l.tag}</div>
+                  <div className="font-display text-xl sm:text-2xl font-semibold" style={{ color: l.accent }}>{l.role}</div>
+                </div>
+                <div>
+                  <div className="font-display text-base font-semibold mb-1" style={{ color: "var(--bone)" }}>{l.title}</div>
+                  <div className="text-sm leading-relaxed" style={{ color: "rgba(247,245,240,0.65)" }}>{l.body}</div>
+                </div>
+                <div className="flex flex-wrap gap-1.5 sm:flex-col sm:items-end">
+                  {l.chips.map((c) => (
+                    <span key={c} className="rounded-md px-2 py-0.5 font-mono text-[9px] uppercase tracking-wider" style={{ background: "rgba(255,255,255,0.04)", color: "rgba(247,245,240,0.6)", border: "1px solid rgba(255,255,255,0.08)" }}>{c}</span>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* Connector with animated data flow between layers */}
+            {i < layers.length - 1 && (
+              <div className="flex items-center justify-center py-1">
+                <svg width="40" height="32" viewBox="0 0 40 32" className="opacity-70">
+                  <defs>
+                    <linearGradient id={`flow-${i}`} x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="rgba(197,242,74,0.5)" />
+                      <stop offset="100%" stopColor="rgba(52,211,153,0.5)" />
+                    </linearGradient>
+                  </defs>
+                  <line x1="20" y1="2" x2="20" y2="30" stroke={`url(#flow-${i})`} strokeWidth="1.5" strokeDasharray="3 3">
+                    <animate attributeName="stroke-dashoffset" from="0" to="-12" dur="1.4s" repeatCount="indefinite" />
+                  </line>
+                  <circle r="2.5" fill="var(--lime)">
+                    <animate attributeName="cx" values="20;20" dur="2s" repeatCount="indefinite" />
+                    <animate attributeName="cy" values="2;30" dur="2s" repeatCount="indefinite" begin={`${i * 0.5}s`} />
+                    <animate attributeName="opacity" values="0;1;1;0" dur="2s" repeatCount="indefinite" begin={`${i * 0.5}s`} />
+                  </circle>
+                </svg>
+              </div>
+            )}
+          </React.Fragment>
+        ))}
+      </div>
+
+      <div className="px-5 py-3 flex items-center justify-between flex-wrap gap-2" style={{ borderTop: "1px solid rgba(255,255,255,0.06)", background: "rgba(0,0,0,0.2)" }}>
+        <span className="font-mono text-[10px] uppercase tracking-wider" style={{ color: "rgba(247,245,240,0.4)" }}>Software layer · no custody · no FX book</span>
+        <span className="font-mono text-[10px] uppercase tracking-wider" style={{ color: "var(--lime)" }}>Regulated parties handle regulated work</span>
+      </div>
+    </div>
+  );
+}
+
 function HowItWorks() {
-  // Reframed for the general homepage: shows the 3 layers of the platform
-  // (customer / operator / provider) so any visitor — whichever role they
-  // play — sees where they fit. Audience-specific deep how-it-works content
-  // lives on the /?p=operators, /?p=customers, etc. sub-pages.
   return (
     <section className="border-y mx-auto max-w-screen-2xl px-4 py-16 sm:px-6 lg:px-8 lg:py-20" style={{ borderColor: "var(--line)" }}>
       <div className="mb-10 max-w-2xl">
@@ -2909,28 +3137,7 @@ function HowItWorks() {
         <h2 className="font-display mt-3 text-4xl font-[450] leading-[1.05] tracking-tight sm:text-5xl">Three layers. <span className="italic" style={{ color: "var(--emerald)" }}>One transaction.</span></h2>
         <p className="mt-4 max-w-xl text-base leading-relaxed" style={{ color: "var(--muted)" }}>Every cross-border payment on XaePay flows through three named parties. Each layer plays its role; XaePay is the software that connects them.</p>
       </div>
-      <div className="grid gap-5 lg:grid-cols-3">
-        {[
-          { n: "01", title: "Customer initiates", body: "A business paying a foreign supplier, a diaspora sender funding a recipient in Nigeria, or a customer issuing an invoice to their own client. They start the request — through the portal, by WhatsApp, or via an invoice link.", footer: "Customer · the payer" },
-          { n: "02", title: "Operator coordinates", body: "A licensed agent (BDC, IMTO, MSB, freight forwarder) vets the customer, sets the rate, captures KYC and trade documentation, and routes the transaction to a payment provider. Earns a share of the markup.", footer: "Operator · the relationship" },
-          { n: "03", title: "Provider executes", body: "A licensed payment provider receives the KYC-completed transaction and executes the regulated leg — wire, ACH, settlement to the recipient's bank. XaePay collects status, issues the receipt, and closes the loop.", footer: "Provider · the rail" },
-        ].map((s) => (
-          <div key={s.n} className="card-soft rounded-2xl bg-white p-6" style={{ border: "1px solid var(--line)" }}>
-            <div className="font-mono text-[11px] font-medium" style={{ color: "var(--emerald)" }}>{s.n}</div>
-            <h3 className="font-display mt-3 text-lg font-semibold" style={{ color: "var(--ink)" }}>{s.title}</h3>
-            <p className="mt-2 text-sm leading-relaxed" style={{ color: "var(--muted)" }}>{s.body}</p>
-            <div className="mt-4 pt-3 font-mono text-[10px] uppercase tracking-wider" style={{ borderTop: "1px solid var(--line)", color: "var(--muted)" }}>{s.footer}</div>
-          </div>
-        ))}
-      </div>
-      <div className="mt-8 rounded-2xl p-5" style={{ background: "var(--bone)", border: "1px solid var(--line)" }}>
-        <div className="flex items-start gap-3">
-          <Shield size={16} className="mt-0.5 flex-shrink-0" style={{ color: "var(--emerald)" }} />
-          <div className="text-sm" style={{ color: "var(--ink)" }}>
-            <span className="font-semibold">XaePay is the software layer.</span> We don't custody funds, we don't quote FX on our own book, and we don't act as a party to any transaction. Money flows directly between the customer, the operator's collection account, and the licensed payment provider. We orchestrate compliance, documentation, and routing. The regulated entities own their respective regulated activities.
-          </div>
-        </div>
-      </div>
+      <LayerStack />
     </section>
   );
 }
