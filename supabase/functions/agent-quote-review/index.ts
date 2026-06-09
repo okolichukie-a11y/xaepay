@@ -41,12 +41,13 @@ Deno.serve(async (req) => {
   // Read the quote
   const { data: quote, error: qErr } = await admin
     .from("quotes")
-    .select("id, customer_id, customer_name, beneficiary, destination, amount, currency, purpose_note, invoice_url, operator_user_id, created_at")
+    .select("*")
     .eq("id", quoteId)
     .single();
   if (qErr || !quote) return json(404, { error: "Quote not found", detail: qErr?.message });
 
-  if (!quote.operator_user_id) {
+  const operatorUserId = quote.bdc_user_id;
+  if (!operatorUserId) {
     return json(200, { ok: true, skipped: true, reason: "no_operator_assigned" });
   }
 
@@ -54,7 +55,7 @@ Deno.serve(async (req) => {
   const { data: profile } = await admin
     .from("operator_profiles")
     .select("agent_mode, default_outbound_markup, business_name")
-    .eq("auth_user_id", quote.operator_user_id)
+    .eq("auth_user_id", operatorUserId)
     .maybeSingle();
   if (!profile?.agent_mode) {
     return json(200, { ok: true, skipped: true, reason: "agent_mode_off_for_operator" });
@@ -143,7 +144,7 @@ Output ONLY the draft message text. No preamble.`;
 
   // Insert the agent task
   const { data: task, error: taskErr } = await admin.from("agent_tasks").insert({
-    operator_user_id: quote.operator_user_id,
+    operator_user_id: operatorUserId,
     job_type: "quote_review",
     subject_type: "quote",
     subject_id: quote.id,
