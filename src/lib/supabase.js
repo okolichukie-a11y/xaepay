@@ -575,6 +575,33 @@ export async function runComplianceWatchman(tier = "pro") {
   }
 }
 
+// Operator Agent — Job #1 (Quote Review Drafting). Triggers the Edge Function
+// to have the agent draft a quote response. Only acts if the operator has
+// agent_mode = true; otherwise the function returns {skipped:true} and nothing
+// happens. Safe to call on every quote submission.
+export async function runAgentQuoteReview(quoteId) {
+  try {
+    const session = (await supabase.auth.getSession()).data.session;
+    if (!session) return { ok: false, error: "Not signed in" };
+    const res = await fetch(`${url}/functions/v1/agent-quote-review`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${session.access_token}`,
+        apikey: anonKey,
+      },
+      body: JSON.stringify({ quote_id: quoteId }),
+    });
+    let data = null;
+    try { data = await res.json(); } catch { /* non-JSON */ }
+    return { ok: res.ok, status: res.status, data };
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error("runAgentQuoteReview failed:", err);
+    return { ok: false, error: err?.message || String(err) };
+  }
+}
+
 export function safeUrl(value) {
   if (!value || typeof value !== "string") return "#";
   const trimmed = value.trim();

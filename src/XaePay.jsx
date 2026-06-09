@@ -5,9 +5,9 @@ import {
   BarChart3, Zap, Eye, Download, Send, Filter, Plus, History, LogIn,
   ExternalLink, Sparkles, User, Building2, Briefcase, Coins, Lock, Unlock,
   ArrowLeft, ArrowLeftRight, Loader2, Layers, TrendingUp, Wallet, DollarSign, Mail,
-  RefreshCw, ShieldCheck, Paperclip,
+  RefreshCw, ShieldCheck, Paperclip, Cpu, Check,
 } from "lucide-react";
-import { supabase, sendWhatsAppText, sendWhatsAppTemplate, fetchCedarRate, submitCustomerToCedar, submitRecipientToCedar, submitReceiverAccountToCedar, submitCedarTransaction, approveCedarQuote, confirmCedarDeposit, cancelCedarTransaction, uploadCedarFile, uploadFileBoth, uploadInvoicePdf, uploadInvoicePaymentProof, uploadReceiptPdf, uploadRecipientReceiptPdf, uploadBrandLogo, uploadRegulatoryReportFile, pickServiceProviderForQuote, runComplianceReview, runComplianceWatchman, submitDocumentToCedar, sendEmail, safeUrl, logAuditEvent, getPlatformSettingInt } from "./lib/supabase.js";
+import { supabase, sendWhatsAppText, sendWhatsAppTemplate, fetchCedarRate, submitCustomerToCedar, submitRecipientToCedar, submitReceiverAccountToCedar, submitCedarTransaction, approveCedarQuote, confirmCedarDeposit, cancelCedarTransaction, uploadCedarFile, uploadFileBoth, uploadInvoicePdf, uploadInvoicePaymentProof, uploadReceiptPdf, uploadRecipientReceiptPdf, uploadBrandLogo, uploadRegulatoryReportFile, pickServiceProviderForQuote, runComplianceReview, runComplianceWatchman, submitDocumentToCedar, runAgentQuoteReview, sendEmail, safeUrl, logAuditEvent, getPlatformSettingInt } from "./lib/supabase.js";
 import { generateQuotePdf, uploadQuotePdf, downloadQuotePdf } from "./lib/pdf.js";
 import { generateCompliancePackPdf, downloadCompliancePackPdf, generateTransactionConfirmationPdf, downloadTransactionConfirmationPdf, generateInvoicePdf, downloadInvoicePdf, generateReceiptPdf, downloadReceiptPdf, generateRecipientReceiptPdf, downloadRecipientReceiptPdf, generateMonthlyTransactionReportPdf, downloadRegulatoryReportPdf, buildTransactionsCsv, generateQuarterlyCustomerActivityReportPdf, buildCustomerActivityCsv } from "./lib/pdf-doc.js";
 import { TermsOfService, PrivacyPolicy, DataDeletion, RefundPolicy, ServiceProviderMSA } from "./legal/LegalPages.jsx";
@@ -4919,6 +4919,10 @@ function CustomerRequestQuoteModal({ open, onClose, customer, onCreated }) {
       if (data.invoiceUrl) {
         runComplianceReview(row.id).catch(() => {});
       }
+      // Operator Agent — fire-and-forget. No-op if the operator hasn't enabled
+      // agent_mode on their profile. When ON, agent drafts a quote response
+      // into agent_tasks for the operator to approve.
+      runAgentQuoteReview(row.id).catch(() => {});
       push(`Quote request sent to ${customer.bdc_name || "your operator"}`, "success");
       onCreated && onCreated();
       setData(empty);
@@ -7494,6 +7498,7 @@ function BDCDashboard({ session, initialCustomerId, onInitialCustomerHandled }) 
     { id: "invoicing", label: "Invoicing", icon: FileText },
     { id: "providers", label: "Providers", icon: Layers },
     { id: "reports", label: "Reports", icon: BarChart3 },
+    { id: "agent", label: "Agent", icon: Cpu },
     { id: "brand", label: "Brand", icon: Sparkles },
     { id: "earnings", label: "Earnings", icon: TrendingUp },
   ];
@@ -7568,6 +7573,7 @@ function BDCDashboard({ session, initialCustomerId, onInitialCustomerHandled }) 
           {tab === "invoicing" && <BDCInvoices />}
           {tab === "providers" && <BDCProviders />}
           {tab === "reports" && <BDCRegulatoryReports />}
+          {tab === "agent" && <BDCAgent jumpToTransaction={jumpToTransaction} />}
           {tab === "brand" && <BDCBrandSettings />}
           {tab === "earnings" && <BDCEarnings />}
         </div>
@@ -8986,6 +8992,220 @@ function BDCRegulatoryReports() {
           Suspicious Transaction Summary — transactions flagged by AI compliance review, pre-formatted for STR submission — is next on the regulatory-reports roadmap.
         </p>
       </div>
+    </div>
+  );
+}
+
+// =============================================================================
+// BDCAgent — operator-side Agent Mode tab. Toggle + Inbox. When agent_mode is
+// ON, the agent drafts quote responses (and later: KYC chases, recurring
+// confirms, payment matches, report drafts) as agent_tasks rows. The operator
+// reviews, edits, and approves each one — nothing auto-sends in V1.
+// =============================================================================
+function BDCAgent({ jumpToTransaction }) {
+  const { push } = useToast();
+  const auth = useAuth();
+  const [agentMode, setAgentMode] = useState(false);
+  const [savingToggle, setSavingToggle] = useState(false);
+  const [tasks, setTasks] = useState([]);
+  const [loadingTasks, setLoadingTasks] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
+
+  const fetchAgentMode = async () => {
+    if (!auth.user) return;
+    const { data } = await supabase.from("operator_profiles").select("agent_mode").eq("auth_user_id", auth.user.id).maybeSingle();
+    setAgentMode(!!data?.agent_mode);
+  };
+  const fetchTasks = async () => {
+    if (!auth.user) return;
+    setLoadingTasks(true);
+    const { data } = await supabase.from("agent_tasks").select("*").order("created_at", { ascending: false }).limit(50);
+    setTasks(data || []);
+    setLoadingTasks(false);
+  };
+
+  useEffect(() => { fetchAgentMode(); fetchTasks(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [auth.user?.id]);
+
+  // Realtime — new tasks appear without refresh
+  useEffect(() => {
+    if (!auth.user) return;
+    const ch = supabase.channel(`agent-tasks-${auth.user.id}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "agent_tasks", filter: `operator_user_id=eq.${auth.user.id}` }, () => fetchTasks())
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+    /* eslint-disable-next-line react-hooks/exhaustive-deps */
+  }, [auth.user?.id]);
+
+  const toggleAgent = async () => {
+    if (!auth.user || savingToggle) return;
+    setSavingToggle(true);
+    const next = !agentMode;
+    const { error } = await supabase.from("operator_profiles").update({ agent_mode: next }).eq("auth_user_id", auth.user.id);
+    setSavingToggle(false);
+    if (error) { push(`Couldn't update: ${error.message}`, "warn"); return; }
+    setAgentMode(next);
+    push(next ? "Agent mode ON — agent will start drafting on new quotes" : "Agent mode OFF — agent will not run", "success");
+  };
+
+  const decideTask = async (task, decision, notes = null) => {
+    const patch = {
+      status: decision === "approved" ? "approved" : decision === "rejected" ? "rejected" : "dismissed",
+      operator_decision: decision,
+      operator_notes: notes,
+      reviewed_at: new Date().toISOString(),
+    };
+    const { error } = await supabase.from("agent_tasks").update(patch).eq("id", task.id);
+    if (error) { push(`Couldn't update task: ${error.message}`, "warn"); return; }
+    push(`Task ${decision}`, "success");
+    fetchTasks();
+  };
+
+  const pending = tasks.filter((t) => t.status === "pending_review");
+  const reviewed = tasks.filter((t) => t.status !== "pending_review");
+
+  return (
+    <div className="space-y-6">
+      {/* Mode toggle card */}
+      <div className="rounded-2xl overflow-hidden" style={{ background: "var(--ink)", color: "var(--bone)", border: "1px solid var(--ink)" }}>
+        <div className="flex items-center justify-between px-5 py-3" style={{ borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
+          <div className="flex items-center gap-2">
+            <div className="h-1.5 w-1.5 rounded-full pulse-dot" style={{ background: agentMode ? "var(--lime)" : "rgba(247,245,240,0.3)", boxShadow: agentMode ? "0 0 8px var(--lime)" : "none" }} />
+            <span className="font-mono text-[10px] uppercase tracking-wider" style={{ color: agentMode ? "var(--lime)" : "rgba(247,245,240,0.5)" }}>
+              {agentMode ? "Agent · live" : "Agent · standby"}
+            </span>
+          </div>
+          <span className="font-mono text-[10px] uppercase tracking-wider" style={{ color: "rgba(247,245,240,0.4)" }}>V1 · quote review</span>
+        </div>
+        <div className="p-5 sm:p-6">
+          <div className="flex items-start justify-between gap-4 flex-wrap">
+            <div className="flex-1 min-w-[240px]">
+              <h2 className="font-display text-2xl font-semibold">Operator Agent</h2>
+              <p className="mt-2 text-sm leading-relaxed" style={{ color: "rgba(247,245,240,0.7)" }}>
+                Drafts quote responses for you to approve — never auto-sends. When ON, every new customer quote request gets an agent draft (suggested rate, risk assessment, ready-to-send WhatsApp message). You approve, edit, or reject. Nothing leaves XaePay without your click.
+              </p>
+              <div className="mt-4 grid gap-2 sm:grid-cols-2 text-xs" style={{ color: "rgba(247,245,240,0.6)" }}>
+                <div className="flex items-center gap-2"><CheckCircle2 size={12} style={{ color: "var(--lime)" }} /> Drafts rates from your default markup</div>
+                <div className="flex items-center gap-2"><CheckCircle2 size={12} style={{ color: "var(--lime)" }} /> Flags compliance risk on each quote</div>
+                <div className="flex items-center gap-2"><CheckCircle2 size={12} style={{ color: "var(--lime)" }} /> Writes WhatsApp-ready customer reply</div>
+                <div className="flex items-center gap-2"><AlertTriangle size={12} style={{ color: "rgba(247,245,240,0.5)" }} /> Never auto-sends · you approve every one</div>
+              </div>
+            </div>
+            <button onClick={toggleAgent} disabled={savingToggle} className="rounded-full inline-flex items-center gap-3 px-4 py-2.5 transition" style={{
+              background: agentMode ? "var(--lime)" : "rgba(255,255,255,0.06)",
+              color: agentMode ? "var(--ink)" : "var(--bone)",
+              border: `1px solid ${agentMode ? "var(--lime)" : "rgba(255,255,255,0.12)"}`,
+            }}>
+              <div className="h-2 w-2 rounded-full" style={{ background: agentMode ? "var(--ink)" : "rgba(247,245,240,0.4)" }} />
+              <span className="font-mono text-[11px] uppercase tracking-wider font-semibold">{savingToggle ? "Saving…" : agentMode ? "ON" : "OFF"}</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Pending tasks */}
+      <Card padding="none">
+        <div className="flex items-center justify-between p-4 flex-wrap gap-2" style={{ borderBottom: "1px solid var(--line)" }}>
+          <div className="flex items-center gap-2">
+            <span className="font-display text-base font-semibold">Awaiting your approval</span>
+            <span className="rounded-md px-2 py-0.5 font-mono text-[10px] uppercase tracking-wider" style={{ background: pending.length > 0 ? "#fef3c7" : "var(--bone)", color: pending.length > 0 ? "#92400e" : "var(--muted)", border: "1px solid var(--line)" }}>{pending.length}</span>
+          </div>
+          <SecondaryBtn onClick={fetchTasks} disabled={loadingTasks}><RefreshCw size={14} className={loadingTasks ? "animate-spin" : ""} /> Refresh</SecondaryBtn>
+        </div>
+        {pending.length === 0 ? (
+          <div className="p-12 text-center">
+            <Cpu size={20} className="mx-auto mb-2" style={{ color: "var(--muted)" }} />
+            <h3 className="font-display text-lg font-semibold">No drafts waiting</h3>
+            <p className="mt-1.5 text-sm" style={{ color: "var(--muted)" }}>{agentMode ? "When a customer submits a new quote, the agent's draft will appear here." : "Flip the toggle ON above to start receiving agent drafts."}</p>
+          </div>
+        ) : (
+          <div className="divide-y" style={{ borderColor: "var(--line)" }}>
+            {pending.map((t) => <AgentTaskRow key={t.id} task={t} onDecide={decideTask} onJumpToQuote={(qid) => jumpToTransaction && jumpToTransaction(qid)} />)}
+          </div>
+        )}
+      </Card>
+
+      {/* Reviewed history */}
+      {reviewed.length > 0 && (
+        <Card padding="none">
+          <button onClick={() => setShowHistory((v) => !v)} className="w-full flex items-center justify-between p-4 text-left" style={{ borderBottom: showHistory ? "1px solid var(--line)" : "none" }}>
+            <div className="flex items-center gap-2">
+              <span className="font-display text-base font-semibold">Reviewed history</span>
+              <span className="font-mono text-[10px] uppercase tracking-wider" style={{ color: "var(--muted)" }}>· {reviewed.length}</span>
+            </div>
+            <ChevronRight size={14} style={{ color: "var(--muted)", transform: showHistory ? "rotate(90deg)" : "rotate(0deg)", transition: "transform 0.15s" }} />
+          </button>
+          {showHistory && (
+            <div className="divide-y" style={{ borderColor: "var(--line)" }}>
+              {reviewed.slice(0, 20).map((t) => <AgentTaskRow key={t.id} task={t} compact onJumpToQuote={(qid) => jumpToTransaction && jumpToTransaction(qid)} />)}
+            </div>
+          )}
+        </Card>
+      )}
+    </div>
+  );
+}
+
+function AgentTaskRow({ task, onDecide, onJumpToQuote, compact }) {
+  const [open, setOpen] = useState(!compact);
+  const out = task.agent_output || {};
+  const risk = task.agent_risk_level || "low";
+  const riskColor = risk === "critical" || risk === "high" ? "#991b1b" : risk === "medium" ? "#92400e" : "var(--emerald)";
+  const riskBg = risk === "critical" || risk === "high" ? "#fee2e2" : risk === "medium" ? "#fef3c7" : "rgba(15,95,63,0.08)";
+  const isPending = task.status === "pending_review";
+
+  return (
+    <div className="p-4">
+      <div className="flex items-start justify-between gap-3 flex-wrap">
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 mb-1 flex-wrap">
+            <span className="rounded-md px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-wider" style={{ background: "var(--bone)", color: "var(--muted)", border: "1px solid var(--line)" }}>{task.job_type.replace(/_/g, " ")}</span>
+            <span className="rounded-md px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-wider" style={{ background: riskBg, color: riskColor }}>Risk: {risk}</span>
+            {task.status !== "pending_review" && <span className="rounded-md px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-wider" style={{ background: "var(--bone)", color: "var(--muted)", border: "1px solid var(--line)" }}>{task.status}</span>}
+            <span className="font-mono text-[10px]" style={{ color: "var(--muted)" }}>{relativeTime(task.created_at)}</span>
+          </div>
+          <div className="font-semibold text-sm">
+            {out.customer_name || "Customer"} · {out.currency} {parseFloat(out.amount || 0).toLocaleString()} → {out.destination || "destination"}
+          </div>
+          {out.suggested_rate && (
+            <div className="font-mono text-[11px] mt-1" style={{ color: "var(--muted)" }}>
+              Suggested rate: ₦{out.suggested_rate.toLocaleString()}/$ · NGN total: ₦{(out.ngn_total || 0).toLocaleString()}
+            </div>
+          )}
+        </div>
+        <button onClick={() => setOpen((v) => !v)} className="font-mono text-[10px] uppercase tracking-wider underline" style={{ color: "var(--muted)" }}>{open ? "Hide" : "Show draft"}</button>
+      </div>
+
+      {open && (
+        <div className="mt-3 space-y-3">
+          {/* Drafted message */}
+          {out.draft_message && (
+            <div className="rounded-lg p-3" style={{ background: "var(--bone)", border: "1px solid var(--line)" }}>
+              <div className="font-mono text-[9px] uppercase tracking-wider mb-2" style={{ color: "var(--muted)" }}>Drafted message · WhatsApp</div>
+              <div className="text-sm whitespace-pre-line" style={{ color: "var(--ink)" }}>{out.draft_message}</div>
+            </div>
+          )}
+
+          {/* Agent reasoning */}
+          {task.agent_reasoning && (
+            <div className="rounded-lg p-2.5 flex items-start gap-2" style={{ background: "rgba(15,95,63,0.04)", border: "1px solid rgba(15,95,63,0.1)" }}>
+              <Cpu size={12} className="flex-shrink-0 mt-0.5" style={{ color: "var(--emerald)" }} />
+              <div className="text-xs" style={{ color: "var(--muted)" }}>{task.agent_reasoning}</div>
+            </div>
+          )}
+
+          {/* Decision buttons + jump-to-quote */}
+          {isPending && onDecide && (
+            <div className="flex items-center gap-2 flex-wrap">
+              <PrimaryBtn onClick={() => onDecide(task, "approved")}><Check size={12} /> Approve draft</PrimaryBtn>
+              <SecondaryBtn onClick={() => onDecide(task, "rejected", "Operator rejected the draft")}><X size={12} /> Reject</SecondaryBtn>
+              {task.subject_id && onJumpToQuote && (
+                <button onClick={() => onJumpToQuote(task.subject_id)} className="font-mono text-[10px] uppercase tracking-wider underline" style={{ color: "var(--emerald)" }}>Open quote →</button>
+              )}
+              <button onClick={() => onDecide(task, "dismissed")} className="font-mono text-[10px] uppercase tracking-wider underline ml-auto" style={{ color: "var(--muted)" }}>Dismiss</button>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
