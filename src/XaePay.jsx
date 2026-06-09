@@ -14,6 +14,7 @@ import { TermsOfService, PrivacyPolicy, DataDeletion, RefundPolicy, ServiceProvi
 import { OperatorsPage, CustomersPage, ProvidersPage, SendUsdToNgnPage } from "./legal/UserPages.jsx";
 import { CounselBriefPage } from "./legal/CounselBriefPage.jsx";
 import { PricingPage } from "./legal/PricingPage.jsx";
+import { ConnectivityCheckPage } from "./legal/ConnectivityCheckPage.jsx";
 import { AdminPortal } from "./admin/AdminPortal.jsx";
 import { useAuth } from "./lib/auth.js";
 
@@ -320,7 +321,7 @@ function AppShell() {
   // and audience-focused sub-landings (?p=operators/customers/providers). These
   // bypass the rest of the app so footers + external deep-links work without
   // hitting the splash gate or sign-in flow.
-  const STATIC_PAGES = ["terms", "privacy", "refunds", "data-deletion", "msa", "operators", "customers", "providers", "send-usd-ngn", "counsel-brief", "pricing", "admin"];
+  const STATIC_PAGES = ["terms", "privacy", "refunds", "data-deletion", "msa", "operators", "customers", "providers", "send-usd-ngn", "counsel-brief", "pricing", "admin", "connectivity-check"];
   const [legalRoute] = useState(() => {
     if (typeof window === "undefined") return null;
     const p = new URLSearchParams(window.location.search).get("p");
@@ -524,6 +525,7 @@ function AppShell() {
   if (legalRoute === "counsel-brief")  return <CounselBriefPage />;
   if (legalRoute === "pricing")        return <PricingPage />;
   if (legalRoute === "admin")          return <AdminPortal />;
+  if (legalRoute === "connectivity-check") return <ConnectivityCheckPage />;
   if (quoteRoute) return <QuoteApprovalPage quote={quoteRoute} />;
   if (onboardRoute) return <CustomerOnboardPage invite={onboardRoute} />;
 
@@ -4204,6 +4206,7 @@ function CustomerPortal({ session, customerRows }) {
                     <Plus size={14} /> New invoice
                   </PrimaryBtn>
                 </div>
+                <CustomerBrandSettings customer={activeCustomer} onChanged={() => {/* refresh handled via customerRows from parent on next mount */}} />
                 {atLimit && (
                   <div className="rounded-lg p-3 text-xs mb-4" style={{ background: "#fef3c7", color: "#92400e" }}>
                     You've used all {FREE_LIMIT} free invoices this month. Upgrade options coming — for now, more invoices unlock next month.
@@ -5122,6 +5125,106 @@ function CreateRecurringRequestModal({ open, onClose, customer, onCreated }) {
 }
 
 // =============================================================================
+// Customer brand settings — collapsible card inside the "Bill your clients"
+// section. Lets business-type customers upload a logo + set accent color +
+// tagline; those apply to invoices they issue. Mirrors the operator Brand
+// tab but lives inline since customers don't have a separate Brand tab.
+// =============================================================================
+
+function CustomerBrandSettings({ customer, onChanged }) {
+  const { push } = useToast();
+  const [open, setOpen] = useState(false);
+  const [draft, setDraft] = useState({
+    brand_logo_url: customer?.brand_logo_url || null,
+    brand_logo_path: customer?.brand_logo_path || null,
+    brand_accent_color: customer?.brand_accent_color || "#0a0b0d",
+    brand_tagline: customer?.brand_tagline || "",
+  });
+  const [uploading, setUploading] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    setDraft({
+      brand_logo_url: customer?.brand_logo_url || null,
+      brand_logo_path: customer?.brand_logo_path || null,
+      brand_accent_color: customer?.brand_accent_color || "#0a0b0d",
+      brand_tagline: customer?.brand_tagline || "",
+    });
+  }, [customer?.id, customer?.brand_logo_url, customer?.brand_accent_color, customer?.brand_tagline]);
+
+  if (!customer || customer.type !== "business") return null;
+
+  const onLogoChange = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploading(true);
+    try {
+      const res = await uploadBrandLogo(customer.id, file);
+      if (!res.ok) { push(`Upload failed: ${res.error}`, "warn"); return; }
+      setDraft((d) => ({ ...d, brand_logo_url: res.url, brand_logo_path: res.path }));
+      push("Logo uploaded — click Save to apply", "info");
+    } finally { setUploading(false); }
+  };
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      const { error } = await supabase.from("customers").update({
+        brand_logo_url: draft.brand_logo_url,
+        brand_logo_path: draft.brand_logo_path,
+        brand_accent_color: draft.brand_accent_color || null,
+        brand_tagline: draft.brand_tagline || null,
+      }).eq("id", customer.id);
+      if (error) throw error;
+      push("Brand settings saved", "success");
+      onChanged && onChanged();
+    } catch (err) {
+      push(`Couldn't save: ${err?.message || err}`, "warn");
+    } finally { setSaving(false); }
+  };
+
+  return (
+    <div className="mb-4 rounded-xl" style={{ background: "var(--bone)", border: "1px solid var(--line)" }}>
+      <button type="button" onClick={() => setOpen((v) => !v)} className="w-full flex items-center justify-between gap-2 px-3 py-2.5 text-left">
+        <span className="font-mono text-[10px] uppercase tracking-wider flex items-center gap-1.5" style={{ color: "var(--muted)" }}>
+          <Sparkles size={11} /> Brand template
+          {customer.brand_logo_url && <span className="rounded-full px-1.5 py-0.5 font-mono text-[8px]" style={{ background: "var(--lime)", color: "var(--ink)" }}>ON</span>}
+        </span>
+        <ChevronRight size={12} style={{ color: "var(--muted)", transform: open ? "rotate(90deg)" : "rotate(0deg)", transition: "transform 0.15s" }} />
+      </button>
+      {open && (
+        <div className="p-3 pt-0 space-y-3">
+          <p className="text-xs" style={{ color: "var(--muted)" }}>Your logo and accent color appear on every invoice you issue. Clients see your brand on the PDF + email; XaePay attribution stays in the footer for compliance.</p>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Field label="Accent color">
+              <div className="flex items-center gap-2">
+                <input type="color" value={draft.brand_accent_color || "#0a0b0d"} onChange={(e) => setDraft({ ...draft, brand_accent_color: e.target.value })} className="h-10 w-14 rounded-lg border" style={{ borderColor: "var(--line)" }} />
+                <Input value={draft.brand_accent_color || ""} onChange={(e) => setDraft({ ...draft, brand_accent_color: e.target.value })} placeholder="#0a0b0d" />
+              </div>
+            </Field>
+            <Field label="Tagline (optional)">
+              <Input value={draft.brand_tagline} onChange={(e) => setDraft({ ...draft, brand_tagline: e.target.value })} placeholder="Reliable services since 2020" />
+            </Field>
+            <Field label="Logo (PNG/JPG, max 2 MB)" full>
+              <Input type="file" accept="image/png,image/jpeg" onChange={onLogoChange} disabled={uploading} />
+              {draft.brand_logo_url && (
+                <div className="mt-2 flex items-center gap-3">
+                  <img src={safeUrl(draft.brand_logo_url)} alt="Logo preview" className="h-12 w-12 rounded object-contain" style={{ background: "white", border: "1px solid var(--line)" }} />
+                  <button type="button" onClick={() => setDraft({ ...draft, brand_logo_url: null, brand_logo_path: null })} className="text-xs underline" style={{ color: "var(--muted)" }}>Remove</button>
+                </div>
+              )}
+            </Field>
+          </div>
+          <div className="flex justify-end">
+            <PrimaryBtn onClick={save} disabled={saving}>{saving ? <><Loader2 size={12} className="animate-spin" /> Saving…</> : <>Save brand settings</>}</PrimaryBtn>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// =============================================================================
 // Customer-issued invoicing — for business-type customers who want to bill
 // their own downstream clients from inside their XaePay portal. Mirrors the
 // operator's BDC invoicing flow but scoped to customer_issuer_id ownership,
@@ -5207,9 +5310,21 @@ function CustomerIssuedInvoiceModal({ open, onClose, customerIssuer, onCreated }
     }));
     await supabase.from("invoice_items").insert(itemRows);
 
-    // PDF + email — best-effort.
+    // PDF + email — best-effort. Apply the customer-issuer's own brand
+    // template (logo + accent + business name) if they're a business and
+    // have brand fields set. Mirrors what operator-issued invoices do.
+    const customerBrand = (customerIssuer?.type === "business") ? {
+      operator_type: "business",                  // generateInvoicePdf gates branding on this
+      business_name: issuerName,
+      business_address: customerIssuer?.brand_tagline || null,
+      business_phone: customerIssuer?.phone || null,
+      business_email: customerIssuer?.email || null,
+      brand_logo_url: customerIssuer?.brand_logo_url || null,
+      brand_accent_color: customerIssuer?.brand_accent_color || null,
+      brand_tagline: customerIssuer?.brand_tagline || null,
+    } : null;
     try {
-      const pdf = generateInvoicePdf({ invoice: inv, items: itemRows });
+      const pdf = generateInvoicePdf({ invoice: inv, items: itemRows, brand: customerBrand });
       const upRes = await uploadInvoicePdf(inv.id, pdf);
       if (upRes.ok) {
         await supabase.from("invoices").update({
@@ -6879,13 +6994,18 @@ function BDCDashboard({ session, initialCustomerId, onInitialCustomerHandled }) 
     { id: "brand", label: "Brand", icon: Sparkles },
     { id: "earnings", label: "Earnings", icon: TrendingUp },
   ];
-  // Operator name + role line. Demo session passes a single string; real auth-backed
-  // sessions may carry user_metadata.company. Fall back gracefully. Operator can be
-  // a BDC, IMTO, MSB, freight forwarder, customs agent, or independent agent — the
-  // common surface is the operator role, not a specific license type.
-  // Default operator umbrella is XaeccoX (the parent co) — operators who haven't
-  // set their own brand name yet are effectively operating under XaeccoX.
-  const operatorName = session?.name || session?.company || "XaeccoX";
+  // Operator name + role line. Pull from operator_profiles (Brand tab) if the
+  // operator has set a business_name on a business-type profile; otherwise
+  // fall back to session metadata; otherwise XaeccoX (parent-co umbrella).
+  const auth = useAuth();
+  const [operatorProfile, setOperatorProfile] = useState(null);
+  useEffect(() => {
+    if (!auth.user) return;
+    supabase.from("operator_profiles").select("business_name, operator_type").eq("auth_user_id", auth.user.id).maybeSingle().then(({ data }) => setOperatorProfile(data));
+  }, [auth.user?.id]);
+  const operatorName = (operatorProfile?.operator_type === "business" && operatorProfile?.business_name)
+    ? operatorProfile.business_name
+    : (session?.name || session?.company || "XaeccoX");
   const operatorRoleLine = session?.wrapper
     ? `Agent operator · ${session.wrapper}`
     : "Agent operator · Account active";
