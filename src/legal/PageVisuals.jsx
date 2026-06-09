@@ -374,7 +374,7 @@ export function ProviderQueueMockup() {
         {/* Webhook ribbon */}
         <div className="mt-3 rounded-lg p-2.5 flex items-center gap-2" style={{ background: "rgba(15,95,63,0.04)", border: "1px solid rgba(15,95,63,0.15)" }}>
           <ShieldCheck size={12} style={{ color: "var(--emerald)" }} />
-          <span className="font-mono text-[10px]" style={{ color: "var(--ink)" }}>Webhook · last status delivered 12s ago to https://your-api/cedar/xaepay</span>
+          <span className="font-mono text-[10px]" style={{ color: "var(--ink)" }}>Webhook · last status delivered 12s ago to https://your-api/psp/xaepay</span>
         </div>
       </div>
     </BrowserMockup>

@@ -118,7 +118,7 @@ export function OperatorsPage() {
           {[
             { icon: FileText, title: "Invoice + supporting-doc capture", body: "Customers upload their supplier invoice and trade docs in their portal. XaePay parses and pre-validates before you see the quote." },
             { icon: ShieldCheck, title: "KYC + compliance orchestration", body: "We assemble the document bundle each provider needs and push it through. You see the status without chasing it." },
-            { icon: Layers, title: "Multi-provider routing", body: "Cedar is the default rail today. As more providers come online, XaePay picks the best-fit per transaction based on corridor + price." },
+            { icon: Layers, title: "Multi-provider routing", body: "A licensed PSP is live today as the default rail. As more providers come online, XaePay picks the best-fit per transaction based on corridor + price." },
             { icon: Receipt, title: "Receipts + audit packs", body: "Customer receipts on payment; quarterly compliance packs assembled automatically per the tier you picked. No more scrambling at audit time." },
           ].map((f) => (
             <div key={f.title} className="rounded-xl p-5" style={{ background: "white", border: "1px solid var(--line)" }}>
@@ -602,7 +602,7 @@ function ProviderApplicationForm() {
       <div className="grid gap-4 sm:grid-cols-2">
         <div className="sm:col-span-2">
           <label className={labelCls} style={labelStyle}>Legal entity name *</label>
-          <input required className={inputCls} style={inputStyle} value={form.legal_entity_name} onChange={(e) => update("legal_entity_name", e.target.value)} placeholder="Cedar Money Inc." />
+          <input required className={inputCls} style={inputStyle} value={form.legal_entity_name} onChange={(e) => update("legal_entity_name", e.target.value)} placeholder="Acme Payments Ltd." />
         </div>
         <div>
           <label className={labelCls} style={labelStyle}>Contact name *</label>

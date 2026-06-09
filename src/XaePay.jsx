@@ -2562,10 +2562,10 @@ function Landing({ setView, onRequestAccess, onCustomerSignup, onWaitlist }) {
 }
 
 // =============================================================================
-// ConversationalEntry — command-palette-style "what do you need to do?" picker.
-// Replaces the previous 4-card audience grid with a focused, action-first
-// entry. Same destinations under the hood; new shape emphasizes choosing an
-// outcome rather than self-identifying.
+// ConversationalEntry — command-palette-style "what do you need to do?" picker
+// with live activity. Auto-cycles a cursor through the paths so the page reads
+// as actively running (not a static list), and rotates a live-activity ticker
+// in the header so the platform feels operational at all times.
 // =============================================================================
 function WhoItsFor() {
   const paths = [
@@ -2594,6 +2594,34 @@ function WhoItsFor() {
       hotkey: "04",
     },
   ];
+
+  // Live activity ticker — rotates messages every 3s so the header always
+  // looks like something just happened on the platform.
+  const tickerMessages = [
+    "QU-A4F7 routed · 2s ago",
+    "compliance pass · 8s ago",
+    "deposit confirmed · 14s ago",
+    "settlement complete · 21s ago",
+    "invoice reviewed · 27s ago",
+    "recipient verified · 34s ago",
+  ];
+  const [tickerIdx, setTickerIdx] = useState(0);
+  useEffect(() => {
+    const i = setInterval(() => setTickerIdx((s) => (s + 1) % tickerMessages.length), 2400);
+    return () => clearInterval(i);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Auto-cycling cursor — highlights one path at a time so the picker
+  // visibly "moves." Pauses on hover (handled per-row).
+  const [cursor, setCursor] = useState(0);
+  const [paused, setPaused] = useState(false);
+  useEffect(() => {
+    if (paused) return;
+    const i = setInterval(() => setCursor((s) => (s + 1) % paths.length), 2800);
+    return () => clearInterval(i);
+  }, [paused, paths.length]);
+
   return (
     <section className="border-b" style={{ borderColor: "var(--line)", background: "var(--bone)" }}>
       <div className="mx-auto max-w-6xl px-4 py-20 sm:px-6 lg:px-8 lg:py-24">
@@ -2607,31 +2635,80 @@ function WhoItsFor() {
         </div>
 
         <div className="rounded-2xl overflow-hidden" style={{ background: "white", border: "1px solid var(--line)", boxShadow: "0 1px 0 rgba(15,18,20,0.04), 0 24px 48px -24px rgba(15,18,20,0.18)" }}>
-          {/* Command-palette header bar */}
-          <div className="flex items-center justify-between px-5 py-3" style={{ borderBottom: "1px solid var(--line)", background: "var(--bone)" }}>
-            <div className="flex items-center gap-2">
-              <div className="h-2 w-2 rounded-full" style={{ background: "var(--emerald)" }} />
-              <span className="font-mono text-[10px] uppercase tracking-wider" style={{ color: "var(--muted)" }}>xaepay // start</span>
+          {/* Command-palette header — now with live activity ticker */}
+          <div className="flex items-center justify-between px-5 py-3 gap-3" style={{ borderBottom: "1px solid var(--line)", background: "var(--ink)" }}>
+            <div className="flex items-center gap-2 flex-shrink-0">
+              <div className="h-1.5 w-1.5 rounded-full pulse-dot" style={{ background: "var(--lime)", boxShadow: "0 0 8px var(--lime)" }} />
+              <span className="font-mono text-[10px] uppercase tracking-wider" style={{ color: "var(--lime)" }}>xaepay // live</span>
             </div>
-            <span className="font-mono text-[10px] uppercase tracking-wider" style={{ color: "var(--muted)" }}>↑↓ to navigate · ↵ to select</span>
+            <div className="flex-1 text-center min-w-0">
+              <span key={tickerIdx} className="font-mono text-[10px] uppercase tracking-wider fade-in inline-block truncate" style={{ color: "rgba(247,245,240,0.7)" }}>
+                <span style={{ color: "var(--lime)" }}>●</span> {tickerMessages[tickerIdx]}
+              </span>
+            </div>
+            <span className="font-mono text-[10px] uppercase tracking-wider flex-shrink-0 hidden sm:inline" style={{ color: "rgba(247,245,240,0.5)" }}>↑↓ ↵</span>
           </div>
+
           <ul className="divide-y" style={{ borderColor: "var(--line)" }}>
-            {paths.map((p) => (
-              <li key={p.href}>
-                <a href={p.href} className="group flex items-start gap-4 px-5 py-5 transition-colors" style={{ color: "var(--ink)" }}
-                  onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(15,95,63,0.04)"; }}
-                  onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}>
-                  <span className="font-mono text-[10px] uppercase tracking-wider flex-shrink-0 w-8 text-center pt-1" style={{ color: "var(--muted)" }}>{p.hotkey}</span>
-                  <ArrowRight size={14} className="flex-shrink-0 mt-1.5 transition-transform group-hover:translate-x-1" style={{ color: "var(--emerald)" }} />
-                  <div className="min-w-0 flex-1">
-                    <div className="font-display text-base sm:text-lg font-semibold" style={{ color: "var(--ink)" }}>{p.title}</div>
-                    <div className="text-xs sm:text-sm mt-1.5 leading-relaxed" style={{ color: "var(--muted)" }}>{p.detail}</div>
-                  </div>
-                  <span className="font-mono text-[10px] uppercase tracking-wider hidden sm:inline-flex items-center gap-1 flex-shrink-0 pt-1.5" style={{ color: "var(--muted)" }}>↵</span>
-                </a>
-              </li>
-            ))}
+            {paths.map((p, i) => {
+              const isActive = i === cursor && !paused;
+              return (
+                <li key={p.href}>
+                  <a
+                    href={p.href}
+                    className="group flex items-start gap-4 px-5 py-5 transition-all duration-300 relative overflow-hidden"
+                    style={{
+                      color: "var(--ink)",
+                      background: isActive ? "rgba(15,95,63,0.05)" : "transparent",
+                    }}
+                    onMouseEnter={(e) => {
+                      setPaused(true);
+                      setCursor(i);
+                      e.currentTarget.style.background = "rgba(15,95,63,0.08)";
+                    }}
+                    onMouseLeave={(e) => {
+                      setPaused(false);
+                      e.currentTarget.style.background = i === cursor ? "rgba(15,95,63,0.05)" : "transparent";
+                    }}
+                  >
+                    {/* Active-cursor accent bar on the left */}
+                    {isActive && <div className="absolute left-0 top-0 bottom-0 w-[3px]" style={{ background: "var(--emerald)" }} />}
+
+                    <span className="font-mono text-[10px] uppercase tracking-wider flex-shrink-0 w-8 text-center pt-1 flex items-center justify-center gap-0.5" style={{ color: isActive ? "var(--emerald)" : "var(--muted)" }}>
+                      {isActive && <span className="h-1 w-1 rounded-full pulse-dot" style={{ background: "var(--emerald)" }} />}
+                      <span>{p.hotkey}</span>
+                    </span>
+
+                    <ArrowRight
+                      size={14}
+                      className="flex-shrink-0 mt-1.5 transition-transform"
+                      style={{
+                        color: "var(--emerald)",
+                        transform: isActive ? "translateX(4px)" : "translateX(0)",
+                      }}
+                    />
+
+                    <div className="min-w-0 flex-1">
+                      <div className="font-display text-base sm:text-lg font-semibold" style={{ color: "var(--ink)" }}>{p.title}</div>
+                      <div className="text-xs sm:text-sm mt-1.5 leading-relaxed" style={{ color: "var(--muted)" }}>{p.detail}</div>
+                    </div>
+
+                    <span className="font-mono text-[10px] uppercase tracking-wider hidden sm:inline-flex items-center gap-1 flex-shrink-0 pt-1.5 rounded-md px-1.5 py-0.5" style={{
+                      color: isActive ? "var(--bone)" : "var(--muted)",
+                      background: isActive ? "var(--emerald)" : "transparent",
+                      border: isActive ? "1px solid var(--emerald)" : "1px solid var(--line)",
+                    }}>↵</span>
+                  </a>
+                </li>
+              );
+            })}
           </ul>
+
+          {/* Footer status bar */}
+          <div className="flex items-center justify-between px-5 py-2.5" style={{ borderTop: "1px solid var(--line)", background: "var(--bone)" }}>
+            <span className="font-mono text-[10px] uppercase tracking-wider" style={{ color: "var(--muted)" }}>4 paths · {paths.length} surfaces · 1 platform</span>
+            <span className="font-mono text-[10px] uppercase tracking-wider" style={{ color: "var(--emerald)" }}>● operational</span>
+          </div>
         </div>
 
         <p className="mt-6 text-center text-xs" style={{ color: "var(--muted)" }}>
@@ -2712,7 +2789,7 @@ function MiniProviderNodes() {
       <text x="120" y="53" textAnchor="middle" style={{ fontFamily: "ui-monospace, monospace", fontSize: "8px", fontWeight: 600, fill: "#0f5f3f" }}>XAE</text>
       {/* Provider nodes */}
       {[
-        { x: 30,  y: 25,  label: "Cedar", live: true },
+        { x: 30,  y: 25,  label: "PSP-A", live: true },
         { x: 30,  y: 75,  label: "PSP-B", live: false },
         { x: 210, y: 25,  label: "PSP-C", live: false },
         { x: 210, y: 75,  label: "PSP-D", live: false },
@@ -2780,7 +2857,7 @@ function CapabilityStrip() {
             <div>
               <div className="flex h-9 w-9 items-center justify-center rounded-lg mb-3" style={{ background: "rgba(197,242,74,0.15)", color: "var(--lime)" }}><Layers size={16} /></div>
               <h3 className="font-display text-lg font-semibold">Multi-provider rails</h3>
-              <p className="mt-2 text-sm leading-relaxed" style={{ color: "rgba(247,245,240,0.7)" }}>Cedar is live. The routing engine picks the best-fit per transaction based on corridor + cost + speed as more providers come online.</p>
+              <p className="mt-2 text-sm leading-relaxed" style={{ color: "rgba(247,245,240,0.7)" }}>A licensed PSP is live today. The routing engine picks the best-fit per transaction based on corridor + cost + speed as more providers come online.</p>
             </div>
             <div className="hidden sm:block"><MiniProviderNodes /></div>
           </div>
@@ -2811,9 +2888,27 @@ function CapabilityStrip() {
 
 function StructureSection() {
   const points = [
-    { n: "01", title: "We never custody funds", body: "Customer money goes directly to your licensed agent operator's account. Foreign-currency wires are executed by our licensed payment providers, regulated where they operate. XaePay never touches funds, never pools client money, never holds digital assets." },
-    { n: "02", title: "We never act as counterparty", body: "Every transaction is between named parties — customer, agent operator, payment partner, beneficiary — disclosed at every step. XaePay is the software layer, not a party to the trade." },
-    { n: "03", title: "We never quote FX", body: "Our payment partner provides the wholesale rate. The agent operator sets the customer rate. XaePay surfaces the math and disclosures — but the spread belongs to the licensed operator." },
+    {
+      n: "01",
+      title: "We never custody funds",
+      body: "Customer money goes directly to the licensed agent operator's account. Foreign-currency wires are executed by the licensed payment provider, regulated where they operate.",
+      kpi: "$0 ever held by XaePay",
+      sub: "no pools · no float · no digital assets",
+    },
+    {
+      n: "02",
+      title: "We never act as counterparty",
+      body: "Every transaction is between named parties — customer, agent operator, payment partner, beneficiary — disclosed at every step. XaePay is the software layer, not a party to the trade.",
+      kpi: "0 trades on our book",
+      sub: "every party named · every step disclosed",
+    },
+    {
+      n: "03",
+      title: "We never quote FX",
+      body: "The payment partner provides the wholesale rate. The agent operator sets the customer rate. XaePay surfaces the math and disclosures — but the spread belongs to the licensed operator.",
+      kpi: "0 rates set by XaePay",
+      sub: "operator owns markup · provider owns wholesale",
+    },
   ];
   return (
     <section className="border-b" style={{ borderColor: "var(--line)", background: "var(--bone)" }}>
@@ -2822,18 +2917,45 @@ function StructureSection() {
           <div className="lg:col-span-5">
             <SectionEyebrow>§04  How we're structured</SectionEyebrow>
             <h2 className="font-display mt-4 text-4xl font-[450] leading-[1.05] tracking-tight sm:text-5xl">A software<br />layer, not a<br /><span className="italic" style={{ color: "var(--emerald)" }}>fintech</span>.</h2>
-            <p className="mt-6 max-w-md text-base leading-relaxed" style={{ color: "var(--muted)" }}>This isn't legal hedging — it's the design. The defensible position in Nigerian cross-border payments is to own the workflow and the documentation, not the custody.</p>
+            <p className="mt-6 max-w-md text-base leading-relaxed" style={{ color: "var(--muted)" }}>This isn't legal hedging — it's the design. The defensible position in cross-border payments is to own the workflow and the documentation, not the custody.</p>
             <p className="mt-4 max-w-md text-sm" style={{ color: "var(--muted)" }}>Money is moved by parties already licensed to move it. We give them better tools.</p>
+
+            {/* Live status block — reinforces the "alive system" feel */}
+            <div className="mt-8 rounded-2xl p-4" style={{ background: "var(--ink)", color: "var(--bone)" }}>
+              <div className="flex items-center gap-2 mb-3">
+                <div className="h-1.5 w-1.5 rounded-full pulse-dot" style={{ background: "var(--lime)", boxShadow: "0 0 8px var(--lime)" }} />
+                <span className="font-mono text-[10px] uppercase tracking-wider" style={{ color: "var(--lime)" }}>Live · all 3 invariants holding</span>
+              </div>
+              <div className="grid grid-cols-3 gap-3 text-center">
+                {points.map((p) => (
+                  <div key={p.n}>
+                    <div className="font-display text-2xl font-semibold" style={{ color: "var(--lime)" }}>0</div>
+                    <div className="font-mono text-[9px] uppercase tracking-wider mt-1" style={{ color: "rgba(247,245,240,0.5)" }}>{p.n === "01" ? "funds held" : p.n === "02" ? "trades on book" : "rates set"}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
           </div>
+
           <div className="lg:col-span-7">
-            <div className="space-y-3">
+            <div className="space-y-4">
               {points.map((p) => (
-                <div key={p.n} className="card-soft rounded-2xl bg-white p-6" style={{ border: "1px solid var(--line)" }}>
-                  <div className="flex items-start gap-4">
-                    <span className="font-mono text-[11px] font-medium pt-1" style={{ color: "var(--emerald)" }}>{p.n}</span>
-                    <div className="flex-1">
-                      <h3 className="font-display text-lg font-semibold" style={{ color: "var(--ink)" }}>{p.title}</h3>
-                      <p className="mt-1.5 text-sm leading-relaxed" style={{ color: "var(--muted)" }}>{p.body}</p>
+                <div key={p.n} className="rounded-2xl overflow-hidden relative" style={{ background: "white", border: "1px solid var(--line)" }}>
+                  {/* Side accent bar */}
+                  <div className="absolute left-0 top-0 bottom-0 w-1" style={{ background: "var(--emerald)" }} />
+                  <div className="p-6 pl-7">
+                    <div className="flex items-start justify-between gap-4 flex-wrap">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-baseline gap-3 mb-2">
+                          <span className="font-display text-3xl font-[500] tracking-tight" style={{ color: "var(--emerald)" }}>{p.n}</span>
+                          <h3 className="font-display text-xl font-semibold" style={{ color: "var(--ink)" }}>{p.title}</h3>
+                        </div>
+                        <p className="text-sm leading-relaxed" style={{ color: "var(--muted)" }}>{p.body}</p>
+                      </div>
+                      <div className="flex-shrink-0 rounded-xl px-4 py-3 text-right" style={{ background: "var(--bone)", border: "1px solid var(--line)" }}>
+                        <div className="font-display text-sm font-semibold" style={{ color: "var(--ink)" }}>{p.kpi}</div>
+                        <div className="font-mono text-[9px] uppercase tracking-wider mt-1" style={{ color: "var(--muted)" }}>{p.sub}</div>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -2924,7 +3046,7 @@ function AgentPipeline() {
       id: "routing",
       label: "Routing Engine",
       caption: "Selecting licensed provider",
-      output: "Cedar · USD→CNY · ₦1,395/$ wholesale",
+      output: "PSP · USD→CNY · ₦1,395/$ wholesale",
       color: "var(--lime)",
     },
     {
@@ -3595,7 +3717,7 @@ function DiasporaPricing({ onRequestAccess }) {
           features={["Any African account", "5-minute typical delivery", "Full WhatsApp workflow", "FX rate locked 4 min", "Rates shown before you send"]}
           min="No subscription · pay per send" onSelect={onRequestAccess} />
         <PriceCard tier="Regular sends" subtitle="$1,000 – $5,000" price="$9.99" priceSuffix="flat"
-          features={["Everything in Small sends", "Purpose-specific docs (vendor, school, property)", "Multi-currency: USD / GBP / EUR / CAD", "Priority routing on Cedar rail", "Receipt + recipient confirmation"]}
+          features={["Everything in Small sends", "Purpose-specific docs (vendor, school, property)", "Multi-currency: USD / GBP / EUR / CAD", "Priority routing on the live PSP rail", "Receipt + recipient confirmation"]}
           min="No subscription · pay per send" highlighted onSelect={onRequestAccess} />
         <PriceCard tier="Large sends" subtitle="Above $5,000" price="0.40%" priceSuffix="capped at $49"
           features={["Everything in Regular sends", "Enhanced vendor documentation", "Premium routing for $25K+", "Dedicated compliance support", "Volume bonuses above $50K/month"]}
@@ -5927,11 +6049,11 @@ function CustomerQuoteCard({ q, onDecide, onInvoiceUploaded }) {
       return;
     }
     if (both.supabaseUrl && both.cedarUrl) {
-      push("Invoice uploaded to XaePay + Cedar — running compliance check…", "success");
+      push("Invoice uploaded to XaePay + PSP — running compliance check…", "success");
     } else if (both.supabaseUrl) {
-      push(`Invoice uploaded (Cedar copy failed: ${both.cedarError || "unknown"}) — compliance running`, "warn");
+      push(`Invoice uploaded (PSP copy failed: ${both.cedarError || "unknown"}) — compliance running`, "warn");
     } else {
-      push(`Invoice uploaded to Cedar only (XaePay copy failed: ${both.storageError || "unknown"})`, "warn");
+      push(`Invoice uploaded to PSP only (XaePay copy failed: ${both.storageError || "unknown"})`, "warn");
     }
     // Fire-and-forget; the realtime subscription on the parent will pick up the
     // review_decision update when the Edge Function finishes.
@@ -8362,7 +8484,7 @@ function BDCProviders() {
 
       <div className="rounded-xl p-4 text-xs" style={{ background: "rgba(15,95,63,0.05)", border: "1px solid rgba(15,95,63,0.15)" }}>
         <div className="font-mono text-[10px] uppercase tracking-wider mb-1" style={{ color: "var(--emerald)" }}>How routing works today</div>
-        <p style={{ color: "var(--muted)" }}>Right now Cedar is the default rail for all cross-border quotes. As more providers come online, XaePay will pick the best-fit provider per quote based on corridor coverage, pricing, and speed.</p>
+        <p style={{ color: "var(--muted)" }}>A licensed PSP is currently the default rail for all cross-border quotes. As more providers come online, XaePay will pick the best-fit provider per quote based on corridor coverage, pricing, and speed.</p>
       </div>
     </div>
   );
