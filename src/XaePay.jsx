@@ -141,7 +141,7 @@ function SplashScreen() {
 function GlobalStyles() {
   return (
     <style>{`
-      @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Inter+Tight:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
+      @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500;600&family=Inter+Tight:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
 
       :root {
         --ink: #0a0b0d; --ink-2: #18191c;
@@ -154,8 +154,9 @@ function GlobalStyles() {
 
       html, body, #root { background: var(--paper); }
       .font-display { font-family: 'Fraunces', Georgia, serif; font-feature-settings: 'ss01', 'ss02'; letter-spacing: -0.02em; }
-      .font-ui { font-family: 'Inter Tight', -apple-system, sans-serif; letter-spacing: -0.01em; }
-      .font-mono { font-family: 'JetBrains Mono', ui-monospace, monospace; }
+      .font-ui { font-family: 'Geist', 'Inter Tight', -apple-system, sans-serif; letter-spacing: -0.012em; font-feature-settings: 'ss01', 'ss02', 'cv11'; }
+      .font-mono { font-family: 'Geist Mono', 'JetBrains Mono', ui-monospace, monospace; font-feature-settings: 'ss03', 'zero'; }
+      body, button, input, select, textarea { font-family: 'Geist', 'Inter Tight', -apple-system, sans-serif; }
 
       @keyframes rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
       @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
@@ -2965,23 +2966,23 @@ function StructureSection() {
   const points = [
     {
       n: "01",
-      title: "We never custody funds",
-      body: "Customer money goes directly to the licensed agent operator's account. Foreign-currency wires are executed by the licensed payment provider, regulated where they operate.",
-      kpi: "$0 ever held by XaePay",
-      sub: "no pools · no float · no digital assets",
+      title: "No custody",
+      body: "Customer funds go straight to the licensed operator's account. Foreign-currency wires are executed by the licensed provider — regulated where they operate. XaePay never touches a dollar.",
+      kpi: "$0 held, ever",
+      sub: "no pools · no float · no crypto",
     },
     {
       n: "02",
-      title: "We never act as counterparty",
-      body: "Every transaction is between named parties — customer, agent operator, payment partner, beneficiary — disclosed at every step. XaePay is the software layer, not a party to the trade.",
+      title: "No counterparty",
+      body: "Every trade is between named parties — customer, operator, provider, beneficiary. Disclosed at every step. XaePay is the software layer, not a party to the trade.",
       kpi: "0 trades on our book",
       sub: "every party named · every step disclosed",
     },
     {
       n: "03",
-      title: "We never quote FX",
-      body: "The payment partner provides the wholesale rate. The agent operator sets the customer rate. XaePay surfaces the math and disclosures — but the spread belongs to the licensed operator.",
-      kpi: "0 rates set by XaePay",
+      title: "No price-setting",
+      body: "The provider sets the wholesale rate. The operator sets the customer rate. XaePay surfaces the math and disclosures — the spread belongs to the licensed operator, not us.",
+      kpi: "0 prices set by XaePay",
       sub: "operator owns markup · provider owns wholesale",
     },
   ];
@@ -2992,20 +2993,19 @@ function StructureSection() {
           <div className="lg:col-span-5">
             <SectionEyebrow>§04  How we're structured</SectionEyebrow>
             <h2 className="font-display mt-4 text-4xl font-[450] leading-[1.05] tracking-tight sm:text-5xl">A software<br />layer, not a<br /><span className="italic" style={{ color: "var(--emerald)" }}>fintech</span>.</h2>
-            <p className="mt-6 max-w-md text-base leading-relaxed" style={{ color: "var(--muted)" }}>This isn't legal hedging — it's the design. The defensible position in cross-border payments is to own the workflow and the documentation, not the custody.</p>
-            <p className="mt-4 max-w-md text-sm" style={{ color: "var(--muted)" }}>Money is moved by parties already licensed to move it. We give them better tools.</p>
+            <p className="mt-6 max-w-md text-base leading-relaxed" style={{ color: "var(--muted)" }}>By design, not by default. The defensible position in cross-border payments is the workflow and the audit trail — not the custody. Money moves through parties already licensed to move it. We give them better tools.</p>
 
             {/* Live status block — reinforces the "alive system" feel */}
             <div className="mt-8 rounded-2xl p-4" style={{ background: "var(--ink)", color: "var(--bone)" }}>
               <div className="flex items-center gap-2 mb-3">
                 <div className="h-1.5 w-1.5 rounded-full pulse-dot" style={{ background: "var(--lime)", boxShadow: "0 0 8px var(--lime)" }} />
-                <span className="font-mono text-[10px] uppercase tracking-wider" style={{ color: "var(--lime)" }}>Live · all 3 invariants holding</span>
+                <span className="font-mono text-[10px] uppercase tracking-wider" style={{ color: "var(--lime)" }}>Live · 3 invariants holding</span>
               </div>
               <div className="grid grid-cols-3 gap-3 text-center">
                 {points.map((p) => (
                   <div key={p.n}>
                     <div className="font-display text-2xl font-semibold" style={{ color: "var(--lime)" }}>0</div>
-                    <div className="font-mono text-[9px] uppercase tracking-wider mt-1" style={{ color: "rgba(247,245,240,0.5)" }}>{p.n === "01" ? "funds held" : p.n === "02" ? "trades on book" : "rates set"}</div>
+                    <div className="font-mono text-[9px] uppercase tracking-wider mt-1" style={{ color: "rgba(247,245,240,0.5)" }}>{p.n === "01" ? "funds held" : p.n === "02" ? "trades on book" : "prices set"}</div>
                   </div>
                 ))}
               </div>
