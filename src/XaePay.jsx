@@ -2562,64 +2562,88 @@ function Landing({ setView, onRequestAccess, onCustomerSignup, onWaitlist }) {
 }
 
 // =============================================================================
-// "Who's it for?" — 4 audience cards routing to dedicated sub-pages. Replaces
-// the operator-only pitch on the homepage with a clear "pick your audience"
-// pattern that improves first-impression for any visitor.
+// ConversationalEntry — command-palette-style "what do you need to do?" picker.
+// Replaces the previous 4-card audience grid with a focused, action-first
+// entry. Same destinations under the hood; new shape emphasizes choosing an
+// outcome rather than self-identifying.
 // =============================================================================
 function WhoItsFor() {
-  const audiences = [
+  const paths = [
     {
-      icon: Briefcase,
-      label: "Operators",
-      lede: "BDCs, IMTOs, freight forwarders, independent agents. Bring your customers, set your rates, keep up to 70% of the markup.",
-      href: "/?p=operators",
-      cta: "Apply as an operator",
-    },
-    {
-      icon: Building2,
-      label: "Businesses paying suppliers",
-      lede: "Pay your foreign suppliers from Nigeria with transparent rates, full trade documentation, and a receipt for every wire.",
-      href: "/?p=customers",
-      cta: "See how it works",
-    },
-    {
-      icon: Wallet,
-      label: "Diaspora senders",
-      lede: "Hold USD abroad and need to pay NGN in Nigeria — family, school fees, supplier, contractor. Locked rate, same-day payout.",
+      verb: "Send money",
+      object: "across the Nigeria corridor",
+      detail: "Pay a supplier, send to family, settle school fees. USD ↔ NGN, locked rate, same-day.",
       href: "/?p=send-usd-ngn",
-      cta: "Send USD → NGN",
+      hotkey: "01",
     },
     {
-      icon: Layers,
-      label: "Licensed providers",
-      lede: "Receive clean KYC-completed transactions routed to your desk. We handle docs + orchestration; you execute the regulated leg.",
+      verb: "Bill clients",
+      object: "in foreign currency",
+      detail: "Issue invoices to your overseas clients, collect in USD/GBP/EUR, settle in NGN. Multi-method payment links.",
+      href: "/?p=customers",
+      hotkey: "02",
+    },
+    {
+      verb: "Run my BDC",
+      object: "on better tools",
+      detail: "Bring your customers. Set your rates. Let the compliance + routing agents do the rest. Keep up to 70%.",
+      href: "/?p=operators",
+      hotkey: "03",
+    },
+    {
+      verb: "Integrate as",
+      object: "a licensed provider",
+      detail: "Receive pre-screened, KYC-completed transactions routed to your desk. API or portal — your call.",
       href: "/?p=providers",
-      cta: "Apply to onboard",
+      hotkey: "04",
     },
   ];
   return (
     <section className="border-b" style={{ borderColor: "var(--line)", background: "var(--bone)" }}>
-      <div className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8 lg:py-20">
-        <div className="mb-10 max-w-2xl">
-          <SectionEyebrow>Who's it for</SectionEyebrow>
-          <h2 className="font-display mt-3 text-4xl font-[450] leading-[1.05] tracking-tight sm:text-5xl">Four audiences. <span className="italic" style={{ color: "var(--emerald)" }}>One platform.</span></h2>
-          <p className="mt-4 max-w-xl text-base leading-relaxed" style={{ color: "var(--muted)" }}>XaePay is a multi-sided platform: customers initiate payments, operators handle the relationship, providers execute the regulated leg. Each role gets its own dashboard, its own economics, and its own way in.</p>
+      <div className="mx-auto max-w-5xl px-4 py-20 sm:px-6 lg:px-8 lg:py-24">
+        <div className="mb-12 text-center">
+          <div className="inline-flex items-center gap-2 rounded-full border px-3 py-1 mb-5" style={{ borderColor: "rgba(15,95,63,0.18)", background: "rgba(15,95,63,0.04)" }}>
+            <div className="h-1.5 w-1.5 rounded-full pulse-dot" style={{ background: "var(--emerald)", boxShadow: "0 0 6px var(--emerald)" }} />
+            <span className="font-mono text-[10px] font-medium uppercase tracking-[0.12em]" style={{ color: "var(--emerald)" }}>Pick a path</span>
+          </div>
+          <h2 className="font-display text-4xl font-[450] leading-[1.05] tracking-tight sm:text-5xl">What do you need <span className="italic" style={{ color: "var(--emerald)" }}>to do?</span></h2>
+          <p className="mt-4 max-w-xl mx-auto text-base leading-relaxed" style={{ color: "var(--muted)" }}>XaePay is a multi-sided operator platform. Tell us why you're here and we'll take you straight to the right surface.</p>
         </div>
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          {audiences.map((a) => {
-            const Icon = a.icon;
-            return (
-              <a key={a.label} href={a.href} className="card-soft card-lift rounded-2xl bg-white p-6 transition" style={{ border: "1px solid var(--line)" }}>
-                <div className="flex h-10 w-10 items-center justify-center rounded-lg" style={{ background: "var(--bone-2)", color: "var(--emerald)" }}><Icon size={18} /></div>
-                <h3 className="font-display mt-4 text-base font-semibold">{a.label}</h3>
-                <p className="mt-2 text-sm" style={{ color: "var(--muted)" }}>{a.lede}</p>
-                <div className="mt-4 font-mono text-[11px] inline-flex items-center gap-1 underline" style={{ color: "var(--emerald)" }}>
-                  {a.cta} <ArrowRight size={11} />
-                </div>
-              </a>
-            );
-          })}
+
+        <div className="rounded-2xl overflow-hidden" style={{ background: "white", border: "1px solid var(--line)", boxShadow: "0 1px 0 rgba(15,18,20,0.04), 0 24px 48px -24px rgba(15,18,20,0.18)" }}>
+          {/* Command-palette header bar */}
+          <div className="flex items-center justify-between px-5 py-3" style={{ borderBottom: "1px solid var(--line)", background: "var(--bone)" }}>
+            <div className="flex items-center gap-2">
+              <div className="h-2 w-2 rounded-full" style={{ background: "var(--emerald)" }} />
+              <span className="font-mono text-[10px] uppercase tracking-wider" style={{ color: "var(--muted)" }}>xaepay // start</span>
+            </div>
+            <span className="font-mono text-[10px] uppercase tracking-wider" style={{ color: "var(--muted)" }}>↑↓ to navigate · ↵ to select</span>
+          </div>
+          <ul className="divide-y" style={{ borderColor: "var(--line)" }}>
+            {paths.map((p) => (
+              <li key={p.href}>
+                <a href={p.href} className="group flex items-center gap-4 px-5 py-5 transition-colors" style={{ color: "var(--ink)" }}
+                  onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(15,95,63,0.04)"; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}>
+                  <span className="font-mono text-[10px] uppercase tracking-wider flex-shrink-0 w-8 text-center" style={{ color: "var(--muted)" }}>{p.hotkey}</span>
+                  <ArrowRight size={14} className="flex-shrink-0 transition-transform group-hover:translate-x-1" style={{ color: "var(--emerald)" }} />
+                  <div className="min-w-0 flex-1">
+                    <div className="text-base sm:text-lg">
+                      <span className="font-display font-semibold" style={{ color: "var(--ink)" }}>{p.verb}</span>
+                      <span className="font-display ml-2" style={{ color: "var(--muted)" }}>{p.object}</span>
+                    </div>
+                    <div className="text-xs sm:text-sm mt-1" style={{ color: "var(--muted)" }}>{p.detail}</div>
+                  </div>
+                  <span className="font-mono text-[10px] uppercase tracking-wider hidden sm:inline-flex items-center gap-1 flex-shrink-0" style={{ color: "var(--muted)" }}>↵</span>
+                </a>
+              </li>
+            ))}
+          </ul>
         </div>
+
+        <p className="mt-6 text-center text-xs" style={{ color: "var(--muted)" }}>
+          Not sure where you fit? <a href={WHATSAPP_URL} target="_blank" rel="noreferrer" className="underline" style={{ color: "var(--emerald)" }}>Ask us on WhatsApp.</a>
+        </p>
       </div>
     </section>
   );
@@ -2710,7 +2734,7 @@ function Hero({ onGetStarted, onCustomerSignup }) {
               <span className="font-mono text-[10px] font-medium uppercase tracking-[0.12em]" style={{ color: "var(--lime)" }}>The cross-border OS for operators + customers</span>
             </div>
             <h1 className="rise font-display text-[44px] font-[450] leading-[1.02] tracking-tight sm:text-6xl lg:text-[72px]">Cross-border FX<br /><span className="italic" style={{ color: "var(--lime)" }}>businesses run on.</span></h1>
-            <p className="rise mt-8 max-w-xl text-base leading-relaxed sm:text-lg" style={{ color: "rgba(247,245,240,0.65)", animationDelay: "0.16s" }}>Invoicing, compliance documentation, and routing — across licensed payment providers — for businesses paying foreign suppliers and operators serving them. <span className="font-semibold" style={{ color: "var(--bone)" }}>Software, not custody.</span></p>
+            <p className="rise mt-8 max-w-xl text-base leading-relaxed sm:text-lg" style={{ color: "rgba(247,245,240,0.65)", animationDelay: "0.16s" }}>Invoicing, compliance, and routing — across licensed payment providers — orchestrated by purpose-built agents. <span className="font-semibold" style={{ color: "var(--bone)" }}>Operators bring the relationship; XaePay brings the work, done.</span></p>
             <div className="rise mt-10 flex flex-col gap-3 sm:flex-row" style={{ animationDelay: "0.24s" }}>
               <button onClick={onGetStarted} className="glow-lime inline-flex items-center justify-center gap-2 rounded-xl px-6 py-3.5 text-sm font-semibold transition" style={{ background: "var(--lime)", color: "var(--ink)" }}>Become an operator <ArrowRight size={16} /></button>
               {onCustomerSignup && (
@@ -2745,54 +2769,137 @@ function Hero({ onGetStarted, onCustomerSignup }) {
               </div>
             </div>
           </div>
-          <div className="rise lg:col-span-5" style={{ animationDelay: "0.3s" }}><HeroChat /></div>
+          <div className="rise lg:col-span-5" style={{ animationDelay: "0.3s" }}><AgentPipeline /></div>
         </div>
       </div>
     </section>
   );
 }
 
-function HeroChat() {
-  const [step, setStep] = useState(0);
-  useEffect(() => {
-    const i = setInterval(() => setStep((s) => Math.min(s + 1, 5)), 1800);
-    return () => clearInterval(i);
-  }, []);
-  const messages = [
-    { from: "customer", text: "I need to pay $25K to my Shenzhen supplier" },
-    { from: "operator", text: "Sure. Send the invoice. I'll get you a quote in 2 minutes." },
-    { from: "operator", text: "[forwards to XaePay]" },
-    { from: "xae", text: "Wholesale rate: ₦1,395/$ — Documented tier (Form M + audit pack) minimum: ₦1,398.50/$ — earnings at minimum markup: $26.83 — set your own markup higher to earn more" },
-    { from: "operator", text: "₦1,400/$. ₦35,000,000 total. Form M + audit pack included.\n\nLocked 4 minutes. Reply CONFIRM to proceed." },
-    { from: "customer", text: "CONFIRM" },
+// AgentPipeline — animated agent workflow visualization for the hero. Shows a
+// transaction flowing through XaePay's purpose-built agents one node at a time,
+// each one "thinking" then handing off to the next. Loops continuously. Built
+// in code (no images) — SVG + CSS + React state.
+function AgentPipeline() {
+  const steps = [
+    {
+      id: "intake",
+      label: "Intake Agent",
+      caption: "Parsing customer request",
+      output: '"Pay $25K to supplier in Shenzhen"',
+      color: "var(--lime)",
+    },
+    {
+      id: "compliance",
+      label: "Compliance Agent",
+      caption: "Reviewing invoice + screening parties",
+      output: "Invoice ✓  ·  OFAC clean  ·  Risk: low",
+      color: "var(--lime)",
+    },
+    {
+      id: "routing",
+      label: "Routing Engine",
+      caption: "Selecting licensed provider",
+      output: "Cedar · USD→CNY · ₦1,395/$ wholesale",
+      color: "var(--lime)",
+    },
+    {
+      id: "documents",
+      label: "Document Agent",
+      caption: "Assembling audit pack",
+      output: "Form M ref · BOL · sanctions report",
+      color: "var(--lime)",
+    },
+    {
+      id: "settlement",
+      label: "Settlement Agent",
+      caption: "Tracking provider execution",
+      output: "Status: ARRIVED · MT103 captured",
+      color: "var(--lime)",
+    },
   ];
 
+  const [active, setActive] = useState(0);
+  useEffect(() => {
+    const i = setInterval(() => setActive((s) => (s + 1) % steps.length), 2200);
+    return () => clearInterval(i);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   return (
-    <div className="card-soft rounded-2xl p-5 sm:p-6" style={{ background: "white", border: "1px solid var(--line)" }}>
-      <div className="mb-4 flex items-center justify-between pb-3" style={{ borderBottom: "1px solid var(--line)" }}>
+    <div className="rounded-2xl p-5 sm:p-6" style={{ background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.08)", backdropFilter: "blur(8px)" }}>
+      <div className="mb-5 flex items-center justify-between pb-4" style={{ borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
         <div className="flex items-center gap-2">
-          <div className="flex h-7 w-7 items-center justify-center rounded-lg" style={{ background: "var(--bone-2)", color: "var(--emerald)" }}><MessageCircle size={14} /></div>
-          <span className="text-sm font-semibold" style={{ color: "var(--ink)" }}>WhatsApp</span>
+          <div className="h-1.5 w-1.5 rounded-full pulse-dot" style={{ background: "var(--lime)", boxShadow: "0 0 8px var(--lime)" }} />
+          <span className="font-mono text-[10px] uppercase tracking-wider" style={{ color: "var(--lime)" }}>Agents · live</span>
         </div>
-        <span className="font-mono text-[10px]" style={{ color: "var(--emerald)" }}>● live demo</span>
+        <span className="font-mono text-[9px] uppercase tracking-wider" style={{ color: "rgba(247,245,240,0.4)" }}>txn 0x4a2f · routing</span>
       </div>
-      <div className="space-y-2">
-        {messages.slice(0, step + 1).map((m, i) => (
-          <div key={i} className={`flex ${m.from === "customer" ? "justify-end" : "justify-start"} fade-in`}>
-            <div className="max-w-[85%]">
-              <div className="font-mono text-[9px] mb-1 uppercase tracking-wider" style={{ color: m.from === "customer" ? "var(--muted)" : m.from === "operator" ? "var(--emerald)" : "var(--ink)", textAlign: m.from === "customer" ? "right" : "left" }}>
-                {m.from === "customer" ? "Customer" : m.from === "operator" ? "You · the operator" : "XaePay · internal"}
+
+      <div className="space-y-1">
+        {steps.map((s, i) => {
+          const isActive = i === active;
+          const isDone = i < active;
+          const isPending = i > active;
+          return (
+            <div key={s.id}>
+              <div
+                className="rounded-xl p-3 transition-all duration-500"
+                style={{
+                  background: isActive ? "rgba(197,242,74,0.06)" : "transparent",
+                  border: `1px solid ${isActive ? "rgba(197,242,74,0.4)" : "rgba(255,255,255,0.04)"}`,
+                  boxShadow: isActive ? "0 0 24px rgba(197,242,74,0.12)" : "none",
+                }}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex items-start gap-3 min-w-0">
+                    <div className="flex h-5 w-5 items-center justify-center rounded-full flex-shrink-0 mt-0.5" style={{
+                      background: isActive ? "var(--lime)" : isDone ? "rgba(197,242,74,0.15)" : "rgba(255,255,255,0.05)",
+                      border: `1px solid ${isActive ? "var(--lime)" : isDone ? "rgba(197,242,74,0.3)" : "rgba(255,255,255,0.1)"}`,
+                    }}>
+                      {isDone ? (
+                        <CheckCircle2 size={11} style={{ color: "var(--lime)" }} strokeWidth={2.5} />
+                      ) : isActive ? (
+                        <div className="h-1.5 w-1.5 rounded-full" style={{ background: "var(--ink)" }} />
+                      ) : (
+                        <div className="h-1 w-1 rounded-full" style={{ background: "rgba(255,255,255,0.3)" }} />
+                      )}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="font-display text-sm font-semibold" style={{ color: isPending ? "rgba(247,245,240,0.35)" : "var(--bone)" }}>
+                        {s.label}
+                      </div>
+                      <div className="font-mono text-[10px] mt-0.5 uppercase tracking-wider" style={{ color: isActive ? "var(--lime)" : isPending ? "rgba(247,245,240,0.25)" : "rgba(247,245,240,0.5)" }}>
+                        {isActive ? "Thinking…" : isDone ? "Done" : "Pending"}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                {(isActive || isDone) && (
+                  <div className="mt-2 ml-8 rounded-md px-2.5 py-1.5 font-mono text-[10.5px] truncate" style={{
+                    background: "rgba(0,0,0,0.4)",
+                    color: isActive ? "var(--lime)" : "rgba(247,245,240,0.55)",
+                    border: "1px solid rgba(255,255,255,0.04)",
+                  }}>
+                    {isActive ? s.caption : s.output}
+                  </div>
+                )}
               </div>
-              <div className="rounded-2xl px-3.5 py-2.5 text-sm whitespace-pre-line" style={
-                m.from === "customer" ? { background: "rgba(15,95,63,0.08)", color: "var(--ink)" } :
-                m.from === "operator" ? { background: "var(--bone)", color: "var(--ink)", border: "1px solid var(--line)" } :
-                { background: "var(--ink)", color: "var(--bone)", fontFamily: "ui-monospace, monospace", fontSize: "11px" }
-              }>
-                {m.text}
-              </div>
+              {i < steps.length - 1 && (
+                <div className="flex ml-[18px] py-0.5">
+                  <div className="w-px h-3" style={{
+                    background: isDone || isActive ? "linear-gradient(to bottom, rgba(197,242,74,0.5), rgba(197,242,74,0.1))" : "rgba(255,255,255,0.08)",
+                  }} />
+                </div>
+              )}
             </div>
-          </div>
-        ))}
+          );
+        })}
+      </div>
+
+      <div className="mt-5 pt-4 flex items-center justify-between" style={{ borderTop: "1px solid rgba(255,255,255,0.06)" }}>
+        <span className="font-mono text-[9px] uppercase tracking-wider" style={{ color: "rgba(247,245,240,0.4)" }}>5 agents · 1 transaction · ~14s</span>
+        <span className="font-mono text-[9px] uppercase tracking-wider" style={{ color: "var(--lime)" }}>Operator-supervised</span>
       </div>
     </div>
   );
