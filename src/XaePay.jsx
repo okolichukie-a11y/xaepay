@@ -45,18 +45,93 @@ export const TIERS = {
 };
 
 function SplashScreen() {
+  // System-init splash. Shows the platform "warming up" — 5 subsystems come
+  // online sequentially over ~3s while a progress bar fills. Reads as "this
+  // is a real system booting" instead of "loading…" Responsive sizing for
+  // mobile vs desktop. Hidden via splashMinDone gate elsewhere (3000ms).
+  const subsystems = [
+    { label: "Compliance agent",   id: "compliance" },
+    { label: "Routing engine",     id: "routing" },
+    { label: "Provider network",   id: "provider" },
+    { label: "Document agent",     id: "documents" },
+    { label: "Settlement agent",   id: "settlement" },
+  ];
+  const [readyIdx, setReadyIdx] = useState(-1);
+  useEffect(() => {
+    // Advance one subsystem every ~500ms so all 5 are ready before the 3s
+    // splash gate elapses. The "syncing" frame on the next-up subsystem gives
+    // the user something to look at between each ready event.
+    const i = setInterval(() => {
+      setReadyIdx((s) => (s >= subsystems.length - 1 ? s : s + 1));
+    }, 500);
+    return () => clearInterval(i);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const pctReady = ((readyIdx + 1) / subsystems.length) * 100;
+
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center px-4" style={{ background: "var(--paper)", color: "var(--ink)" }}>
-      <div className="flex flex-col items-center gap-6">
-        <div className="splash-logo flex h-24 w-24 items-center justify-center rounded-2xl" style={{ background: "linear-gradient(135deg, var(--emerald), var(--emerald-deep))" }}>
-          <span className="font-display text-5xl font-semibold" style={{ color: "var(--lime)" }}>X</span>
+    <div className="fixed inset-0 w-screen h-[100dvh] flex flex-col items-center justify-center px-6 overflow-hidden" style={{ background: "var(--ink)", color: "var(--bone)" }}>
+      {/* Backdrop grid + mesh for depth */}
+      <div className="absolute inset-0 hero-grid opacity-50" />
+      <div className="absolute inset-0" style={{ background: "radial-gradient(ellipse 80% 60% at 50% 40%, rgba(15,95,63,0.25), transparent 60%), radial-gradient(ellipse 60% 40% at 50% 70%, rgba(197,242,74,0.06), transparent 70%)" }} />
+
+      <div className="relative flex flex-col items-center gap-8 sm:gap-10 w-full max-w-md">
+        {/* Logo with glow */}
+        <div className="splash-logo flex h-20 w-20 sm:h-24 sm:w-24 items-center justify-center rounded-2xl" style={{ background: "linear-gradient(135deg, var(--emerald), var(--emerald-deep))" }}>
+          <span className="font-display text-4xl sm:text-5xl font-semibold" style={{ color: "var(--lime)" }}>X</span>
         </div>
+
+        {/* Wordmark */}
         <div className="text-center">
           <div className="splash-wordmark font-display text-4xl sm:text-5xl font-semibold tracking-tight">XaePay</div>
-          <div className="splash-tagline font-mono text-[10px] sm:text-[11px] uppercase mt-3" style={{ color: "var(--muted)" }}>by XaeccoX</div>
+          <div className="splash-tagline font-mono text-[10px] sm:text-[11px] uppercase mt-3" style={{ color: "rgba(247,245,240,0.5)" }}>by XaeccoX</div>
         </div>
-        <div className="mt-2 h-[2px] w-32 rounded-full overflow-hidden" style={{ background: "rgba(10,11,13,0.06)" }}>
-          <div className="splash-bar-fill h-full w-full rounded-full" style={{ background: "linear-gradient(90deg, transparent, var(--emerald), transparent)" }} />
+
+        {/* Subsystems initializing */}
+        <div className="w-full rounded-2xl p-4 sm:p-5 fade-in" style={{ background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.06)" }}>
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <div className="h-1.5 w-1.5 rounded-full pulse-dot" style={{ background: "var(--lime)", boxShadow: "0 0 8px var(--lime)" }} />
+              <span className="font-mono text-[10px] uppercase tracking-wider" style={{ color: "var(--lime)" }}>Booting platform</span>
+            </div>
+            <span className="font-mono text-[10px] uppercase tracking-wider" style={{ color: "rgba(247,245,240,0.4)" }}>{Math.max(readyIdx + 1, 0)} / {subsystems.length}</span>
+          </div>
+          <ul className="space-y-1.5">
+            {subsystems.map((s, i) => {
+              const isReady = i <= readyIdx;
+              const isSyncing = i === readyIdx + 1;
+              return (
+                <li key={s.id} className="flex items-center justify-between gap-3 text-xs sm:text-sm transition-all duration-300" style={{ opacity: isReady || isSyncing ? 1 : 0.3 }}>
+                  <div className="flex items-center gap-2 min-w-0">
+                    <div className="flex h-4 w-4 items-center justify-center rounded-full flex-shrink-0" style={{
+                      background: isReady ? "var(--lime)" : isSyncing ? "rgba(197,242,74,0.15)" : "rgba(255,255,255,0.05)",
+                      border: `1px solid ${isReady ? "var(--lime)" : isSyncing ? "rgba(197,242,74,0.4)" : "rgba(255,255,255,0.1)"}`,
+                    }}>
+                      {isReady ? <CheckCircle2 size={10} style={{ color: "var(--ink)" }} strokeWidth={3} /> : isSyncing ? <div className="h-1 w-1 rounded-full pulse-dot" style={{ background: "var(--lime)" }} /> : null}
+                    </div>
+                    <span style={{ color: isReady ? "var(--bone)" : isSyncing ? "var(--lime)" : "rgba(247,245,240,0.45)" }}>{s.label}</span>
+                  </div>
+                  <span className="font-mono text-[9px] uppercase tracking-wider" style={{ color: isReady ? "rgba(247,245,240,0.5)" : isSyncing ? "var(--lime)" : "rgba(247,245,240,0.25)" }}>
+                    {isReady ? "Ready" : isSyncing ? "Syncing…" : "Pending"}
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+
+          {/* Progress bar */}
+          <div className="mt-4 h-[3px] rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.06)" }}>
+            <div className="h-full rounded-full transition-all duration-500 ease-out" style={{
+              width: `${pctReady}%`,
+              background: "linear-gradient(90deg, var(--emerald), var(--lime))",
+              boxShadow: "0 0 12px rgba(197,242,74,0.4)",
+            }} />
+          </div>
+        </div>
+
+        {/* Footer status — reinforces the "real system" feel */}
+        <div className="text-center">
+          <div className="font-mono text-[9px] uppercase tracking-wider" style={{ color: "rgba(247,245,240,0.4)" }}>xaepay // operator platform</div>
         </div>
       </div>
     </div>
@@ -370,7 +445,7 @@ function AppShell() {
   // first-time / signed-out visitors. Flips to true after 1500ms; we'll only
   // hide the splash once it does AND auth has resolved.
   const [splashMinDone, setSplashMinDone] = useState(false);
-  useEffect(() => { const t = setTimeout(() => setSplashMinDone(true), 1500); return () => clearTimeout(t); }, []);
+  useEffect(() => { const t = setTimeout(() => setSplashMinDone(true), 3000); return () => clearTimeout(t); }, []);
   const auth = useAuth();
   const refreshMfaState = async () => {
     if (!auth.user) { setMfaState("ok"); setMfaEnrolled(false); return; }
