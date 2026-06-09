@@ -131,7 +131,7 @@ function SplashScreen() {
 
         {/* Footer status — reinforces the "real system" feel */}
         <div className="text-center">
-          <div className="font-mono text-[9px] uppercase tracking-wider" style={{ color: "rgba(247,245,240,0.4)" }}>xaepay // operator platform</div>
+          <div className="font-mono text-[9px] uppercase tracking-wider" style={{ color: "rgba(247,245,240,0.4)" }}>xaepay // operating system</div>
         </div>
       </div>
     </div>
@@ -3018,18 +3018,18 @@ function StructureSection() {
                 <div key={p.n} className="rounded-2xl overflow-hidden relative" style={{ background: "white", border: "1px solid var(--line)" }}>
                   {/* Side accent bar */}
                   <div className="absolute left-0 top-0 bottom-0 w-1" style={{ background: "var(--emerald)" }} />
-                  <div className="p-6 pl-7">
-                    <div className="flex items-start justify-between gap-4 flex-wrap">
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-baseline gap-3 mb-2">
-                          <span className="font-display text-3xl font-[500] tracking-tight" style={{ color: "var(--emerald)" }}>{p.n}</span>
-                          <h3 className="font-display text-xl font-semibold" style={{ color: "var(--ink)" }}>{p.title}</h3>
+                  <div className="p-5 pl-6 sm:p-6 sm:pl-7">
+                    <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
+                      <div className="min-w-0 sm:flex-1">
+                        <div className="flex items-baseline gap-3 mb-2 flex-wrap">
+                          <span className="font-display text-2xl sm:text-3xl font-[500] tracking-tight" style={{ color: "var(--emerald)" }}>{p.n}</span>
+                          <h3 className="font-display text-lg sm:text-xl font-semibold" style={{ color: "var(--ink)" }}>{p.title}</h3>
                         </div>
                         <p className="text-sm leading-relaxed" style={{ color: "var(--muted)" }}>{p.body}</p>
                       </div>
-                      <div className="flex-shrink-0 rounded-xl px-4 py-3 text-right" style={{ background: "var(--bone)", border: "1px solid var(--line)" }}>
+                      <div className="rounded-xl px-4 py-3 text-left sm:text-right sm:flex-shrink-0" style={{ background: "var(--bone)", border: "1px solid var(--line)" }}>
                         <div className="font-display text-sm font-semibold" style={{ color: "var(--ink)" }}>{p.kpi}</div>
-                        <div className="font-mono text-[9px] uppercase tracking-wider mt-1" style={{ color: "var(--muted)" }}>{p.sub}</div>
+                        <div className="font-mono text-[9px] uppercase tracking-wider mt-1 leading-relaxed" style={{ color: "var(--muted)" }}>{p.sub}</div>
                       </div>
                     </div>
                   </div>
