@@ -1,0 +1,27 @@
+name: Recurring quote runner — daily
+
+on:
+  schedule:
+    - cron: "0 8 * * *"   # 08:00 UTC daily (09:00 WAT) — runs an hour before the watchman
+  workflow_dispatch:
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call recurring-quote-runner
+        run: |
+          set -e
+          http_code=$(curl -sS -o /tmp/resp.json -w "%{http_code}" -X POST \
+            https://pgsriqdnadlbahfanxrm.supabase.co/functions/v1/recurring-quote-runner \
+            -H "Content-Type: application/json" \
+            -H "x-runner-secret: ${{ secrets.RECURRING_RUNNER_SECRET }}" \
+            -d '{}')
+          echo "HTTP $http_code"
+          echo "--- response body ---"
+          cat /tmp/resp.json
+          echo ""
+          echo "--- end ---"
+          if [ "$http_code" != "200" ]; then
+            exit 1
+          fi

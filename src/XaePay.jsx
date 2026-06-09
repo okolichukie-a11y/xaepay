@@ -3541,6 +3541,9 @@ function CustomerPortal({ session, customerRows }) {
   const [issuedInvoices, setIssuedInvoices] = useState([]);
   const [createIssuedOpen, setCreateIssuedOpen] = useState(false);
   const [selectedIssuedInvoice, setSelectedIssuedInvoice] = useState(null);
+  // V2.1: recurring cross-border payment requests (Pro tier)
+  const [recurringRequests, setRecurringRequests] = useState([]);
+  const [createRecurringOpen, setCreateRecurringOpen] = useState(false);
   // Free-tier monthly invoice limit, read from platform_settings so the admin
   // can edit it without a code deploy. Defaults to 3 if the setting row is
   // missing or RLS blocks the read.
@@ -3604,6 +3607,18 @@ function CustomerPortal({ session, customerRows }) {
     return () => { supabase.removeChannel(channel); };
     /* eslint-disable-next-line react-hooks/exhaustive-deps */
   }, [activeCustomerId]);
+
+  // Recurring cross-border payment schedules
+  const fetchRecurringRequests = async () => {
+    if (!activeCustomerId) return;
+    const { data } = await supabase
+      .from("recurring_payment_requests")
+      .select("*, recipient:recipients(legal_business_name, full_name, country)")
+      .eq("customer_id", activeCustomerId)
+      .order("created_at", { ascending: false });
+    setRecurringRequests(data || []);
+  };
+  useEffect(() => { fetchRecurringRequests(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [activeCustomerId]);
 
   // Email deep-link: a customer clicking the "Pay this invoice" button in their
   // invoice email lands at /?invoice=<id>. After invoices load, find the match
@@ -4085,6 +4100,81 @@ function CustomerPortal({ session, customerRows }) {
           )}
         </section>
       )}
+      {/* Recurring cross-border payments — Pro tier feature. Customer sets a
+          schedule; each cycle, a new quote request auto-creates for the
+          operator to price. Saves the customer from re-entering the same
+          payment details every month (school fees, monthly supplier order,
+          contractor retainer, etc.). */}
+      {recurringRequests.length > 0 || true ? (
+        <section className="mb-10 rise" style={{ animationDelay: "0.095s" }}>
+          <button type="button" onClick={() => toggleSection("recurringRequests")} className="w-full flex items-baseline justify-between mb-4 group">
+            <h2 className="font-display text-xl font-semibold flex items-center gap-2">
+              <RefreshCw size={18} />
+              Recurring payments
+              <span className="font-mono text-[11px]" style={{ color: "var(--muted)" }}>· {recurringRequests.filter((r) => r.status === "active").length} active</span>
+              <ChevronRight size={14} style={{ color: "var(--muted)", transform: sectionCollapsed.recurringRequests ? "rotate(0deg)" : "rotate(90deg)", transition: "transform 0.15s" }} />
+            </h2>
+            <span className="font-mono text-[10px] rounded-full px-2 py-0.5" style={{ background: "var(--lime)", color: "var(--ink)" }}>Pro</span>
+          </button>
+          {!sectionCollapsed.recurringRequests && (
+            <Card>
+              <div className="flex items-baseline justify-between mb-4 flex-wrap gap-2">
+                <p className="text-sm" style={{ color: "var(--muted)" }}>Auto-generate a payment request on a schedule. Same recipient, same amount — your operator prices each one at the current rate when it fires.</p>
+                <PrimaryBtn onClick={() => setCreateRecurringOpen(true)}><Plus size={14} /> New schedule</PrimaryBtn>
+              </div>
+              {recurringRequests.length === 0 ? (
+                <div className="p-8 text-center rounded-xl" style={{ background: "var(--bone)" }}>
+                  <RefreshCw size={20} className="mx-auto mb-2" style={{ color: "var(--muted)" }} />
+                  <p className="text-sm" style={{ color: "var(--muted)" }}>No recurring schedules yet. Set one up to automate regular payments to a supplier.</p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {recurringRequests.map((r) => {
+                    const statusPill =
+                      r.status === "active" ? { bg: "#d1fae5", color: "#065f46", label: "Active" } :
+                      r.status === "paused" ? { bg: "#fef3c7", color: "#92400e", label: "Paused" } :
+                      r.status === "completed" ? { bg: "#f3f4f6", color: "#6b7280", label: "Completed" } :
+                      { bg: "#fee2e2", color: "#991b1b", label: "Cancelled" };
+                    const recipientName = r.recipient?.full_name || r.recipient?.legal_business_name || r.beneficiary || "Recipient";
+                    return (
+                      <div key={r.id} className="rounded-xl p-3" style={{ background: "white", border: "1px solid var(--line)" }}>
+                        <div className="flex items-baseline justify-between gap-2 flex-wrap">
+                          <div>
+                            <div className="font-semibold text-sm">{recipientName}</div>
+                            <div className="font-mono text-[11px] mt-0.5" style={{ color: "var(--muted)" }}>
+                              {r.currency} {parseFloat(r.amount).toLocaleString()} · {r.cadence} · {r.quotes_generated_count} sent so far
+                            </div>
+                            <div className="font-mono text-[10px] mt-0.5" style={{ color: "var(--muted)" }}>
+                              {r.status === "active" ? `Next run: ${new Date(r.next_run_date).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })}` : `Last run: ${r.last_run_at ? relativeTime(r.last_run_at) : "—"}`}
+                            </div>
+                          </div>
+                          <span className="rounded-full px-2 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-wider" style={{ background: statusPill.bg, color: statusPill.color }}>{statusPill.label}</span>
+                        </div>
+                        <div className="flex gap-2 mt-2">
+                          {r.status === "active" && (
+                            <SecondaryBtn onClick={async () => { await supabase.from("recurring_payment_requests").update({ status: "paused" }).eq("id", r.id); fetchRecurringRequests(); }}>Pause</SecondaryBtn>
+                          )}
+                          {r.status === "paused" && (
+                            <SecondaryBtn onClick={async () => { await supabase.from("recurring_payment_requests").update({ status: "active" }).eq("id", r.id); fetchRecurringRequests(); }}>Resume</SecondaryBtn>
+                          )}
+                          {(r.status === "active" || r.status === "paused") && (
+                            <SecondaryBtn onClick={async () => {
+                              if (!window.confirm(`Cancel this recurring schedule? No more quotes will be generated.`)) return;
+                              await supabase.from("recurring_payment_requests").update({ status: "cancelled", cancelled_at: new Date().toISOString() }).eq("id", r.id);
+                              fetchRecurringRequests();
+                            }}><X size={12} /> Cancel</SecondaryBtn>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </Card>
+          )}
+        </section>
+      ) : null}
+
       {/* Customer-issued invoicing — business-type customers only. Lets a
           business bill its own downstream clients from inside the same portal,
           using the same payment-method picker and receipt flow operators use.
@@ -4164,6 +4254,7 @@ function CustomerPortal({ session, customerRows }) {
       <CustomerInvoiceDrawer invoice={selectedInvoice} customer={activeCustomer} onClose={() => setSelectedInvoice(null)} onPaid={() => { fetchInvoices(); fetchQuotes(); }} />
       <CustomerIssuedInvoiceModal open={createIssuedOpen} customerIssuer={activeCustomer} onClose={() => setCreateIssuedOpen(false)} onCreated={() => { fetchIssuedInvoices(); setCreateIssuedOpen(false); }} />
       <CustomerIssuedInvoiceDrawer invoice={selectedIssuedInvoice} customerIssuer={activeCustomer} onClose={() => setSelectedIssuedInvoice(null)} onChanged={fetchIssuedInvoices} />
+      <CreateRecurringRequestModal open={createRecurringOpen} customer={activeCustomer} onClose={() => setCreateRecurringOpen(false)} onCreated={() => { fetchRecurringRequests(); setCreateRecurringOpen(false); }} />
       <Drawer open={!!pastDetailQuote} onClose={() => setPastDetailQuote(null)} title={pastDetailQuote ? `Transaction QU-${pastDetailQuote.id.slice(0, 4).toUpperCase()}` : ""}>
         {pastDetailQuote && (() => {
           const txShape = {
@@ -4888,6 +4979,145 @@ function CustomerInvoiceDrawer({ invoice, customer, onClose, onPaid }) {
         </div>
       </div>
     </Drawer>
+  );
+}
+
+// =============================================================================
+// Create Recurring Payment Request — Pro tier feature for customers who pay
+// the same recipient on a regular cadence (school fees, contractor retainer,
+// monthly supplier order). Saves them from re-entering the same details every
+// cycle. Operator still prices each generated quote at the current rate.
+// =============================================================================
+
+function CreateRecurringRequestModal({ open, onClose, customer, onCreated }) {
+  const { push } = useToast();
+  const [data, setData] = useState({
+    recipientId: "",
+    amount: "",
+    currency: "USD",
+    destination: "China",
+    cadence: "monthly",
+    startDate: new Date().toISOString().slice(0, 10),
+    endDate: "",
+    purposeNote: "",
+  });
+  const [submitting, setSubmitting] = useState(false);
+  const [savedRecipients, setSavedRecipients] = useState([]);
+
+  useEffect(() => {
+    if (!open || !customer?.id) return;
+    supabase.from("recipients")
+      .select("id, recipient_type, legal_business_name, full_name, country, bank_name")
+      .eq("added_by_customer_id", customer.id)
+      .order("created_at", { ascending: false })
+      .then(({ data }) => setSavedRecipients(data || []));
+    /* eslint-disable-next-line react-hooks/exhaustive-deps */
+  }, [open, customer?.id]);
+
+  useEffect(() => {
+    if (!open) {
+      const t = setTimeout(() => setData({
+        recipientId: "", amount: "", currency: "USD", destination: "China",
+        cadence: "monthly", startDate: new Date().toISOString().slice(0, 10),
+        endDate: "", purposeNote: "",
+      }), 250);
+      return () => clearTimeout(t);
+    }
+  }, [open]);
+
+  const canSubmit = !!(data.recipientId && data.amount && parseFloat(data.amount) > 0 && data.startDate && !submitting && customer?.bdc_user_id);
+
+  const submit = async () => {
+    if (!canSubmit) return;
+    setSubmitting(true);
+    try {
+      const pickedRecipient = savedRecipients.find((r) => r.id === data.recipientId);
+      const recipientName = pickedRecipient?.full_name || pickedRecipient?.legal_business_name || "Recipient";
+      const { error } = await supabase.from("recurring_payment_requests").insert({
+        customer_id: customer.id,
+        recipient_id: data.recipientId,
+        bdc_user_id: customer.bdc_user_id,
+        bdc_name: customer.bdc_name || "XaeccoX",
+        amount: parseFloat(data.amount),
+        currency: data.currency,
+        destination: data.destination,
+        beneficiary: recipientName,
+        purpose_note: data.purposeNote || null,
+        cadence: data.cadence,
+        start_date: data.startDate,
+        end_date: data.endDate || null,
+        next_run_date: data.startDate,
+        status: "active",
+      });
+      if (error) throw error;
+      push("Recurring schedule created. The first quote will appear on the start date.", "success");
+      onCreated && onCreated();
+    } catch (err) {
+      push(`Couldn't create schedule: ${err?.message || err}`, "warn");
+    } finally { setSubmitting(false); }
+  };
+
+  if (savedRecipients.length === 0 && open) {
+    return (
+      <Modal open={open} onClose={onClose} title="No saved recipients" size="sm">
+        <div className="text-center py-4">
+          <RefreshCw size={28} className="mx-auto mb-3" style={{ color: "var(--muted)" }} />
+          <p className="text-sm" style={{ color: "var(--muted)" }}>To set up a recurring payment, you need to have at least one saved recipient first. Send a one-off quote request to create one, then come back.</p>
+          <SecondaryBtn onClick={onClose} className="mt-4">Got it</SecondaryBtn>
+        </div>
+      </Modal>
+    );
+  }
+
+  return (
+    <Modal open={open} onClose={onClose} title="Set up a recurring payment" size="md">
+      <div className="space-y-4">
+        <p className="text-sm" style={{ color: "var(--muted)" }}>
+          A new quote request will auto-create on each cycle. Your operator will price it at the current rate and you'll approve as normal.
+        </p>
+        <Field label="Recipient" full>
+          <Select value={data.recipientId} onChange={(e) => setData({ ...data, recipientId: e.target.value })}>
+            <option value="">— Pick a saved recipient —</option>
+            {savedRecipients.map((r) => (
+              <option key={r.id} value={r.id}>{r.full_name || r.legal_business_name} · {r.bank_name || r.country || ""}</option>
+            ))}
+          </Select>
+        </Field>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <Field label={`Amount (${data.currency})`}>
+            <Input type="number" step="0.01" value={data.amount} onChange={(e) => setData({ ...data, amount: e.target.value })} placeholder="500" />
+          </Field>
+          <Field label="Currency">
+            <Select value={data.currency} onChange={(e) => setData({ ...data, currency: e.target.value })}>
+              {INVOICE_CURRENCIES.map((c) => <option key={c.code} value={c.code}>{c.symbol} {c.code}</option>)}
+            </Select>
+          </Field>
+          <Field label="Destination country">
+            <Select value={data.destination} onChange={(e) => setData({ ...data, destination: e.target.value })}>
+              <option>China</option><option>USA</option><option>UK</option><option>Germany</option><option>UAE</option><option>India</option><option>Türkiye</option><option>Nigeria</option>
+            </Select>
+          </Field>
+          <Field label="Cadence">
+            <Select value={data.cadence} onChange={(e) => setData({ ...data, cadence: e.target.value })}>
+              <option value="weekly">Weekly</option>
+              <option value="biweekly">Every 2 weeks</option>
+              <option value="monthly">Monthly</option>
+              <option value="quarterly">Quarterly</option>
+              <option value="annually">Annually</option>
+            </Select>
+          </Field>
+          <Field label="Start date"><Input type="date" value={data.startDate} onChange={(e) => setData({ ...data, startDate: e.target.value })} /></Field>
+          <Field label="End date (optional)"><Input type="date" value={data.endDate} onChange={(e) => setData({ ...data, endDate: e.target.value })} /></Field>
+        </div>
+        <Field label="Purpose / note (optional)" full>
+          <Input value={data.purposeNote} onChange={(e) => setData({ ...data, purposeNote: e.target.value })} placeholder="e.g. Monthly supplier retainer, school fees Q3" />
+        </Field>
+        <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-2 pt-2">
+          <SecondaryBtn onClick={onClose} disabled={submitting}>Cancel</SecondaryBtn>
+          <PrimaryBtn onClick={submit} disabled={!canSubmit}>{submitting ? <><Loader2 size={12} className="animate-spin" /> Creating…</> : <>Create schedule <ArrowRight size={12} /></>}</PrimaryBtn>
+        </div>
+      </div>
+    </Modal>
   );
 }
 
