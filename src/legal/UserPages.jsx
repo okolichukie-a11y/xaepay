@@ -262,45 +262,110 @@ export function CustomersPage() {
 // =============================================================================
 
 export function SendUsdToNgnPage() {
+  // Bidirectional. A licensed BDC operator's license covers both USD→NGN and
+  // NGN→USD, so this single landing page surfaces both flows. Default to
+  // USD→NGN since that's the corridor that originally lived here and most
+  // inbound links/SEO points at it.
+  const [direction, setDirection] = useState("usd-to-ngn");
+  const isOut = direction === "usd-to-ngn";
   return (
     <PageShell
-      eyebrow="USD → NGN corridor"
-      title={<>Send USD to Nigeria,<br/><span className="italic" style={{ color: "var(--lime)" }}>landed in naira same day.</span></>}
-      lede="If you're holding USD anywhere in the world and need to pay NGN to a recipient in Nigeria — family, supplier, contractor, school — XaePay routes you through a vetted operator and a licensed payment provider. Locked rate, transparent fees, full receipt."
+      eyebrow="USD ↔ NGN corridor"
+      title={<>Send between USD and NGN,<br/><span className="italic" style={{ color: "var(--lime)" }}>through a licensed BDC.</span></>}
+      lede="Whether you're paying out from USD to a NGN recipient, or moving NGN you hold in Nigeria into USD abroad, XaePay routes you through a vetted Bureau de Change operator and a licensed payment provider — same compliance, same documentation, both directions covered by the BDC's license."
       primaryCta={{ label: "Get started", href: "/?signup=diaspora" }}
       secondaryCta={{ label: "Talk on WhatsApp", href: WHATSAPP_URL, external: true, icon: "wa" }}
     >
-      <Section eyebrow="Who this is for" title="The USD → NGN rail">
-        <div className="grid gap-4 sm:grid-cols-3">
-          {[
-            { title: "Diaspora individuals", body: "You're in the US, UK, Canada, or anywhere abroad, sending family support, school fees, or property payments to Nigeria." },
-            { title: "US-based businesses", body: "You're paying Nigerian suppliers, contractors, or remote staff and need a clean cross-border channel with full documentation." },
-            { title: "USD-holders in Nigeria", body: "You already hold USD (domiciliary account, contractor income) and need to move it to a NGN recipient locally." },
-          ].map((f) => (
-            <div key={f.title} className="rounded-xl p-5" style={{ background: "white", border: "1px solid var(--line)" }}>
-              <h3 className="font-display text-base font-semibold">{f.title}</h3>
-              <p className="mt-2 text-sm" style={{ color: "var(--muted)" }}>{f.body}</p>
+      <div className="rounded-2xl p-2 inline-flex" style={{ background: "var(--bone)", border: "1px solid var(--line)" }}>
+        <button
+          onClick={() => setDirection("usd-to-ngn")}
+          className="rounded-xl px-4 py-2.5 text-sm font-semibold transition flex items-center gap-2"
+          style={{
+            background: isOut ? "var(--ink)" : "transparent",
+            color: isOut ? "var(--bone)" : "var(--muted)",
+          }}
+        >
+          <span style={{ color: isOut ? "var(--lime)" : "inherit", fontFamily: "var(--font-mono)" }}>USD</span>
+          <ArrowRight size={14} />
+          <span style={{ fontFamily: "var(--font-mono)" }}>NGN</span>
+          <span className="text-xs opacity-70">· Send TO Nigeria</span>
+        </button>
+        <button
+          onClick={() => setDirection("ngn-to-usd")}
+          className="rounded-xl px-4 py-2.5 text-sm font-semibold transition flex items-center gap-2"
+          style={{
+            background: !isOut ? "var(--ink)" : "transparent",
+            color: !isOut ? "var(--bone)" : "var(--muted)",
+          }}
+        >
+          <span style={{ fontFamily: "var(--font-mono)" }}>NGN</span>
+          <ArrowRight size={14} />
+          <span style={{ color: !isOut ? "var(--lime)" : "inherit", fontFamily: "var(--font-mono)" }}>USD</span>
+          <span className="text-xs opacity-70">· Send FROM Nigeria</span>
+        </button>
+      </div>
+
+      {isOut ? (
+        <>
+          <Section eyebrow="Who this is for" title="The USD → NGN rail">
+            <div className="grid gap-4 sm:grid-cols-3">
+              {[
+                { title: "Diaspora individuals", body: "You're in the US, UK, Canada, or anywhere abroad, sending family support, school fees, or property payments to Nigeria." },
+                { title: "US-based businesses", body: "You're paying Nigerian suppliers, contractors, or remote staff and need a clean cross-border channel with full documentation." },
+                { title: "USD-holders in Nigeria", body: "You already hold USD (domiciliary account, contractor income) and need to move it to a NGN recipient locally." },
+              ].map((f) => (
+                <div key={f.title} className="rounded-xl p-5" style={{ background: "white", border: "1px solid var(--line)" }}>
+                  <h3 className="font-display text-base font-semibold">{f.title}</h3>
+                  <p className="mt-2 text-sm" style={{ color: "var(--muted)" }}>{f.body}</p>
+                </div>
+              ))}
             </div>
-          ))}
-        </div>
-      </Section>
+          </Section>
 
-      <Section eyebrow="How it works" title="Four steps to NGN at the destination">
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <Step n="01" title="Sign up" body="Tell us who you are and who you're sending to. KYC takes 5–15 business days the first time; instant after that." footer="One-time per sender" />
-          <Step n="02" title="Quote a payment" body="Pick the USD amount you're sending. Your operator quotes a locked NGN rate within minutes (typically ~₦20 less than the outbound rate)." footer="Per transaction" />
-          <Step n="03" title="Send the USD" body="Wire / ACH / Zelle / card from your US (or other) account to the licensed payment provider's USD collection account. You don't send NGN — that's our problem." footer="Same-day clearing" />
-          <Step n="04" title="Recipient receives NGN" body="Once your USD clears, the licensed provider executes the NGN payout to your recipient's Nigerian bank account. Receipt issued automatically." footer="Same-day landing" />
-        </div>
-      </Section>
+          <Section eyebrow="How it works" title="Four steps to NGN at the destination">
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              <Step n="01" title="Sign up" body="Tell us who you are and who you're sending to. KYC takes 5–15 business days the first time; instant after that." footer="One-time per sender" />
+              <Step n="02" title="Quote a payment" body="Pick the USD amount you're sending. Your operator quotes a locked NGN rate within minutes." footer="Per transaction" />
+              <Step n="03" title="Send the USD" body="Wire / ACH / Zelle / card from your US (or other) account to the licensed payment provider's USD collection account. You don't send NGN — that's our problem." footer="Same-day clearing" />
+              <Step n="04" title="Recipient receives NGN" body="Once your USD clears, the licensed provider executes the NGN payout to your recipient's Nigerian bank account. Receipt issued automatically." footer="Same-day landing" />
+            </div>
+          </Section>
+        </>
+      ) : (
+        <>
+          <Section eyebrow="Who this is for" title="The NGN → USD rail">
+            <div className="grid gap-4 sm:grid-cols-3">
+              {[
+                { title: "Nigerian importers & SMEs", body: "You hold NGN locally and need to pay a foreign supplier in USD — Alibaba, US distributor, freight, software, equipment." },
+                { title: "Nigerians paying abroad", body: "School fees, medical bills, property deposits, family support to someone living outside Nigeria. Pay in NGN, recipient gets USD." },
+                { title: "Nigerian businesses with USD obligations", body: "Subscription services, ad spend, cloud bills, consulting fees billed in USD by overseas providers." },
+              ].map((f) => (
+                <div key={f.title} className="rounded-xl p-5" style={{ background: "white", border: "1px solid var(--line)" }}>
+                  <h3 className="font-display text-base font-semibold">{f.title}</h3>
+                  <p className="mt-2 text-sm" style={{ color: "var(--muted)" }}>{f.body}</p>
+                </div>
+              ))}
+            </div>
+          </Section>
 
-      <Section eyebrow="Why XaePay" title="What you actually get">
+          <Section eyebrow="How it works" title="Four steps to USD at the destination">
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              <Step n="01" title="Sign up" body="Tell us who you are and who you're paying. KYC + supporting documents (invoice / Form M / supplier confirmation) the first time; faster after that." footer="One-time per sender" />
+              <Step n="02" title="Quote a payment" body="Tell us the USD amount your beneficiary needs to receive. Your operator locks the NGN rate you'll pay within minutes." footer="Per transaction" />
+              <Step n="03" title="Deposit the NGN" body="Transfer NGN to the licensed provider's NGN collection account in Nigeria. Funding instructions appear when you confirm." footer="Same-day clearing" />
+              <Step n="04" title="Beneficiary receives USD" body="Once NGN clears, the licensed provider executes the USD payout to the beneficiary's foreign bank account. Receipt issued automatically." footer="Same-day landing" />
+            </div>
+          </Section>
+        </>
+      )}
+
+      <Section eyebrow="Why XaePay" title="Same advantages in both directions">
         <div className="grid gap-4 sm:grid-cols-2">
           {[
-            { icon: Wallet, title: "Locked rate, no surprises", body: "The NGN your recipient gets is locked when you confirm. No spread games, no rate creep between submit and settlement." },
-            { icon: Shield, title: "Licensed payment provider, not informal channels", body: "Every USD → NGN execution goes through a licensed provider regulated where they operate. Real wires, real receipts." },
+            { icon: Wallet, title: "Locked rate, no surprises", body: "The amount your recipient gets is locked when you confirm. No spread games, no rate creep between submit and settlement." },
+            { icon: Shield, title: "Licensed BDC + licensed provider", body: `Every ${isOut ? "USD → NGN" : "NGN → USD"} execution goes through a regulated Bureau de Change operator and a licensed payment provider — real wires, real receipts, both regulators happy.` },
             { icon: Receipt, title: "Receipt at both ends", body: "You get a sender confirmation PDF. Your recipient gets a payment confirmation. Both are downloadable from the portal." },
-            { icon: FileText, title: "Documentation for both sides", body: "If you're paying a supplier and need an invoice trail, we capture and route the supplier invoice. If you're sending family support, the receipt is enough." },
+            { icon: FileText, title: "Documentation captured for compliance", body: isOut ? "If you're paying a supplier and need an invoice trail, we capture and route the supplier invoice. If you're sending family support, the receipt is enough." : "Form M references, supplier invoices, customs declarations — captured upfront so the transaction has the documentation regulators expect." },
           ].map((f) => (
             <div key={f.title} className="rounded-xl p-5" style={{ background: "white", border: "1px solid var(--line)" }}>
               <div className="flex h-10 w-10 items-center justify-center rounded-lg" style={{ background: "var(--bone-2)", color: "var(--emerald)" }}><f.icon size={18} /></div>
@@ -311,11 +376,12 @@ export function SendUsdToNgnPage() {
         </div>
       </Section>
 
-      <Section eyebrow="FAQ" title="Common questions from senders">
+      <Section eyebrow="FAQ" title="Common questions">
         <div className="space-y-3">
           <Faq q="What's the rate I'll get?" a={<>The inbound rate (USD → NGN) is typically ~₦20 less per dollar than the outbound rate (NGN → USD) — that gap is your operator's spread plus the provider's FX margin. It's locked when you confirm a quote, so you know exactly what your recipient gets before you send.</>} />
-          <Faq q="How long does it take?" a="First-time onboarding: 5–15 business days for KYC with the licensed payment provider. Once you're approved, individual transactions typically settle the same business day after your USD clears." />
-          <Faq q="How do I send the USD?" a="Wire, ACH, Zelle, or card to the provider's USD collection account. Funding instructions are delivered to you when you confirm the quote. The operator never holds your USD — funds go directly to the regulated provider." />
+          <Faq q="Does the BDC's license cover both directions?" a="Yes. A licensed Nigerian Bureau de Change is authorised to deal in both foreign currency inflows (USD → NGN) and outflows (NGN → USD). XaePay surfaces both flows because the underlying compliance and rails are the same — same operator, same provider, same documentation pack." />
+          <Faq q="How long does it take?" a="First-time onboarding: 5–15 business days for KYC with the licensed payment provider. Once you're approved, individual transactions typically settle the same business day after your funds clear." />
+          <Faq q="How do I send the money?" a={isOut ? "USD: wire, ACH, Zelle, or card to the provider's USD collection account. Funding instructions delivered when you confirm the quote." : "NGN: bank transfer to the licensed provider's NGN collection account in Nigeria. Funding instructions delivered when you confirm the quote."} />
           <Faq q="Can I send to multiple recipients?" a="Yes. Each transaction is its own quote with its own recipient. You can also save recipients to skip re-entering details next time." />
           <Faq q="What's the operator's role?" a={<>Your operator is your XaePay-side relationship — they vet your recipients, set the rate, handle compliance documentation, and coordinate with the provider. You don't pay them directly; their margin is built into the quote rate. Read more on the <a href="/?p=operators" className="underline" style={{ color: "var(--emerald)" }}>operator page</a>.</>} />
           <Faq q="Where's the legal stuff?" a={<>The <a href="/?p=terms" className="underline" style={{ color: "var(--emerald)" }}>Terms</a>, <a href="/?p=privacy" className="underline" style={{ color: "var(--emerald)" }}>Privacy Policy</a>, and <a href="/?p=refunds" className="underline" style={{ color: "var(--emerald)" }}>Refund Policy</a> are all linked in the footer.</>} />
@@ -323,7 +389,7 @@ export function SendUsdToNgnPage() {
       </Section>
 
       <div className="rounded-3xl p-8 text-center" style={{ background: "var(--ink)", color: "var(--bone)" }}>
-        <h2 className="font-display text-3xl font-[450] tracking-tight">Send your first USD → NGN payment</h2>
+        <h2 className="font-display text-3xl font-[450] tracking-tight">Send your first {isOut ? "USD → NGN" : "NGN → USD"} payment</h2>
         <p className="mt-3 text-sm" style={{ color: "rgba(247,245,240,0.7)" }}>Sign up directly — we'll match you with a vetted operator and you'll be able to request your first quote.</p>
         <a href="/?signup=diaspora" className="mt-6 inline-flex items-center justify-center gap-2 rounded-xl px-6 py-3 text-sm font-semibold transition" style={{ background: "var(--lime)", color: "var(--ink)" }}>Get started <ArrowRight size={14} /></a>
       </div>

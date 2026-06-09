@@ -3462,7 +3462,7 @@ function Footer({ onWaitlist }) {
           <div className="flex flex-wrap gap-5 font-mono text-[10px] uppercase tracking-wider" style={{ color: "rgba(247,245,240,0.4)" }}>
             <a href="/?p=operators" className="hover:text-white transition" style={{ color: "inherit" }}>For operators</a>
             <a href="/?p=customers" className="hover:text-white transition" style={{ color: "inherit" }}>For customers</a>
-            <a href="/?p=send-usd-ngn" className="hover:text-white transition" style={{ color: "inherit" }}>Send USD → NGN</a>
+            <a href="/?p=send-usd-ngn" className="hover:text-white transition" style={{ color: "inherit" }}>Send USD ↔ NGN</a>
             <a href="/?p=providers" className="hover:text-white transition" style={{ color: "inherit" }}>For providers</a>
             <a href="/?p=pricing" className="hover:text-white transition" style={{ color: "inherit" }}>Pricing</a>
             <a href="/?p=terms" className="hover:text-white transition" style={{ color: "inherit" }}>Terms</a>
@@ -5973,7 +5973,7 @@ function ComplianceRemindersPanel({ onReminderClick }) {
   const auth = useAuth();
   const [notifs, setNotifs] = useState([]);
   const [running, setRunning] = useState(false);
-  const [expanded, setExpanded] = useState(true);
+  const [expanded, setExpanded] = useState(false);
 
   const fetchNotifs = async () => {
     if (!auth.user) return;
