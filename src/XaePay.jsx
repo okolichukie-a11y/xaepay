@@ -2582,13 +2582,13 @@ function WhoItsFor() {
       hotkey: "02",
     },
     {
-      title: "Run my BDC on better tools",
+      title: "Run payment operations on better tools",
       detail: "Bring your customers. Set your rates. AI compliance, multi-provider routing, recurring billing, regulatory reports — all wired in. Keep 30–70% of every quote you route.",
       href: "/?p=operators",
       hotkey: "03",
     },
     {
-      title: "Integrate as a licensed provider",
+      title: "Integrate / onboard as a licensed provider",
       detail: "Receive pre-screened, KYC-completed transactions routed to your desk. API or portal — your call.",
       href: "/?p=providers",
       hotkey: "04",
