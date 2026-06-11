@@ -4168,42 +4168,102 @@ const TIER_FEATURES = {
 };
 
 function PartnerEconomics({ onGetStarted }) {
+  // Interactive earnings simulator — operator drags two sliders (txn count +
+  // avg txn size) and sees their monthly earnings per tier light up. Way more
+  // compelling than a static example table.
+  const [txnCount, setTxnCount] = useState(30);
+  const [avgSize, setAvgSize] = useState(25000);
+  const wholesaleRate = 1395;
+  const tierList = Object.values(TIERS);
+
   return (
     <section className="mx-auto max-w-screen-2xl px-4 py-20 sm:px-6 lg:px-8 lg:py-28">
       <div className="grid gap-12 lg:grid-cols-12 lg:gap-16">
         <div className="lg:col-span-5">
           <SectionEyebrow>Your economics</SectionEyebrow>
-          <h2 className="font-display mt-4 text-4xl font-[450] leading-[1.05] tracking-tight sm:text-5xl">You keep <span className="italic" style={{ color: "var(--emerald)" }}>30–70%</span><br />based on tier.</h2>
-          <p className="mt-6 text-base leading-relaxed" style={{ color: "var(--muted)" }}>Your share of the markup depends on which tier you pick for each transaction. Lower tiers leave more work to you and your share is higher. Higher tiers have us doing more work, so our share grows. Both sides win at every tier.</p>
-          <button onClick={onGetStarted} className="mt-7 inline-flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold transition" style={{ background: "var(--ink)", color: "var(--bone)" }}>Become an operator <ArrowRight size={14} /></button>
+          <h2 className="font-display mt-4 text-4xl font-[450] leading-[1.05] tracking-tight sm:text-5xl">You keep <span className="italic" style={{ color: "var(--emerald)" }}>30–70%</span><br />of every markup.</h2>
+          <p className="mt-6 text-base leading-relaxed" style={{ color: "var(--muted)" }}>Your share of the markup depends on which tier you pick per transaction. Lower tiers leave more work to you and your share is higher. Higher tiers — we do more, our share grows. Same recurring revenue model either way.</p>
+
+          {/* Inline controls */}
+          <div className="mt-8 rounded-2xl p-5 space-y-5" style={{ background: "var(--bone)", border: "1px solid var(--line)" }}>
+            <div className="font-mono text-[10px] uppercase tracking-wider" style={{ color: "var(--muted)" }}>Simulator · move the sliders</div>
+            <div>
+              <div className="flex items-baseline justify-between mb-2">
+                <label className="text-xs font-semibold">Transactions / month</label>
+                <span className="font-display text-xl font-semibold" style={{ color: "var(--ink)" }}>{txnCount}</span>
+              </div>
+              <input type="range" min="5" max="200" step="5" value={txnCount} onChange={(e) => setTxnCount(Number(e.target.value))} className="w-full h-1 rounded-lg appearance-none cursor-pointer" style={{ background: `linear-gradient(to right, var(--emerald) 0%, var(--emerald) ${((txnCount - 5) / 195) * 100}%, var(--line) ${((txnCount - 5) / 195) * 100}%, var(--line) 100%)`, accentColor: "var(--emerald)" }} />
+              <div className="flex justify-between font-mono text-[9px] mt-1" style={{ color: "var(--muted)" }}><span>5</span><span>200</span></div>
+            </div>
+            <div>
+              <div className="flex items-baseline justify-between mb-2">
+                <label className="text-xs font-semibold">Avg transaction size (USD)</label>
+                <span className="font-display text-xl font-semibold" style={{ color: "var(--ink)" }}>${avgSize.toLocaleString()}</span>
+              </div>
+              <input type="range" min="5000" max="100000" step="5000" value={avgSize} onChange={(e) => setAvgSize(Number(e.target.value))} className="w-full h-1 rounded-lg appearance-none cursor-pointer" style={{ background: `linear-gradient(to right, var(--emerald) 0%, var(--emerald) ${((avgSize - 5000) / 95000) * 100}%, var(--line) ${((avgSize - 5000) / 95000) * 100}%, var(--line) 100%)`, accentColor: "var(--emerald)" }} />
+              <div className="flex justify-between font-mono text-[9px] mt-1" style={{ color: "var(--muted)" }}><span>$5K</span><span>$100K</span></div>
+            </div>
+            <div className="pt-3" style={{ borderTop: "1px solid var(--line)" }}>
+              <div className="font-mono text-[10px] uppercase tracking-wider mb-1" style={{ color: "var(--muted)" }}>Monthly volume</div>
+              <div className="font-display text-2xl font-semibold">${(txnCount * avgSize).toLocaleString()}</div>
+            </div>
+          </div>
+
+          <button onClick={onGetStarted} className="mt-6 inline-flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold transition" style={{ background: "var(--ink)", color: "var(--bone)" }}>Become an operator <ArrowRight size={14} /></button>
         </div>
-        <div className="lg:col-span-7 space-y-3">
-          {Object.values(TIERS).map((t) => {
-            const exampleAmount = 25000;
-            const exampleMarkup = t.minMarkup + 1.5;
-            const margin = (exampleAmount * exampleMarkup) / (1395 + exampleMarkup);
-            const opEarn = margin * t.operatorShare;
-            return (
-              <div key={t.id} className="card-soft rounded-2xl bg-white p-5" style={{ border: "1px solid var(--line)" }}>
-                <div className="flex items-baseline justify-between mb-1">
-                  <div>
-                    <div className="font-display text-base font-semibold" style={{ color: "var(--ink)" }}>{t.name}</div>
-                    <div className="font-mono text-[10px] uppercase tracking-wider" style={{ color: "var(--muted)" }}>min ₦{t.minMarkup.toFixed(2)}/$ · markup at ₦{exampleMarkup.toFixed(2)} on $25K</div>
-                  </div>
-                  <div className="text-right">
-                    <div className="font-display text-lg font-semibold" style={{ color: "var(--emerald)" }}>${opEarn.toFixed(2)}</div>
-                    <div className="font-mono text-[10px] uppercase tracking-wider" style={{ color: "var(--muted)" }}>your share ({(t.operatorShare * 100).toFixed(0)}%)</div>
-                  </div>
-                </div>
+
+        <div className="lg:col-span-7">
+          {/* Earnings per tier — visual bar chart */}
+          <div className="rounded-2xl overflow-hidden" style={{ background: "var(--ink)", color: "var(--bone)" }}>
+            <div className="flex items-center justify-between px-5 py-3" style={{ borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
+              <div className="flex items-center gap-2">
+                <div className="h-1.5 w-1.5 rounded-full pulse-dot" style={{ background: "var(--lime)", boxShadow: "0 0 8px var(--lime)" }} />
+                <span className="font-mono text-[10px] uppercase tracking-wider" style={{ color: "var(--lime)" }}>Live earnings · per tier</span>
               </div>
-            );
-          })}
-          <div className="card-soft rounded-2xl bg-white p-5" style={{ border: "1px solid var(--line)" }}>
-            <div className="flex items-start gap-2">
-              <Sparkles size={14} className="mt-0.5 flex-shrink-0" style={{ color: "var(--emerald)" }} />
-              <div className="text-xs" style={{ color: "var(--ink)" }}>
-                <span className="font-semibold">A partner doing 30 transactions/month at $40K average</span> across mixed tiers earns roughly <span className="font-semibold" style={{ color: "var(--emerald)" }}>$2,400–$3,800/month</span> depending on tier mix and markup levels. Recurring as long as customers keep transacting.
-              </div>
+              <span className="font-mono text-[10px] uppercase tracking-wider" style={{ color: "rgba(247,245,240,0.4)" }}>Recurring · monthly</span>
+            </div>
+            <div className="p-5 sm:p-6">
+              {(() => {
+                // Compute earnings for each tier
+                const rows = tierList.map((t) => {
+                  const markup = t.minMarkup + 1.5; // assume ₦1.5 above the floor
+                  const marginPerTxn = (avgSize * markup) / (wholesaleRate + markup);
+                  const opSharePerTxn = marginPerTxn * t.operatorShare;
+                  const monthly = opSharePerTxn * txnCount;
+                  return { ...t, monthly, opSharePct: t.operatorShare * 100, markup };
+                });
+                const maxMonthly = Math.max(...rows.map((r) => r.monthly)) || 1;
+                return (
+                  <div className="space-y-4">
+                    {rows.map((r, i) => {
+                      const barPct = (r.monthly / maxMonthly) * 100;
+                      const isFeatured = r.id === "documented";
+                      return (
+                        <div key={r.id} className="relative">
+                          <div className="flex items-baseline justify-between mb-1.5 flex-wrap gap-2">
+                            <div className="flex items-baseline gap-2 flex-wrap">
+                              <span className="font-display text-base font-semibold" style={{ color: isFeatured ? "var(--lime)" : "var(--bone)" }}>{r.name}</span>
+                              <span className="font-mono text-[10px] uppercase tracking-wider" style={{ color: "rgba(247,245,240,0.45)" }}>{r.opSharePct}% to you · min ₦{r.minMarkup.toFixed(2)}/$</span>
+                            </div>
+                            <span className="font-display text-xl sm:text-2xl font-semibold" style={{ color: isFeatured ? "var(--lime)" : "var(--bone)" }}>${r.monthly.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
+                          </div>
+                          <div className="relative h-2 rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.06)" }}>
+                            <div className="h-full rounded-full transition-all duration-500 ease-out" style={{
+                              width: `${barPct}%`,
+                              background: isFeatured ? "linear-gradient(90deg, var(--emerald), var(--lime))" : "linear-gradient(90deg, rgba(15,95,63,0.6), rgba(15,95,63,0.85))",
+                              boxShadow: isFeatured ? "0 0 12px rgba(197,242,74,0.4)" : "none",
+                            }} />
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
+            </div>
+            <div className="px-5 py-3 flex items-center justify-between flex-wrap gap-2" style={{ borderTop: "1px solid rgba(255,255,255,0.06)", background: "rgba(0,0,0,0.2)" }}>
+              <span className="font-mono text-[10px] uppercase tracking-wider" style={{ color: "rgba(247,245,240,0.45)" }}>Assumes ₦1.5 above each tier's min markup</span>
+              <span className="font-mono text-[10px] uppercase tracking-wider" style={{ color: "var(--lime)" }}>Recurring as long as customers transact</span>
             </div>
           </div>
         </div>
