@@ -3092,7 +3092,9 @@ function MiniProviderNodes() {
 // =============================================================================
 function CapabilityStrip() {
   return (
-    <section className="mx-auto max-w-screen-2xl px-4 py-16 sm:px-6 lg:px-8 lg:py-20">
+    <section className="relative overflow-hidden">
+      <CapabilityWebBackground />
+      <div className="relative mx-auto max-w-screen-2xl px-4 py-16 sm:px-6 lg:px-8 lg:py-20">
       <div className="mb-10 max-w-2xl">
         <SectionEyebrow>Capabilities</SectionEyebrow>
         <h2 className="font-display mt-3 text-4xl font-[450] leading-[1.05] tracking-tight sm:text-5xl">Everything in <span className="italic" style={{ color: "var(--emerald)" }}>one platform.</span></h2>
@@ -3158,6 +3160,7 @@ function CapabilityStrip() {
           <p className="mt-2 text-sm leading-relaxed" style={{ color: "var(--muted)" }}>AI-powered invoice review, RFI-prevention agent, recurring-quote runner, auto-generated regulatory reports.</p>
         </div>
       </div>
+      </div>
     </section>
   );
 }
@@ -3187,8 +3190,9 @@ function StructureSection() {
     },
   ];
   return (
-    <section className="border-b" style={{ borderColor: "var(--line)", background: "var(--bone)" }}>
-      <div className="mx-auto max-w-screen-2xl px-4 py-20 sm:px-6 lg:px-8 lg:py-28">
+    <section className="border-b relative overflow-hidden" style={{ borderColor: "var(--line)", background: "var(--bone)" }}>
+      <IsolationDiagramBackground />
+      <div className="relative mx-auto max-w-screen-2xl px-4 py-20 sm:px-6 lg:px-8 lg:py-28">
         <div className="grid gap-12 lg:grid-cols-12">
           <div className="lg:col-span-5">
             <SectionEyebrow>§04  How we're structured</SectionEyebrow>
@@ -3526,15 +3530,228 @@ function LayerStack() {
   );
 }
 
+// =============================================================================
+// TransactionFlowBackground — vertical flow of transaction packets descending
+// through three subtle horizontal zones (customer / operator / provider strata).
+// Sits behind the HowItWorks LayerStack to reinforce the "transaction flows
+// downward through layers" mental model.
+// =============================================================================
+function TransactionFlowBackground() {
+  // 8 vertical lanes, staggered packet timings
+  const lanes = Array.from({ length: 8 }, (_, i) => ({
+    x: 100 + i * 130,
+    delay: (i * 0.7) % 5,
+    dur: 6 + (i % 3) * 2,
+  }));
+  return (
+    <svg
+      className="absolute inset-0 w-full h-full pointer-events-none"
+      viewBox="0 0 1100 600"
+      preserveAspectRatio="xMidYMid slice"
+      aria-hidden="true"
+    >
+      <defs>
+        <pattern id="tfb-grid" width="50" height="50" patternUnits="userSpaceOnUse">
+          <path d="M 50 0 L 0 0 0 50" fill="none" stroke="#0f5f3f" strokeOpacity="0.05" strokeWidth="1" />
+        </pattern>
+        <linearGradient id="tfb-lane" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="#0f5f3f" stopOpacity="0" />
+          <stop offset="50%" stopColor="#0f5f3f" stopOpacity="0.18" />
+          <stop offset="100%" stopColor="#0f5f3f" stopOpacity="0" />
+        </linearGradient>
+      </defs>
+      <rect width="1100" height="600" fill="url(#tfb-grid)" />
+
+      {/* Three horizontal strata — subtle band markers */}
+      {[120, 300, 480].map((y, i) => (
+        <g key={i} opacity="0.25">
+          <line x1="0" y1={y} x2="1100" y2={y} stroke="rgba(15,95,63,0.3)" strokeWidth="0.5" strokeDasharray="6 6" />
+          <text x="40" y={y - 8} fontFamily="ui-monospace, monospace" fontSize="9" fontWeight="600" fill="rgba(15,95,63,0.5)" letterSpacing="1.5">
+            {i === 0 ? "L1 · CUSTOMER" : i === 1 ? "L2 · OPERATOR" : "L3 · PROVIDER"}
+          </text>
+        </g>
+      ))}
+
+      {/* Vertical lanes with descending packets */}
+      {lanes.map((l, i) => (
+        <g key={i} opacity="0.5">
+          <line x1={l.x} y1="20" x2={l.x} y2="580" stroke="url(#tfb-lane)" strokeWidth="1" />
+          <circle cx={l.x} r="2.5" fill="rgba(15,95,63,0.7)">
+            <animate attributeName="cy" from="20" to="580" dur={`${l.dur}s`} begin={`${l.delay}s`} repeatCount="indefinite" />
+            <animate attributeName="opacity" values="0;1;1;0" dur={`${l.dur}s`} begin={`${l.delay}s`} repeatCount="indefinite" />
+          </circle>
+          {/* Trailing fade */}
+          <circle cx={l.x} r="1.5" fill="rgba(197,242,74,0.5)">
+            <animate attributeName="cy" from="0" to="560" dur={`${l.dur}s`} begin={`${l.delay + 0.4}s`} repeatCount="indefinite" />
+            <animate attributeName="opacity" values="0;0.6;0.6;0" dur={`${l.dur}s`} begin={`${l.delay + 0.4}s`} repeatCount="indefinite" />
+          </circle>
+        </g>
+      ))}
+    </svg>
+  );
+}
+
+// =============================================================================
+// CapabilityWebBackground — organic node web suggesting the broad surface of
+// platform capabilities. Larger sparser network than the architecture bg;
+// breathes slowly. Behind CapabilityStrip.
+// =============================================================================
+function CapabilityWebBackground() {
+  // 14 nodes scattered across — fixed positions for visual stability
+  const nodes = [
+    { x: 80,  y: 90,  r: 4 }, { x: 240, y: 50,  r: 3 }, { x: 420, y: 130, r: 5 },
+    { x: 600, y: 70,  r: 4 }, { x: 780, y: 110, r: 3 }, { x: 940, y: 60,  r: 4 },
+    { x: 1080,y: 130, r: 3 }, { x: 160, y: 280, r: 5 }, { x: 380, y: 320, r: 4 },
+    { x: 560, y: 240, r: 6 }, { x: 740, y: 310, r: 4 }, { x: 900, y: 270, r: 5 },
+    { x: 60,  y: 470, r: 3 }, { x: 260, y: 510, r: 4 }, { x: 460, y: 460, r: 5 },
+    { x: 660, y: 530, r: 4 }, { x: 860, y: 470, r: 3 }, { x: 1060,y: 510, r: 4 },
+  ];
+  // Connections — sparse, more readable
+  const conns = [
+    [0,1],[1,2],[2,3],[3,4],[4,5],[5,6],
+    [7,8],[8,9],[9,10],[10,11],
+    [12,13],[13,14],[14,15],[15,16],[16,17],
+    [0,7],[2,9],[4,11],[6,11],[7,12],[9,14],[11,16],
+  ];
+  return (
+    <svg
+      className="absolute inset-0 w-full h-full pointer-events-none"
+      viewBox="0 0 1100 600"
+      preserveAspectRatio="xMidYMid slice"
+      aria-hidden="true"
+    >
+      <defs>
+        <radialGradient id="cwb-node" cx="50%" cy="50%">
+          <stop offset="0%" stopColor="#0f5f3f" stopOpacity="0.7" />
+          <stop offset="60%" stopColor="#0f5f3f" stopOpacity="0.2" />
+          <stop offset="100%" stopColor="#0f5f3f" stopOpacity="0" />
+        </radialGradient>
+        <pattern id="cwb-grid" width="60" height="60" patternUnits="userSpaceOnUse">
+          <circle cx="0" cy="0" r="0.6" fill="#0f5f3f" fillOpacity="0.18" />
+        </pattern>
+      </defs>
+      <rect width="1100" height="600" fill="url(#cwb-grid)" />
+
+      {/* Connecting lines */}
+      <g opacity="0.35">
+        {conns.map(([a, b], i) => {
+          const A = nodes[a], B = nodes[b];
+          if (!A || !B) return null;
+          return (
+            <line key={i} x1={A.x} y1={A.y} x2={B.x} y2={B.y} stroke="rgba(15,95,63,0.4)" strokeWidth="0.8" />
+          );
+        })}
+      </g>
+
+      {/* Nodes with breathing pulse */}
+      {nodes.map((n, i) => (
+        <g key={i}>
+          <circle cx={n.x} cy={n.y} r={n.r * 3.5} fill="url(#cwb-node)" opacity="0.5" />
+          <circle cx={n.x} cy={n.y} r={n.r} fill="rgba(15,95,63,0.55)">
+            <animate attributeName="r" values={`${n.r};${n.r * 1.35};${n.r}`} dur={`${4 + (i % 4)}s`} repeatCount="indefinite" />
+            <animate attributeName="opacity" values="0.55;0.85;0.55" dur={`${4 + (i % 4)}s`} repeatCount="indefinite" />
+          </circle>
+        </g>
+      ))}
+
+      {/* A couple of lime accents for warmth */}
+      <circle cx="560" cy="240" r="3" fill="#c5f24a" opacity="0.6">
+        <animate attributeName="opacity" values="0.6;1;0.6" dur="3s" repeatCount="indefinite" />
+      </circle>
+      <circle cx="460" cy="460" r="3" fill="#c5f24a" opacity="0.6">
+        <animate attributeName="opacity" values="0.6;1;0.6" dur="3.5s" repeatCount="indefinite" />
+      </circle>
+    </svg>
+  );
+}
+
+// =============================================================================
+// IsolationDiagramBackground — three "regulated activity" boxes (Custody,
+// Counterparty, FX) clustered together, with XaePay isolated to the side and
+// barrier-marked away from them. Visually reinforces the "software layer, not
+// a fintech" stance. Behind StructureSection.
+// =============================================================================
+function IsolationDiagramBackground() {
+  return (
+    <svg
+      className="absolute inset-0 w-full h-full pointer-events-none"
+      viewBox="0 0 1200 700"
+      preserveAspectRatio="xMidYMid slice"
+      aria-hidden="true"
+    >
+      <defs>
+        <pattern id="idb-grid" width="48" height="48" patternUnits="userSpaceOnUse">
+          <path d="M 48 0 L 0 0 0 48" fill="none" stroke="#0f5f3f" strokeOpacity="0.05" strokeWidth="1" />
+        </pattern>
+      </defs>
+      <rect width="1200" height="700" fill="url(#idb-grid)" />
+
+      {/* "Regulated cluster" — three boxes connected by lines, indicating they interact with each other */}
+      <g opacity="0.35">
+        {/* Custody box (top-right) */}
+        <rect x="700" y="120" width="160" height="80" rx="4" fill="rgba(15,18,20,0.04)" stroke="rgba(15,18,20,0.45)" strokeWidth="1" strokeDasharray="4 3" />
+        <text x="780" y="155" textAnchor="middle" fontFamily="ui-monospace, monospace" fontSize="10" fontWeight="600" fill="rgba(15,18,20,0.55)">CUSTODY</text>
+        <text x="780" y="172" textAnchor="middle" fontFamily="ui-monospace, monospace" fontSize="8" fill="rgba(15,18,20,0.4)">funds movement</text>
+
+        {/* Counterparty box (middle-right) */}
+        <rect x="900" y="290" width="160" height="80" rx="4" fill="rgba(15,18,20,0.04)" stroke="rgba(15,18,20,0.45)" strokeWidth="1" strokeDasharray="4 3" />
+        <text x="980" y="325" textAnchor="middle" fontFamily="ui-monospace, monospace" fontSize="10" fontWeight="600" fill="rgba(15,18,20,0.55)">COUNTERPARTY</text>
+        <text x="980" y="342" textAnchor="middle" fontFamily="ui-monospace, monospace" fontSize="8" fill="rgba(15,18,20,0.4)">party to the trade</text>
+
+        {/* FX box (bottom-right) */}
+        <rect x="700" y="480" width="160" height="80" rx="4" fill="rgba(15,18,20,0.04)" stroke="rgba(15,18,20,0.45)" strokeWidth="1" strokeDasharray="4 3" />
+        <text x="780" y="515" textAnchor="middle" fontFamily="ui-monospace, monospace" fontSize="10" fontWeight="600" fill="rgba(15,18,20,0.55)">FX</text>
+        <text x="780" y="532" textAnchor="middle" fontFamily="ui-monospace, monospace" fontSize="8" fill="rgba(15,18,20,0.4)">setting the rate</text>
+
+        {/* Connecting lines among the three boxes */}
+        <path d="M 780 200 Q 880 245 900 330" stroke="rgba(15,18,20,0.3)" strokeWidth="0.8" fill="none" />
+        <path d="M 900 370 Q 880 425 780 480" stroke="rgba(15,18,20,0.3)" strokeWidth="0.8" fill="none" />
+        <path d="M 780 480 Q 700 340 780 200" stroke="rgba(15,18,20,0.3)" strokeWidth="0.8" fill="none" />
+      </g>
+
+      {/* XaePay box — isolated on the LEFT, with clear barrier between it and the cluster */}
+      <g opacity="0.5">
+        <rect x="160" y="290" width="220" height="100" rx="6" fill="rgba(197,242,74,0.08)" stroke="rgba(15,95,63,0.6)" strokeWidth="1.5" />
+        <text x="270" y="325" textAnchor="middle" fontFamily="ui-monospace, monospace" fontSize="11" fontWeight="700" fill="rgba(15,95,63,0.85)">XAEPAY</text>
+        <text x="270" y="344" textAnchor="middle" fontFamily="ui-monospace, monospace" fontSize="9" fill="rgba(15,95,63,0.65)">software · workflow · agents</text>
+        <text x="270" y="360" textAnchor="middle" fontFamily="ui-monospace, monospace" fontSize="8" fill="rgba(15,95,63,0.5)">sits beside, not inside</text>
+        <text x="270" y="376" textAnchor="middle" fontFamily="ui-monospace, monospace" fontSize="8" fill="rgba(15,95,63,0.5)">the regulated layer</text>
+      </g>
+
+      {/* Barrier — vertical zone of X marks separating XaePay from the cluster */}
+      <g opacity="0.4">
+        {[180, 270, 360, 450, 540].map((y, i) => (
+          <g key={i} transform={`translate(540 ${y})`}>
+            <line x1="-6" y1="-6" x2="6" y2="6" stroke="rgba(15,18,20,0.45)" strokeWidth="1" />
+            <line x1="-6" y1="6" x2="6" y2="-6" stroke="rgba(15,18,20,0.45)" strokeWidth="1" />
+          </g>
+        ))}
+        <text x="540" y="120" textAnchor="middle" fontFamily="ui-monospace, monospace" fontSize="8" letterSpacing="1.5" fill="rgba(15,18,20,0.4)">NO CONTACT</text>
+      </g>
+
+      {/* Subtle scan line going from XaePay → through the barrier → to the cluster — indicating XaePay observes/routes but doesn't enter */}
+      <g opacity="0.6">
+        <line x1="380" y1="340" x2="900" y2="330" stroke="rgba(15,95,63,0.4)" strokeWidth="0.8" strokeDasharray="2 4">
+          <animate attributeName="stroke-dashoffset" from="0" to="-12" dur="3s" repeatCount="indefinite" />
+        </line>
+        <text x="640" y="320" textAnchor="middle" fontFamily="ui-monospace, monospace" fontSize="8" letterSpacing="1.2" fill="rgba(15,95,63,0.5)">SOFTWARE SIGNAL ONLY</text>
+      </g>
+    </svg>
+  );
+}
+
 function HowItWorks() {
   return (
-    <section className="border-y mx-auto max-w-screen-2xl px-4 py-16 sm:px-6 lg:px-8 lg:py-20" style={{ borderColor: "var(--line)" }}>
-      <div className="mb-10 max-w-2xl">
-        <SectionEyebrow>How it works</SectionEyebrow>
-        <h2 className="font-display mt-3 text-4xl font-[450] leading-[1.05] tracking-tight sm:text-5xl">Three layers. <span className="italic" style={{ color: "var(--emerald)" }}>One transaction.</span></h2>
-        <p className="mt-4 max-w-xl text-base leading-relaxed" style={{ color: "var(--muted)" }}>Every cross-border payment on XaePay flows through three named parties. Each layer plays its role; XaePay is the software that connects them.</p>
+    <section className="border-y relative overflow-hidden" style={{ borderColor: "var(--line)" }}>
+      <TransactionFlowBackground />
+      <div className="relative mx-auto max-w-screen-2xl px-4 py-16 sm:px-6 lg:px-8 lg:py-20">
+        <div className="mb-10 max-w-2xl">
+          <SectionEyebrow>How it works</SectionEyebrow>
+          <h2 className="font-display mt-3 text-4xl font-[450] leading-[1.05] tracking-tight sm:text-5xl">Three layers. <span className="italic" style={{ color: "var(--emerald)" }}>One transaction.</span></h2>
+          <p className="mt-4 max-w-xl text-base leading-relaxed" style={{ color: "var(--muted)" }}>Every cross-border payment on XaePay flows through three named parties. Each layer plays its role; XaePay is the software that connects them.</p>
+        </div>
+        <LayerStack />
       </div>
-      <LayerStack />
     </section>
   );
 }
