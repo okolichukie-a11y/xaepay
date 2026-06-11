@@ -133,8 +133,9 @@ function BootPanel({ context = "cold", durationMs = 3000 }) {
 }
 
 function SplashScreen() {
-  // Cold-start splash. Logo + wordmark + BootPanel. Gated by splashMinDone
-  // upstream (3000ms).
+  // Cold-start splash. Logo + wordmark only — keep it minimal. The boot
+  // panel (5 subsystems initialising) is reserved for the post-sign-in
+  // overlay where it's contextual to the user's session.
   return (
     <div className="fixed inset-0 w-screen h-[100dvh] flex flex-col items-center justify-center px-6 overflow-hidden" style={{ background: "var(--ink)", color: "var(--bone)" }}>
       <div className="absolute inset-0 hero-grid opacity-50" />
@@ -148,7 +149,11 @@ function SplashScreen() {
           <div className="splash-wordmark font-display text-4xl sm:text-5xl font-semibold tracking-tight">XaePay</div>
           <div className="splash-tagline font-mono text-[10px] sm:text-[11px] uppercase mt-3" style={{ color: "rgba(247,245,240,0.5)" }}>by XaeccoX</div>
         </div>
-        <BootPanel context="cold" durationMs={3000} />
+        {/* Subtle activity indicator instead of the full boot panel */}
+        <div className="flex items-center gap-2 fade-in" style={{ animationDelay: "0.5s" }}>
+          <div className="h-1.5 w-1.5 rounded-full pulse-dot" style={{ background: "var(--lime)", boxShadow: "0 0 8px var(--lime)" }} />
+          <span className="font-mono text-[10px] uppercase tracking-wider" style={{ color: "rgba(247,245,240,0.5)" }}>loading</span>
+        </div>
         <div className="text-center">
           <div className="font-mono text-[9px] uppercase tracking-wider" style={{ color: "rgba(247,245,240,0.4)" }}>xaepay // operating system</div>
         </div>
