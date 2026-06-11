@@ -8326,20 +8326,11 @@ function BDCDashboard({ session, initialCustomerId, onInitialCustomerHandled }) 
 
       {agentMode ? (
         // ============ AGENT COCKPIT — full-width agent view ============
+        // No jumpToTransaction prop passed — BDCAgent renders its own
+        // inline quote drawer when "Open quote" is clicked, so the operator
+        // stays inside the cockpit instead of bouncing to manual mode.
         <div className="fade-in">
-          <BDCAgent
-            hideToggle
-            jumpToTransaction={async (txId) => {
-              // Flip to manual mode + jump to the transaction in one action.
-              // Otherwise the tab change is invisible because cockpit hides the
-              // tab nav. Persist the toggle change so re-render lands properly.
-              jumpToTransaction(txId);
-              if (auth.user) {
-                await supabase.from("operator_profiles").update({ agent_mode: false }).eq("auth_user_id", auth.user.id);
-                setAgentMode(false);
-              }
-            }}
-          />
+          <BDCAgent hideToggle />
         </div>
       ) : (
         // ============ NORMAL DASHBOARD — tabs + tab content ============
@@ -9968,6 +9959,83 @@ function BDCAgent({ jumpToTransaction, hideToggle }) {
   const [tasks, setTasks] = useState([]);
   const [loadingTasks, setLoadingTasks] = useState(false);
   const [showHistory, setShowHistory] = useState(true);
+  // Inline quote drawer — when "Open quote" is clicked from an agent task,
+  // fetch the quote and open it as a drawer right here, without leaving the
+  // cockpit. Same TxDrawer the transactions tab uses.
+  const [drawerTx, setDrawerTx] = useState(null);
+  const openQuoteDrawer = async (quoteId) => {
+    if (!quoteId) return;
+    const { data: q, error } = await supabase
+      .from("quotes")
+      .select("id, customer_name, customer_phone, customer_id, beneficiary, destination, amount, currency, rate, ngn_total, rail, status, submitted_at, created_at, markup_pct, cost_basis_ngn, recipient_id, recipient_external_account_id, cedar_business_request_id, cedar_request_status, cedar_purpose, cedar_invoice_url, cedar_last_error, cedar_request_status_updated_at, cedar_bank_details, cedar_quote_rate, cedar_deposit_amount_minor, cedar_deposit_currency, cedar_payout_status, invoice_url, invoice_uploaded_at, invoice_uploaded_by, customer_deposit_slip_url, customer_deposit_slip_uploaded_at, review_decision, review_reason, review_details, review_tier, reviewed_at, operator_review_override, operator_review_override_at, operator_review_override_reason, invoice_total_amount, invoice_total_currency, invoice_payment_label, pdf_url, pdf_path, pdf_generated_at, purpose_note, recipient_receipt_pdf_url, recipient_receipt_pdf_path, recipient_receipt_issued_at, bdc_name, proforma_restructured, proforma_original_invoice_url, proforma_restructured_invoice_url, proforma_restructured_at, form_m_responsibility")
+      .eq("id", quoteId)
+      .maybeSingle();
+    if (error || !q) { push(`Couldn't load quote: ${error?.message || "not found"}`, "warn"); return; }
+    setDrawerTx({
+      id: `XP-${q.id.slice(0, 4).toUpperCase()}`,
+      dbId: q.id,
+      customer: q.customer_name || "Unnamed",
+      customerName: q.customer_name,
+      customerPhone: q.customer_phone,
+      customerId: q.customer_id,
+      beneficiary: q.beneficiary,
+      dest: q.destination || "—",
+      destination: q.destination,
+      amount: parseFloat(q.amount) || 0,
+      currency: q.currency,
+      rate: q.rate,
+      ngnTotal: q.ngn_total,
+      rail: q.rail,
+      status: q.status,
+      submittedAt: q.submitted_at,
+      createdAt: q.created_at,
+      date: q.created_at ? new Date(q.created_at).toLocaleDateString() : "",
+      markupPct: q.markup_pct,
+      costBasisNgn: q.cost_basis_ngn,
+      recipientId: q.recipient_id,
+      recipientExternalAccountId: q.recipient_external_account_id,
+      cedarBusinessRequestId: q.cedar_business_request_id,
+      cedarRequestStatus: q.cedar_request_status,
+      cedarPurpose: q.cedar_purpose,
+      cedarInvoiceUrl: q.cedar_invoice_url,
+      cedarLastError: q.cedar_last_error,
+      cedarRequestStatusUpdatedAt: q.cedar_request_status_updated_at,
+      cedarBankDetails: q.cedar_bank_details,
+      cedarQuoteRate: q.cedar_quote_rate,
+      cedarDepositAmountMinor: q.cedar_deposit_amount_minor,
+      cedarDepositCurrency: q.cedar_deposit_currency,
+      cedarPayoutStatus: q.cedar_payout_status,
+      invoiceUrl: q.invoice_url,
+      invoiceUploadedAt: q.invoice_uploaded_at,
+      invoiceUploadedBy: q.invoice_uploaded_by,
+      customerDepositSlipUrl: q.customer_deposit_slip_url,
+      customerDepositSlipUploadedAt: q.customer_deposit_slip_uploaded_at,
+      reviewDecision: q.review_decision,
+      reviewReason: q.review_reason,
+      reviewDetails: q.review_details,
+      reviewTier: q.review_tier,
+      reviewedAt: q.reviewed_at,
+      operatorReviewOverride: q.operator_review_override,
+      operatorReviewOverrideAt: q.operator_review_override_at,
+      operatorReviewOverrideReason: q.operator_review_override_reason,
+      invoiceTotalAmount: q.invoice_total_amount,
+      invoiceTotalCurrency: q.invoice_total_currency,
+      invoicePaymentLabel: q.invoice_payment_label,
+      pdfUrl: q.pdf_url,
+      pdfPath: q.pdf_path,
+      pdfGeneratedAt: q.pdf_generated_at,
+      purposeNote: q.purpose_note,
+      recipientReceiptPdfUrl: q.recipient_receipt_pdf_url,
+      recipientReceiptPdfPath: q.recipient_receipt_pdf_path,
+      recipientReceiptIssuedAt: q.recipient_receipt_issued_at,
+      bdcName: q.bdc_name,
+      proforma_restructured: q.proforma_restructured,
+      proforma_original_invoice_url: q.proforma_original_invoice_url,
+      proforma_restructured_invoice_url: q.proforma_restructured_invoice_url,
+      proforma_restructured_at: q.proforma_restructured_at,
+      form_m_responsibility: q.form_m_responsibility,
+    });
+  };
 
   const fetchAgentMode = async () => {
     if (!auth.user) return;
@@ -10185,7 +10253,7 @@ function BDCAgent({ jumpToTransaction, hideToggle }) {
           </div>
         ) : (
           <div className="divide-y" style={{ borderColor: "var(--line)" }}>
-            {pending.map((t) => <AgentTaskRow key={t.id} task={t} onDecide={decideTask} onJumpToQuote={(qid) => jumpToTransaction && jumpToTransaction(qid)} />)}
+            {pending.map((t) => <AgentTaskRow key={t.id} task={t} onDecide={decideTask} onJumpToQuote={openQuoteDrawer} />)}
           </div>
         )}
       </Card>
@@ -10202,11 +10270,15 @@ function BDCAgent({ jumpToTransaction, hideToggle }) {
           </button>
           {showHistory && (
             <div className="divide-y" style={{ borderColor: "var(--line)" }}>
-              {reviewed.slice(0, 20).map((t) => <AgentTaskRow key={t.id} task={t} compact onJumpToQuote={(qid) => jumpToTransaction && jumpToTransaction(qid)} />)}
+              {reviewed.slice(0, 20).map((t) => <AgentTaskRow key={t.id} task={t} compact onJumpToQuote={openQuoteDrawer} />)}
             </div>
           )}
         </Card>
       )}
+
+      {/* Inline quote drawer — opens IN the cockpit on "Open quote →" click,
+          so the operator doesn't bounce to manual mode to see context. */}
+      <TxDrawer tx={drawerTx} onClose={() => setDrawerTx(null)} onRefresh={fetchTasks} />
     </div>
   );
 }
