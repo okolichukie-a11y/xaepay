@@ -10094,14 +10094,22 @@ function BDCAgent({ jumpToTransaction, hideToggle }) {
       const out = task.agent_output || {};
       const subjectId = task.subject_id;
       const channels = []; // { channel, status, detail }
-      const tryChannel = async (channel, fn, detailFn) => {
-        try {
-          const r = await fn();
-          const ok = r?.ok !== false;
-          channels.push({ channel, status: ok ? "sent" : "failed", detail: detailFn ? detailFn(r) : (ok ? "" : (r?.data?.data?.error?.message || r?.error || `HTTP ${r?.status || "?"}`)) });
-        } catch (err) {
-          channels.push({ channel, status: "failed", detail: err?.message || String(err) });
-        }
+      // Channels are queued, then fired in parallel via runChannels() once all
+      // are registered. Cuts approval wait from ~8s sequential to ~2-3s parallel.
+      const channelJobs = [];
+      const tryChannel = (channel, fn, detailFn) => {
+        channelJobs.push(async () => {
+          try {
+            const r = await fn();
+            const ok = r?.ok !== false;
+            channels.push({ channel, status: ok ? "sent" : "failed", detail: detailFn ? detailFn(r) : (ok ? "" : (r?.data?.data?.error?.message || r?.error || `HTTP ${r?.status || "?"}`)) });
+          } catch (err) {
+            channels.push({ channel, status: "failed", detail: err?.message || String(err) });
+          }
+        });
+      };
+      const runChannels = async () => {
+        await Promise.all(channelJobs.map((j) => j()));
       };
 
       try {
@@ -10203,6 +10211,10 @@ function BDCAgent({ jumpToTransaction, hideToggle }) {
         } else if (task.job_type === "invoice_review") {
           channels.push({ channel: "Review", status: "sent", detail: "acknowledged · no external send" });
         }
+
+        // Fire all queued channel calls in parallel (WhatsApp + Email together
+        // instead of sequentially). Cuts wait time roughly in half.
+        await runChannels();
 
         // Persist channel outcomes in operator_notes for audit
         const channelSummary = channels.map((c) => `${c.channel}: ${c.status}${c.detail ? ` (${c.detail})` : ""}`).join(" · ");
