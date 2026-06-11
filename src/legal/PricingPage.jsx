@@ -81,7 +81,7 @@ const MATRIX = {
       "Priority email support",
       "₦120 / $0.08 per action overage",
     ]},
-    licensed: { ngn: 150000, usd: 100, featured: true, features: [
+    licensed: { ngn: 100000, usd: 67, featured: true, features: [
       "All 6 agents — adds Payment Match + Report Draft + Recurring Confirm",
       "500 agent actions per month",
       "Multi-user agent assignment",
@@ -111,7 +111,7 @@ const MATRIX = {
       "Everything in Agentic — Business",
       "Combined billing, single subscription",
     ]},
-    licensed: { ngn: 170000, usd: 115, featured: true, save: "~ ₦15K saved vs separate", features: [
+    licensed: { ngn: 120000, usd: 80, featured: true, save: "~ ₦15K saved vs separate", features: [
       "Everything in Invoicing — Licensed",
       "Everything in Agentic — Licensed",
       "Combined billing, single subscription",

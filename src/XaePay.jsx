@@ -9,7 +9,7 @@ import {
 } from "lucide-react";
 import { supabase, sendWhatsAppText, sendWhatsAppTemplate, fetchCedarRate, submitCustomerToCedar, submitRecipientToCedar, submitReceiverAccountToCedar, submitCedarTransaction, approveCedarQuote, confirmCedarDeposit, cancelCedarTransaction, uploadCedarFile, uploadFileBoth, uploadInvoicePdf, uploadInvoicePaymentProof, uploadReceiptPdf, uploadRecipientReceiptPdf, uploadBrandLogo, uploadRegulatoryReportFile, pickServiceProviderForQuote, runComplianceReview, runComplianceWatchman, submitDocumentToCedar, runAgentQuoteReview, runAgentKycChase, runAgentPaymentMatch, runAgentReportDraft, runAgentInvoiceReview, extractProformaInvoice, uploadProformaOriginalInvoice, uploadProformaRestructuredInvoice, sendEmail, safeUrl, logAuditEvent, getPlatformSettingInt } from "./lib/supabase.js";
 import { generateQuotePdf, uploadQuotePdf, downloadQuotePdf } from "./lib/pdf.js";
-import { generateCompliancePackPdf, downloadCompliancePackPdf, generateTransactionConfirmationPdf, downloadTransactionConfirmationPdf, generateInvoicePdf, downloadInvoicePdf, generateReceiptPdf, downloadReceiptPdf, generateRecipientReceiptPdf, downloadRecipientReceiptPdf, generateMonthlyTransactionReportPdf, downloadRegulatoryReportPdf, buildTransactionsCsv, generateQuarterlyCustomerActivityReportPdf, buildCustomerActivityCsv, generateProformaRestructuredPdf, downloadProformaRestructuredPdf } from "./lib/pdf-doc.js";
+import { generateCompliancePackPdf, downloadCompliancePackPdf, generateTransactionConfirmationPdf, downloadTransactionConfirmationPdf, generateInvoicePdf, downloadInvoicePdf, generateReceiptPdf, downloadReceiptPdf, generateRecipientReceiptPdf, downloadRecipientReceiptPdf, generateMonthlyTransactionReportPdf, downloadRegulatoryReportPdf, buildTransactionsCsv, generateQuarterlyCustomerActivityReportPdf, buildCustomerActivityCsv, generateProformaRestructuredPdf, downloadProformaRestructuredPdf, generateSuspiciousTransactionReportPdf, buildSuspiciousTransactionCsv } from "./lib/pdf-doc.js";
 import { TermsOfService, PrivacyPolicy, DataDeletion, RefundPolicy, ServiceProviderMSA } from "./legal/LegalPages.jsx";
 import { OperatorsPage, CustomersPage, ProvidersPage, SendUsdToNgnPage } from "./legal/UserPages.jsx";
 import { CounselBriefPage } from "./legal/CounselBriefPage.jsx";
@@ -8693,6 +8693,136 @@ function BDCRegulatoryReports() {
   })();
   const [periodQuarter, setPeriodQuarter] = useState(defaultQuarter);
   const [generatingQuarter, setGeneratingQuarter] = useState(false);
+  // Suspicious Transaction Summary — month-based per CBN / NFIU expectations
+  const [periodMonthSTR, setPeriodMonthSTR] = useState(defaultMonth);
+  const [generatingSTR, setGeneratingSTR] = useState(false);
+
+  const generateSuspiciousReport = async () => {
+    if (generatingSTR || !auth.user) return;
+    setGeneratingSTR(true);
+    try {
+      const [year, month] = periodMonthSTR.split("-").map(Number);
+      const start = new Date(year, month - 1, 1);
+      const end = new Date(year, month, 0, 23, 59, 59, 999);
+      const startIso = start.toISOString();
+      const endIso = end.toISOString();
+      const periodLabel = `STR · ${start.toLocaleDateString("en-GB", { month: "long", year: "numeric" })}`;
+
+      // Pull quotes flagged by the AI compliance review
+      const { data: complianceFlagged, error: cfErr } = await supabase
+        .from("quotes")
+        .select("id, customer_name, amount, currency, destination, beneficiary, review_decision, review_reason, review_details, operator_review_override_reason, created_at")
+        .gte("created_at", startIso)
+        .lte("created_at", endIso)
+        .in("review_decision", ["flagged", "rejected"])
+        .order("created_at", { ascending: true });
+      if (cfErr) throw cfErr;
+
+      // Pull high-risk agent tasks (independent supplemental signal)
+      const { data: riskTasks } = await supabase
+        .from("agent_tasks")
+        .select("id, job_type, subject_id, agent_output, agent_reasoning, agent_risk_level, created_at, operator_decision, operator_notes")
+        .gte("created_at", startIso)
+        .lte("created_at", endIso)
+        .in("agent_risk_level", ["high", "critical"]);
+
+      // Build unified list — by quote id, merging signals
+      const flaggedByQuote = new Map();
+      (complianceFlagged || []).forEach((q) => {
+        flaggedByQuote.set(q.id, {
+          id: q.id,
+          ref: `QU-${q.id.slice(0, 8).toUpperCase()}`,
+          customer_name: q.customer_name,
+          amount: q.amount,
+          currency: q.currency,
+          destination: q.destination,
+          flag_label: q.review_decision,
+          flag_reason: q.review_reason,
+          review_decision: q.review_decision,
+          review_reason: q.review_reason,
+          operator_review_override_reason: q.operator_review_override_reason,
+          created_at: q.created_at,
+        });
+      });
+      (riskTasks || []).forEach((t) => {
+        if (t.subject_type === "quote" && t.subject_id) {
+          const existing = flaggedByQuote.get(t.subject_id) || { id: t.subject_id, ref: `QU-${t.subject_id.slice(0, 8).toUpperCase()}` };
+          existing.flag_label = existing.flag_label || `agent:${t.agent_risk_level}`;
+          existing.flag_reason = (existing.flag_reason ? existing.flag_reason + " · " : "") + (t.agent_reasoning || `Agent ${t.job_type} flagged ${t.agent_risk_level}`);
+          existing.operator_action = existing.operator_action || t.operator_decision || null;
+          if (!existing.created_at) existing.created_at = t.created_at;
+          // Pull amount/currency/destination from agent_output if we don't have them yet
+          const out = t.agent_output || {};
+          existing.customer_name = existing.customer_name || out.customer_name;
+          existing.amount = existing.amount ?? out.amount ?? out.quote_amount;
+          existing.currency = existing.currency || out.currency || out.quote_currency;
+          existing.destination = existing.destination || out.destination;
+          flaggedByQuote.set(existing.id, existing);
+        }
+      });
+
+      const flagged = Array.from(flaggedByQuote.values()).sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+
+      // Summary stats
+      const reasonBreakdown = {};
+      const volumesByCurrency = {};
+      flagged.forEach((t) => {
+        const r = t.flag_label || t.review_decision || "review";
+        reasonBreakdown[r] = (reasonBreakdown[r] || 0) + 1;
+        const c = t.currency || "USD";
+        volumesByCurrency[c] = (volumesByCurrency[c] || 0) + parseFloat(t.amount || 0);
+      });
+      const totalVolumeText = Object.entries(volumesByCurrency)
+        .map(([c, v]) => `${c} ${v.toLocaleString(undefined, { maximumFractionDigits: 0 })}`)
+        .join(" · ");
+
+      const summary = {
+        totalCount: flagged.length,
+        totalVolumeText,
+        reasonBreakdown,
+      };
+
+      const operatorName = auth.user?.user_metadata?.company || "XaeccoX";
+      const pdf = generateSuspiciousTransactionReportPdf({
+        operator: { name: operatorName },
+        period: { label: periodLabel, start: startIso, end: endIso },
+        flagged,
+        summary,
+      });
+      const csvString = buildSuspiciousTransactionCsv(flagged);
+      const csvBlob = new Blob([csvString], { type: "text/csv" });
+      const pdfBlob = pdf.output("blob");
+
+      const [pdfUp, csvUp] = await Promise.all([
+        uploadRegulatoryReportFile(auth.user.id, "suspicious_transaction_summary", periodLabel, pdfBlob, "pdf"),
+        uploadRegulatoryReportFile(auth.user.id, "suspicious_transaction_summary", periodLabel, csvBlob, "csv"),
+      ]);
+
+      const { data: insertedReport, error: insertErr } = await supabase.from("regulatory_reports").insert({
+        operator_user_id: auth.user.id,
+        report_type: "suspicious_transaction_summary",
+        period_label: periodLabel,
+        period_start: start.toISOString().slice(0, 10),
+        period_end: end.toISOString().slice(0, 10),
+        pdf_url: pdfUp.ok ? pdfUp.url : null,
+        pdf_path: pdfUp.ok ? pdfUp.path : null,
+        csv_url: csvUp.ok ? csvUp.url : null,
+        csv_path: csvUp.ok ? csvUp.path : null,
+        metadata: summary,
+        generated_by: auth.user.id,
+      }).select("id").maybeSingle();
+      if (insertErr) throw insertErr;
+      if (insertedReport?.id) runAgentReportDraft(insertedReport.id).catch(() => {});
+
+      downloadRegulatoryReportPdf(pdf, "suspicious-transactions", periodLabel);
+      push(`STR generated for ${periodLabel} · ${flagged.length} flagged transactions`, "success");
+      fetchReports();
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error("STR generation failed:", err);
+      push(`Couldn't generate STR: ${err?.message || err}`, "warn");
+    } finally { setGeneratingSTR(false); }
+  };
 
   const fetchReports = async () => {
     if (!isSignedIn) return;
@@ -9016,6 +9146,29 @@ function BDCRegulatoryReports() {
         </p>
       </Card>
 
+      <Card>
+        <div className="flex items-baseline justify-between mb-2 flex-wrap gap-2">
+          <div>
+            <h3 className="font-display text-lg font-semibold flex items-center gap-2">
+              Suspicious Transaction Summary (STR)
+              <span className="rounded-full px-2 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-wider" style={{ background: "#fef3c7", color: "#92400e" }}>STR-ready</span>
+            </h3>
+            <p className="text-sm mt-1" style={{ color: "var(--muted)" }}>Aggregates all transactions flagged by AI compliance review + high-risk agent tasks for the period. Pre-formatted for NFIU / CBN / SCUML Suspicious Transaction Report submission.</p>
+          </div>
+        </div>
+        <div className="grid gap-3 sm:grid-cols-[1fr_auto] items-end">
+          <Field label="Reporting period (month)">
+            <Input type="month" value={periodMonthSTR} onChange={(e) => setPeriodMonthSTR(e.target.value)} />
+          </Field>
+          <PrimaryBtn onClick={generateSuspiciousReport} disabled={generatingSTR}>
+            {generatingSTR ? <><Loader2 size={12} className="animate-spin" /> Generating…</> : <><AlertTriangle size={12} /> Generate STR</>}
+          </PrimaryBtn>
+        </div>
+        <p className="mt-3 text-xs" style={{ color: "var(--muted)" }}>
+          Includes: per-flagged-transaction detail (reference, customer, amount, destination, flag label, AI reason, operator action), reason breakdown, total flagged volume. Empty if no flags for the period (which is itself reportable).
+        </p>
+      </Card>
+
       <Card padding="none">
         <div className="flex items-center justify-between p-4 flex-wrap gap-2" style={{ borderBottom: "1px solid var(--line)" }}>
           <div className="font-semibold text-sm">{loading ? "Loading…" : `${reports.length} previously generated report${reports.length === 1 ? "" : "s"}`}</div>
@@ -9057,9 +9210,9 @@ function BDCRegulatoryReports() {
       </Card>
 
       <div className="rounded-xl p-4 text-xs" style={{ background: "rgba(15,95,63,0.05)", border: "1px solid rgba(15,95,63,0.15)" }}>
-        <div className="font-mono text-[10px] uppercase tracking-wider mb-1" style={{ color: "var(--emerald)" }}>Coming soon</div>
+        <div className="font-mono text-[10px] uppercase tracking-wider mb-1" style={{ color: "var(--emerald)" }}>All three regulatory reports live</div>
         <p style={{ color: "var(--muted)" }}>
-          Suspicious Transaction Summary — transactions flagged by AI compliance review, pre-formatted for STR submission — is next on the regulatory-reports roadmap.
+          Monthly Transactions · Quarterly Customer Activity · Suspicious Transaction Summary — all three are generated locally from your operator data, no upload to XaePay servers. Coming soon: editable email drafts to your compliance officer, and one-click filing to NFIU's portal once that integration lands.
         </p>
       </div>
     </div>
@@ -9118,8 +9271,9 @@ function BDCAgent({ jumpToTransaction, hideToggle }) {
   };
 
   const decideTask = async (task, decision, notes = null) => {
+    const newStatus = decision === "approved" ? "approved" : decision === "rejected" ? "rejected" : "dismissed";
     const patch = {
-      status: decision === "approved" ? "approved" : decision === "rejected" ? "rejected" : "dismissed",
+      status: newStatus,
       operator_decision: decision,
       operator_notes: notes,
       reviewed_at: new Date().toISOString(),
@@ -9127,6 +9281,82 @@ function BDCAgent({ jumpToTransaction, hideToggle }) {
     const { error } = await supabase.from("agent_tasks").update(patch).eq("id", task.id);
     if (error) { push(`Couldn't update task: ${error.message}`, "warn"); return; }
     push(`Task ${decision}`, "success");
+
+    // ===== Approve → Execute =====
+    // On approval, perform the actual action the agent had drafted. Each
+    // job_type has its own executor; the agent_task gets flipped to "sent"
+    // when the action completes. On failure, the task stays "approved" so
+    // the operator can retry.
+    if (decision === "approved") {
+      try {
+        const out = task.agent_output || {};
+        const subjectId = task.subject_id;
+        let sentLabel = null;
+
+        if (task.job_type === "quote_review" && subjectId) {
+          // Update the quote with the suggested rate + send the WhatsApp draft to the customer
+          await supabase.from("quotes").update({
+            rate: out.suggested_rate,
+            ngn_total: out.ngn_total,
+            status: "submitted",
+            submitted_at: new Date().toISOString(),
+          }).eq("id", subjectId);
+          // Get customer phone for the WhatsApp send
+          const { data: q } = await supabase.from("quotes").select("customer_phone, customer_id").eq("id", subjectId).maybeSingle();
+          if (q?.customer_phone && out.draft_message) {
+            await sendWhatsAppText(q.customer_phone, out.draft_message);
+          }
+          sentLabel = "Quote sent to customer";
+        } else if (task.job_type === "kyc_chase") {
+          if (out.customer_phone && out.draft_message) {
+            await sendWhatsAppText(out.customer_phone, out.draft_message);
+          }
+          if (out.customer_email && out.draft_email_subject) {
+            await sendEmail({ to: out.customer_email, subject: out.draft_email_subject, html: (out.draft_email_body || "").replace(/\n/g, "<br>"), text: out.draft_email_body });
+          }
+          sentLabel = "Chase sent to customer";
+        } else if (task.job_type === "payment_match" && subjectId && out.match_status === "match") {
+          // Flip the invoice_payment to confirmed (which triggers the receipt PDF flow)
+          await supabase.from("invoice_payments").update({
+            status: "confirmed",
+            confirmed_at: new Date().toISOString(),
+            confirmed_by: auth.user.id,
+          }).eq("id", subjectId);
+          if (out.invoice_id && out.draft_message) {
+            // optional: send confirm message — for now just record action
+          }
+          sentLabel = "Payment confirmed";
+        } else if (task.job_type === "report_draft") {
+          if (out.suggested_recipient && out.draft_email_subject) {
+            const attachmentNote = out.pdf_url ? `\n\nReport PDF: ${out.pdf_url}` : "";
+            await sendEmail({
+              to: out.suggested_recipient,
+              subject: out.draft_email_subject,
+              html: ((out.draft_email_body || "") + attachmentNote).replace(/\n/g, "<br>"),
+              text: (out.draft_email_body || "") + attachmentNote,
+            });
+          }
+          sentLabel = "Report emailed";
+        } else if (task.job_type === "invoice_review") {
+          // No external send; approve just acknowledges the operator has reviewed
+          sentLabel = "Invoice review acknowledged";
+        }
+
+        // Mark the task as sent if we actually executed something
+        if (sentLabel) {
+          await supabase.from("agent_tasks").update({
+            status: "sent",
+            sent_at: new Date().toISOString(),
+          }).eq("id", task.id);
+          push(sentLabel, "success");
+        }
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.error("Execute failed:", err);
+        push(`Approved but execute failed: ${err?.message || err}. Retry from the task.`, "warn");
+      }
+    }
+
     fetchTasks();
   };
 

@@ -1758,6 +1758,177 @@ export function buildCustomerActivityCsv(rows) {
   return [header, ...csvRows].map((row) => row.map(escape).join(",")).join("\n");
 }
 
+// =============================================================================
+// Suspicious Transaction Summary Report — pre-formatted for STR submission
+// to CBN / NFIU / SCUML. Aggregates transactions flagged by AI compliance
+// review + high-risk agent tasks for the period.
+// =============================================================================
+
+function buildSuspiciousTransactionReportPage(doc, { operator, period, flagged, summary }) {
+  drawHeader(doc, "Suspicious Transaction Summary");
+
+  let y = 38;
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(22);
+  doc.setTextColor(INK);
+  doc.text("Suspicious Transaction Summary", MARGIN, y);
+  doc.setFont("courier", "normal");
+  doc.setFontSize(11);
+  doc.setTextColor(MUTED);
+  doc.text(period.label || "Period", PAGE_W - MARGIN, y, { align: "right" });
+  y += 7;
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(9);
+  doc.setTextColor(MUTED);
+  doc.text(`Operator: ${operator?.name || "—"}`, MARGIN, y);
+  y += 4;
+  doc.text(`Generated: ${fmtDateTime(new Date().toISOString())}`, MARGIN, y);
+  y += 4;
+  doc.text(`Coverage: ${fmtDate(period.start)} → ${fmtDate(period.end)}`, MARGIN, y);
+  y += 14;
+
+  // Summary box — high contrast red/amber tone
+  const summaryBg = summary.totalCount > 0 ? "#92400e" : EMERALD;
+  doc.setFillColor(summaryBg);
+  doc.roundedRect(MARGIN, y, CONTENT_W, 26, 3, 3, "F");
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(8.5);
+  doc.setTextColor("#fef3c7");
+  doc.text("SUMMARY", MARGIN + 6, y + 8);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(16);
+  doc.setTextColor("#ffffff");
+  doc.text(`${summary.totalCount} flagged transactions`, MARGIN + 6, y + 18);
+  doc.setFont("courier", "normal");
+  doc.setFontSize(9);
+  doc.setTextColor("#fef3c7");
+  doc.text(summary.totalVolumeText || "", PAGE_W - MARGIN - 6, y + 18, { align: "right" });
+  y += 34;
+
+  // Reason breakdown
+  if (summary.reasonBreakdown && Object.keys(summary.reasonBreakdown).length > 0) {
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(10);
+    doc.setTextColor(INK);
+    doc.text("Flag reasons", MARGIN, y);
+    y += 6;
+    Object.entries(summary.reasonBreakdown).forEach(([reason, count]) => {
+      doc.setFont("courier", "normal");
+      doc.setFontSize(9);
+      doc.setTextColor(MUTED);
+      doc.text(reason, MARGIN, y, { maxWidth: CONTENT_W - 20 });
+      doc.setTextColor(INK);
+      doc.text(`${count}`, PAGE_W - MARGIN, y, { align: "right" });
+      y += 5;
+    });
+    y += 6;
+  }
+
+  // Per-transaction detail
+  doc.setDrawColor(LINE);
+  doc.line(MARGIN, y, PAGE_W - MARGIN, y);
+  y += 6;
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(10);
+  doc.setTextColor(INK);
+  doc.text("Flagged transactions", MARGIN, y);
+  y += 6;
+
+  if (flagged.length === 0) {
+    doc.setFont("helvetica", "italic");
+    doc.setFontSize(9);
+    doc.setTextColor(MUTED);
+    doc.text("No transactions flagged for this period. Nothing to report.", MARGIN, y);
+    y += 8;
+  }
+
+  flagged.forEach((t, i) => {
+    if (y > PAGE_H - 50) {
+      drawFooter(doc, doc.internal.getNumberOfPages(), 0);
+      doc.addPage();
+      drawHeader(doc, "Suspicious Transaction Summary (cont.)");
+      y = 38;
+    }
+    // Card-style block per flagged transaction
+    doc.setDrawColor(LINE);
+    doc.setFillColor("#fafaf8");
+    doc.roundedRect(MARGIN, y, CONTENT_W, 32, 2, 2, "FD");
+
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(9.5);
+    doc.setTextColor(INK);
+    const ref = `[${i + 1}] ${t.ref || (t.id ? `QU-${t.id.slice(0, 8).toUpperCase()}` : "—")}`;
+    doc.text(ref, MARGIN + 4, y + 7);
+
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(9);
+    doc.setTextColor(INK);
+    doc.text(`${t.customer_name || "—"} · ${t.currency} ${parseFloat(t.amount || 0).toLocaleString()} → ${t.destination || "—"}`, MARGIN + 50, y + 7);
+
+    doc.setFont("courier", "normal");
+    doc.setFontSize(8);
+    doc.setTextColor(MUTED);
+    doc.text(fmtDate(t.created_at), PAGE_W - MARGIN - 4, y + 7, { align: "right" });
+
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(8);
+    doc.setTextColor("#991b1b");
+    doc.text(`FLAG: ${t.flag_label || t.review_decision || "review"}`, MARGIN + 4, y + 14);
+
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8);
+    doc.setTextColor(INK);
+    const reason = t.review_reason || t.flag_reason || "(no reason captured)";
+    doc.text(reason.slice(0, 200), MARGIN + 4, y + 20, { maxWidth: CONTENT_W - 8 });
+
+    if (t.operator_action || t.operator_review_override_reason) {
+      doc.setFont("helvetica", "italic");
+      doc.setFontSize(7.5);
+      doc.setTextColor(MUTED);
+      doc.text(`Operator action: ${t.operator_action || t.operator_review_override_reason || "—"}`, MARGIN + 4, y + 27, { maxWidth: CONTENT_W - 8 });
+    }
+
+    y += 36;
+  });
+
+  // Footer
+  const noteY = PAGE_H - 28;
+  doc.setDrawColor(LINE);
+  doc.line(MARGIN, noteY, PAGE_W - MARGIN, noteY);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(7.5);
+  doc.setTextColor(MUTED);
+  doc.text(`This summary is a starting point for STR filings (CBN, NFIU, SCUML). The operator is responsible for verifying each entry, adding supporting context, and submitting in the format required by their regulator. XaePay's AI compliance flags are advisory — they don't constitute a finding of suspicious activity, only an item for the operator to review.`, MARGIN, noteY + 5, { maxWidth: CONTENT_W });
+  doc.text("XaePay is not a regulated entity; this document does not constitute a regulatory filing.", MARGIN, noteY + 17, { maxWidth: CONTENT_W });
+}
+
+export function generateSuspiciousTransactionReportPdf(args) {
+  const doc = new jsPDF({ unit: "mm", format: "a4" });
+  buildSuspiciousTransactionReportPage(doc, args);
+  drawFooter(doc, doc.internal.getNumberOfPages(), 0);
+  return doc;
+}
+
+export function buildSuspiciousTransactionCsv(flagged) {
+  const header = ["Reference", "Date", "Customer", "Amount", "Currency", "Destination", "Flag", "Reason", "Operator action"];
+  const rows = flagged.map((t) => [
+    t.ref || (t.id ? `QU-${t.id.slice(0, 8).toUpperCase()}` : ""),
+    t.created_at ? new Date(t.created_at).toISOString().slice(0, 10) : "",
+    t.customer_name || "",
+    t.amount ?? "",
+    t.currency || "",
+    t.destination || "",
+    t.flag_label || t.review_decision || "",
+    t.review_reason || t.flag_reason || "",
+    t.operator_action || t.operator_review_override_reason || "",
+  ]);
+  const escape = (v) => {
+    const s = String(v ?? "");
+    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+  return [header, ...rows].map((row) => row.map(escape).join(",")).join("\n");
+}
+
 // Build CSV from an array of transactions. Used alongside the PDF so the
 // operator can also paste into Excel / regulator portals.
 export function buildTransactionsCsv(transactions) {
