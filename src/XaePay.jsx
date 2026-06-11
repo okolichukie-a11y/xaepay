@@ -10123,36 +10123,65 @@ function BDCAgent({ jumpToTransaction, hideToggle }) {
           }).eq("id", subjectId);
           channels.push({ channel: "Quote", status: "sent", detail: `rate ₦${out.suggested_rate}/$ · status: submitted` });
 
-          // Use approved quote_notification template (5 vars):
-          //   {{1}} customer name, {{2}} reference, {{3}} amount,
-          //   {{4}} rate, {{5}} approval URL
-          // Delivers outside Meta's 24h window — works for first contact.
-          const { data: q } = await supabase.from("quotes").select("customer_phone, customer_email, customer_id").eq("id", subjectId).maybeSingle();
-          if (q?.customer_phone && out.customer_name) {
+          // Get contact info — fall back to customer table if denormalized
+          // fields on the quote row are null (which happens for quotes that
+          // were created before contact fields were captured, or for cold
+          // signups that didn't fill them in).
+          const { data: q } = await supabase
+            .from("quotes")
+            .select("customer_phone, customer_email, customer_id")
+            .eq("id", subjectId)
+            .maybeSingle();
+          let contactPhone = q?.customer_phone || null;
+          let contactEmail = q?.customer_email || null;
+          if ((!contactPhone || !contactEmail) && q?.customer_id) {
+            const { data: c } = await supabase
+              .from("customers")
+              .select("phone, email")
+              .eq("id", q.customer_id)
+              .maybeSingle();
+            contactPhone = contactPhone || c?.phone || null;
+            contactEmail = contactEmail || c?.email || null;
+          }
+
+          if (contactPhone && out.customer_name) {
             const ref = `QU-${subjectId.slice(0, 8).toUpperCase()}`;
             const amountText = `${out.currency || "USD"} ${parseFloat(out.amount || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
             const rateText = `₦${parseFloat(out.suggested_rate || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}/$`;
             const approvalUrl = `https://xaepay.com/?quote=${subjectId}`;
-            await tryChannel(
+            // Try the approved quote_notification template first (5 vars).
+            // If Meta rejects (param mismatch, language issue, etc.), fall
+            // back to free-form text which only works in the 24h window.
+            tryChannel(
               "WhatsApp",
-              () => sendWhatsAppTemplate(
-                q.customer_phone,
-                "quote_notification",
-                "en",
-                [{ type: "body", parameters: [
-                  { type: "text", text: out.customer_name },
-                  { type: "text", text: ref },
-                  { type: "text", text: amountText },
-                  { type: "text", text: rateText },
-                  { type: "text", text: approvalUrl },
-                ]}]
-              ),
-              (r) => r?.ok ? "delivered via quote_notification template" : (r?.data?.data?.error?.message || r?.data?.error || "send failed")
+              async () => {
+                const r = await sendWhatsAppTemplate(
+                  contactPhone,
+                  "quote_notification",
+                  "en",
+                  [{ type: "body", parameters: [
+                    { type: "text", text: out.customer_name },
+                    { type: "text", text: ref },
+                    { type: "text", text: amountText },
+                    { type: "text", text: rateText },
+                    { type: "text", text: approvalUrl },
+                  ]}]
+                );
+                if (r?.ok) return r;
+                // Template failed — fall back to text
+                if (out.draft_message) {
+                  const t = await sendWhatsAppText(contactPhone, out.draft_message);
+                  if (t?.ok) return { ok: true, data: { _detail: "delivered via text (template rejected)" } };
+                  return t;
+                }
+                return r;
+              },
+              (r) => r?.ok ? (r?.data?._detail || "delivered via quote_notification template") : (r?.data?.data?.error?.message || r?.data?.error || "send failed")
             );
           }
-          if (q?.customer_email) {
-            await tryChannel("Email", () => sendEmail({
-              to: q.customer_email,
+          if (contactEmail) {
+            tryChannel("Email", () => sendEmail({
+              to: contactEmail,
               subject: `Quote ready · ${out.customer_name || "your transaction"}`,
               html: (out.draft_message || "").replace(/\n/g, "<br>"),
               text: out.draft_message || "",
@@ -10161,17 +10190,28 @@ function BDCAgent({ jumpToTransaction, hideToggle }) {
 
         } else if (task.job_type === "kyc_chase") {
           if (out.customer_phone && out.customer_name) {
-            // Use the approved compliance_reminder WhatsApp template so the
-            // message delivers even outside the 24h session window. Template
-            // body is generic ("Proof of address expires in 14 days..."), but
-            // the email below carries the full personalized agent draft —
-            // WhatsApp serves as the always-deliverable ping.
-            await tryChannel("WhatsApp", () => sendWhatsAppTemplate(
-              out.customer_phone,
-              "compliance_reminder",
-              "en",
-              [{ type: "body", parameters: [{ type: "text", text: out.customer_name }] }]
-            ), (r) => r?.ok ? "delivered via compliance_reminder template" : (r?.data?.data?.error?.message || r?.data?.error || "send failed"));
+            // Try compliance_reminder template first (works outside 24h);
+            // if Meta rejects (param count mismatch, language issue), fall
+            // back to text which only works in the 24h window.
+            tryChannel(
+              "WhatsApp",
+              async () => {
+                const r = await sendWhatsAppTemplate(
+                  out.customer_phone,
+                  "compliance_reminder",
+                  "en",
+                  [{ type: "body", parameters: [{ type: "text", text: out.customer_name }] }]
+                );
+                if (r?.ok) return r;
+                if (out.draft_message) {
+                  const t = await sendWhatsAppText(out.customer_phone, out.draft_message);
+                  if (t?.ok) return { ok: true, data: { _detail: "delivered via text (template rejected)" } };
+                  return t;
+                }
+                return r;
+              },
+              (r) => r?.ok ? (r?.data?._detail || "delivered via compliance_reminder template") : (r?.data?.data?.error?.message || r?.data?.error || "send failed")
+            );
           }
           if (out.customer_email) {
             // Fall back to a sensible subject + body if the agent's email draft
