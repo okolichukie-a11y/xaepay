@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import {
   ArrowRight, ArrowLeftRight, CheckCircle2, FileText, Shield, ShieldCheck,
   Wallet, MessageCircle, Send, TrendingUp, Sparkles, Briefcase, Layers, Zap, Receipt, Loader2,
+  User,
 } from "lucide-react";
 import { TIERS } from "../XaePay.jsx";
 import { supabase, sendEmail, getPlatformSetting } from "../lib/supabase.js";
@@ -438,8 +439,63 @@ export function ProvidersPage() {
         </div>
       </Section>
 
+      <Section eyebrow="Partnership tiers" title="Pick how deep you plug in" lede="Three tiers, from receiving routed deals on your desk to running your full operator network and direct customers on XaePay infrastructure (white-label).">
+        <div className="grid gap-4 lg:grid-cols-3">
+          {/* Standard */}
+          <div className="rounded-2xl p-5" style={{ background: "white", border: "1px solid var(--line)" }}>
+            <div className="font-mono text-[10px] uppercase tracking-wider" style={{ color: "var(--muted)" }}>Tier 1</div>
+            <div className="font-display mt-1 text-xl font-semibold">Standard · Routing</div>
+            <div className="mt-1 text-xs" style={{ color: "var(--muted)" }}>Receive routed deals</div>
+            <div className="mt-4 pt-4" style={{ borderTop: "1px solid var(--line)" }}>
+              <div className="font-display text-2xl font-[500]">10 bps</div>
+              <div className="font-mono text-[10px] mt-0.5" style={{ color: "var(--muted)" }}>per settled-volume · no monthly fee</div>
+            </div>
+            <ul className="mt-4 space-y-2 text-xs">
+              {["Provider portal access","KYC review queue","Routed transactions feed","Settlement reporting + statements","Webhook config + API keys","Multi-user team (admin / member / viewer)"].map((f) => (
+                <li key={f} className="flex items-start gap-2"><CheckCircle2 size={11} className="mt-0.5" style={{ color: "var(--emerald)" }} /> {f}</li>
+              ))}
+            </ul>
+          </div>
+          {/* Plus — featured */}
+          <div className="rounded-2xl p-5 relative overflow-hidden" style={{ background: "var(--ink)", color: "var(--bone)", border: "2px solid var(--lime)" }}>
+            <div className="absolute -right-12 -top-12 h-32 w-32 rounded-full opacity-30 blur-2xl" style={{ background: "var(--lime)" }} />
+            <div className="relative mb-3 inline-flex w-fit items-center gap-1 rounded-full px-2 py-0.5 font-mono text-[9px] uppercase tracking-wider" style={{ background: "var(--lime)", color: "var(--ink)" }}><Sparkles size={9}/> Most picked</div>
+            <div className="font-mono text-[10px] uppercase tracking-wider" style={{ color: "rgba(247,245,240,0.6)" }}>Tier 2</div>
+            <div className="font-display mt-1 text-xl font-semibold">Plus · + Direct customers</div>
+            <div className="mt-1 text-xs" style={{ color: "rgba(247,245,240,0.7)" }}>Your corporate customers get XaePay portals under your brand</div>
+            <div className="mt-4 pt-4" style={{ borderTop: "1px solid rgba(255,255,255,0.08)" }}>
+              <div className="font-display text-2xl font-[500]" style={{ color: "var(--lime)" }}>8 bps</div>
+              <div className="font-mono text-[10px] mt-0.5" style={{ color: "rgba(247,245,240,0.5)" }}>+ ₦500K / $330 per month platform fee</div>
+            </div>
+            <ul className="mt-4 space-y-2 text-xs">
+              {["Everything in Standard","White-label header on your customers' portals","KYC unification — direct customers reuse XaePay's KYC engine","Combined reporting dashboard (routed flow + your customers)","Priority support"].map((f) => (
+                <li key={f} className="flex items-start gap-2"><CheckCircle2 size={11} className="mt-0.5" style={{ color: "var(--lime)" }} /> {f}</li>
+              ))}
+            </ul>
+          </div>
+          {/* Network */}
+          <div className="rounded-2xl p-5" style={{ background: "white", border: "1px solid var(--line)" }}>
+            <div className="font-mono text-[10px] uppercase tracking-wider" style={{ color: "var(--muted)" }}>Tier 3</div>
+            <div className="font-display mt-1 text-xl font-semibold">Network · Full white-label</div>
+            <div className="mt-1 text-xs" style={{ color: "var(--muted)" }}>Your sub-operators + their customers all on XaePay</div>
+            <div className="mt-4 pt-4" style={{ borderTop: "1px solid var(--line)" }}>
+              <div className="font-display text-2xl font-[500]">6 bps</div>
+              <div className="font-mono text-[10px] mt-0.5" style={{ color: "var(--muted)" }}>+ ₦1.5M / $1,000 per month platform fee</div>
+            </div>
+            <ul className="mt-4 space-y-2 text-xs">
+              {["Everything in Plus","Sub-operators get full operator dashboards under your brand","You set per-sub-operator tier economics + margins","You configure the routing logic for your sub-network","Master billing — one invoice; sub-operator subs roll up to you","AI agents available to sub-operators (you mark up)","Compliance hierarchy — oversee sub-operator KYC + transactions"].map((f) => (
+                <li key={f} className="flex items-start gap-2"><CheckCircle2 size={11} className="mt-0.5" style={{ color: "var(--emerald)" }} /> {f}</li>
+              ))}
+            </ul>
+          </div>
+        </div>
+        <div className="mt-5 rounded-xl p-4 text-xs" style={{ background: "rgba(15,95,63,0.04)", border: "1px solid rgba(15,95,63,0.15)", color: "var(--muted)" }}>
+          <strong style={{ color: "var(--ink)" }}>Enterprise</strong> · for multi-license PSPs, custom infra, dedicated success management — bps + monthly platform fee negotiated based on scope. <a href="mailto:legal@xaepay.com?subject=Enterprise%20PSP%20partnership" className="underline" style={{ color: "var(--emerald)" }}>Contact us</a>.
+        </div>
+      </Section>
+
       <Section eyebrow="Provider portal" title="The dashboard you'll work in">
-        <div className="grid gap-4 sm:grid-cols-2">
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           <div className="rounded-xl p-5" style={{ background: "var(--bone)", border: "1px solid var(--line)" }}>
             <Sparkles size={16} style={{ color: "var(--emerald)" }} />
             <h3 className="font-display mt-2 text-base font-semibold">Dashboard</h3>
@@ -459,6 +515,16 @@ export function ProvidersPage() {
             <Briefcase size={16} style={{ color: "var(--emerald)" }} />
             <h3 className="font-display mt-2 text-base font-semibold">Team</h3>
             <p className="mt-1 text-sm" style={{ color: "var(--muted)" }}>Invite your team by email with admin / member / viewer roles. They sign in once and they're in.</p>
+          </div>
+          <div className="rounded-xl p-5" style={{ background: "rgba(197,242,74,0.08)", border: "1px solid rgba(197,242,74,0.3)" }}>
+            <Layers size={16} style={{ color: "var(--ink)" }} />
+            <h3 className="font-display mt-2 text-base font-semibold">My Operators <span className="font-mono text-[10px] font-semibold rounded px-1.5 py-0.5 ml-1" style={{ background: "var(--ink)", color: "var(--lime)" }}>Network</span></h3>
+            <p className="mt-1 text-sm" style={{ color: "var(--muted)" }}>For Network tier: manage your sub-operator network — onboard, set tier economics, oversee KYC, monitor performance.</p>
+          </div>
+          <div className="rounded-xl p-5" style={{ background: "rgba(197,242,74,0.08)", border: "1px solid rgba(197,242,74,0.3)" }}>
+            <User size={16} style={{ color: "var(--ink)" }} />
+            <h3 className="font-display mt-2 text-base font-semibold">My Customers <span className="font-mono text-[10px] font-semibold rounded px-1.5 py-0.5 ml-1" style={{ background: "var(--ink)", color: "var(--lime)" }}>Plus+</span></h3>
+            <p className="mt-1 text-sm" style={{ color: "var(--muted)" }}>For Plus and Network tiers: your direct corporate customers get XaePay-style portals under your branding. KYC, invoicing, settlement — all unified.</p>
           </div>
         </div>
       </Section>
