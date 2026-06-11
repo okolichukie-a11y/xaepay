@@ -3092,9 +3092,8 @@ function MiniProviderNodes() {
 // =============================================================================
 function CapabilityStrip() {
   return (
-    <section className="relative overflow-hidden">
-      <CapabilityWebBackground />
-      <div className="relative mx-auto max-w-screen-2xl px-4 py-16 sm:px-6 lg:px-8 lg:py-20">
+    <section>
+      <div className="mx-auto max-w-screen-2xl px-4 py-16 sm:px-6 lg:px-8 lg:py-20">
       <div className="mb-10 max-w-2xl">
         <SectionEyebrow>Capabilities</SectionEyebrow>
         <h2 className="font-display mt-3 text-4xl font-[450] leading-[1.05] tracking-tight sm:text-5xl">Everything in <span className="italic" style={{ color: "var(--emerald)" }}>one platform.</span></h2>
@@ -3190,60 +3189,134 @@ function StructureSection() {
     },
   ];
   return (
-    <section className="border-b relative overflow-hidden" style={{ borderColor: "var(--line)", background: "var(--bone)" }}>
-      <IsolationDiagramBackground />
-      <div className="relative mx-auto max-w-screen-2xl px-4 py-20 sm:px-6 lg:px-8 lg:py-28">
-        <div className="grid gap-12 lg:grid-cols-12">
-          <div className="lg:col-span-5">
-            <SectionEyebrow>§04  How we're structured</SectionEyebrow>
-            <h2 className="font-display mt-4 text-4xl font-[450] leading-[1.05] tracking-tight sm:text-5xl">A software<br />layer, not a<br /><span className="italic" style={{ color: "var(--emerald)" }}>fintech</span>.</h2>
-            <p className="mt-6 max-w-md text-base leading-relaxed" style={{ color: "var(--muted)" }}>By design, not by default. The defensible position in cross-border payments is the workflow and the audit trail — not the custody. Money moves through parties already licensed to move it. We give them better tools.</p>
+    <section className="border-b" style={{ borderColor: "var(--line)", background: "var(--bone)" }}>
+      <div className="mx-auto max-w-screen-2xl px-4 py-20 sm:px-6 lg:px-8 lg:py-28">
+        {/* Header */}
+        <div className="mb-12 max-w-3xl">
+          <SectionEyebrow>§04  How we're structured</SectionEyebrow>
+          <h2 className="font-display mt-4 text-4xl font-[450] leading-[1.05] tracking-tight sm:text-6xl">A software layer, <br /><span className="italic" style={{ color: "var(--emerald)" }}>not a fintech</span>.</h2>
+          <p className="mt-6 max-w-xl text-base leading-relaxed" style={{ color: "var(--muted)" }}>By design, not by default. The defensible position in cross-border payments is the workflow and the audit trail — not the custody. Money moves through parties already licensed to move it. We give them better tools.</p>
+        </div>
 
-            {/* Live status block — reinforces the "alive system" feel */}
-            <div className="mt-8 rounded-2xl p-4" style={{ background: "var(--ink)", color: "var(--bone)" }}>
-              <div className="flex items-center gap-2 mb-3">
-                <div className="h-1.5 w-1.5 rounded-full pulse-dot" style={{ background: "var(--lime)", boxShadow: "0 0 8px var(--lime)" }} />
-                <span className="font-mono text-[10px] uppercase tracking-wider" style={{ color: "var(--lime)" }}>Live · 3 invariants holding</span>
-              </div>
-              <div className="grid grid-cols-3 gap-3 text-center">
-                {points.map((p) => (
-                  <div key={p.n}>
-                    <div className="font-display text-2xl font-semibold" style={{ color: "var(--lime)" }}>0</div>
-                    <div className="font-mono text-[9px] uppercase tracking-wider mt-1" style={{ color: "rgba(247,245,240,0.5)" }}>{p.n === "01" ? "funds held" : p.n === "02" ? "trades on book" : "prices set"}</div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
+        {/* Centerpiece — the isolation diagram, foregrounded */}
+        <StructureIsolationDiagram points={points} />
 
-          <div className="lg:col-span-7">
-            <div className="space-y-4">
-              {points.map((p) => (
-                <div key={p.n} className="rounded-2xl overflow-hidden relative" style={{ background: "white", border: "1px solid var(--line)" }}>
-                  {/* Side accent bar */}
-                  <div className="absolute left-0 top-0 bottom-0 w-1" style={{ background: "var(--emerald)" }} />
-                  <div className="p-5 pl-6 sm:p-6 sm:pl-7">
-                    <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
-                      <div className="min-w-0 sm:flex-1">
-                        <div className="flex items-baseline gap-3 mb-2 flex-wrap">
-                          <span className="font-display text-2xl sm:text-3xl font-[500] tracking-tight" style={{ color: "var(--emerald)" }}>{p.n}</span>
-                          <h3 className="font-display text-lg sm:text-xl font-semibold" style={{ color: "var(--ink)" }}>{p.title}</h3>
-                        </div>
-                        <p className="text-sm leading-relaxed" style={{ color: "var(--muted)" }}>{p.body}</p>
-                      </div>
-                      <div className="rounded-xl px-4 py-3 text-left sm:text-right sm:flex-shrink-0" style={{ background: "var(--bone)", border: "1px solid var(--line)" }}>
-                        <div className="font-display text-sm font-semibold" style={{ color: "var(--ink)" }}>{p.kpi}</div>
-                        <div className="font-mono text-[9px] uppercase tracking-wider mt-1 leading-relaxed" style={{ color: "var(--muted)" }}>{p.sub}</div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              ))}
+        {/* Bold quote / mission statement */}
+        <div className="mt-12 rounded-3xl p-8 sm:p-12" style={{ background: "var(--ink)", color: "var(--bone)" }}>
+          <div className="grid gap-6 lg:grid-cols-[1fr_auto] items-center">
+            <blockquote className="font-display text-2xl sm:text-3xl lg:text-4xl font-[450] leading-tight" style={{ color: "var(--bone)" }}>
+              "We never touch money. <span style={{ color: "var(--lime)" }}>We make the work better for the people who do.</span>"
+            </blockquote>
+            <div className="flex items-center gap-3 flex-shrink-0">
+              <div className="h-10 w-10 rounded-lg flex items-center justify-center" style={{ background: "linear-gradient(135deg, var(--emerald), var(--emerald-deep))" }}>
+                <span className="font-display text-xl font-semibold" style={{ color: "var(--lime)" }}>X</span>
+              </div>
+              <div>
+                <div className="font-display text-sm font-semibold">XaeccoX</div>
+                <div className="font-mono text-[10px] uppercase tracking-wider" style={{ color: "rgba(247,245,240,0.5)" }}>Parent of XaePay</div>
+              </div>
             </div>
           </div>
         </div>
       </div>
     </section>
+  );
+}
+
+// =============================================================================
+// StructureIsolationDiagram — centerpiece of HOW WE'RE STRUCTURED. Shows XaePay
+// as a clearly-bounded box on the LEFT, the regulated cluster (Operator funds /
+// Counterparty / FX rate) clearly on the RIGHT with arrows between them
+// indicating the actual money/trade flow, and XaePay's "software signal only"
+// connection going around them. Bold and declarative — replaces the boring 0/0/0
+// live-counter UI.
+// =============================================================================
+function StructureIsolationDiagram({ points }) {
+  return (
+    <div className="rounded-3xl overflow-hidden" style={{ background: "white", border: "1px solid var(--line)", boxShadow: "0 24px 60px -28px rgba(15,18,20,0.18)" }}>
+      <div className="flex items-center justify-between px-5 py-3 flex-wrap gap-2" style={{ borderBottom: "1px solid var(--line)", background: "var(--bone)" }}>
+        <div className="flex items-center gap-2">
+          <div className="h-1.5 w-1.5 rounded-full pulse-dot" style={{ background: "var(--emerald)", boxShadow: "0 0 6px var(--emerald)" }} />
+          <span className="font-mono text-[10px] uppercase tracking-wider" style={{ color: "var(--emerald)" }}>XaePay's position in the value chain</span>
+        </div>
+        <span className="font-mono text-[10px] uppercase tracking-wider" style={{ color: "var(--muted)" }}>Software-only · no custody · no counterparty · no FX</span>
+      </div>
+
+      <div className="p-6 sm:p-10">
+        <div className="grid gap-6 lg:grid-cols-[1fr_auto_1fr] items-center">
+          {/* LEFT — XaePay column */}
+          <div className="space-y-4">
+            <div className="rounded-2xl p-5 sm:p-6 text-center" style={{ background: "linear-gradient(135deg, rgba(15,95,63,0.05), rgba(197,242,74,0.08))", border: "2px solid var(--emerald)" }}>
+              <div className="inline-flex items-center justify-center w-14 h-14 rounded-xl mb-3" style={{ background: "linear-gradient(135deg, var(--emerald), var(--emerald-deep))" }}>
+                <span className="font-display text-3xl font-semibold" style={{ color: "var(--lime)" }}>X</span>
+              </div>
+              <div className="font-display text-xl font-semibold">XaePay</div>
+              <div className="font-mono text-[10px] uppercase tracking-wider mt-1" style={{ color: "var(--emerald)" }}>The software layer</div>
+              <div className="mt-3 text-xs leading-relaxed" style={{ color: "var(--muted)" }}>Workflow · documentation · routing · AI agents. Sits beside the regulated layer, never inside it.</div>
+            </div>
+            {/* Mini chips of what XaePay does do */}
+            <div className="flex flex-wrap gap-1.5 justify-center">
+              {["Quotes", "KYC orchestration", "Audit packs", "AI compliance", "Receipts", "Routing"].map((t) => (
+                <span key={t} className="rounded-md px-2 py-0.5 font-mono text-[10px]" style={{ background: "rgba(15,95,63,0.06)", color: "var(--emerald)", border: "1px solid rgba(15,95,63,0.2)" }}>{t}</span>
+              ))}
+            </div>
+          </div>
+
+          {/* MIDDLE — barrier */}
+          <div className="hidden lg:flex flex-col items-center gap-3 px-4">
+            <svg width="32" height="200" viewBox="0 0 32 200">
+              <line x1="16" y1="0" x2="16" y2="200" stroke="rgba(15,18,20,0.15)" strokeWidth="1" strokeDasharray="4 4" />
+              {[40, 100, 160].map((y) => (
+                <g key={y} transform={`translate(16 ${y})`}>
+                  <circle r="10" fill="white" stroke="rgba(15,18,20,0.25)" strokeWidth="1" />
+                  <line x1="-4" y1="-4" x2="4" y2="4" stroke="rgba(15,18,20,0.6)" strokeWidth="1.5" />
+                  <line x1="-4" y1="4" x2="4" y2="-4" stroke="rgba(15,18,20,0.6)" strokeWidth="1.5" />
+                </g>
+              ))}
+            </svg>
+            <span className="font-mono text-[9px] uppercase tracking-wider text-center" style={{ color: "var(--muted)" }}>No contact</span>
+            <span className="font-mono text-[9px] uppercase tracking-wider text-center" style={{ color: "var(--muted)" }}>Signal only ↓</span>
+          </div>
+          <div className="lg:hidden h-px my-2" style={{ background: "var(--line)" }} />
+
+          {/* RIGHT — regulated cluster */}
+          <div className="space-y-3">
+            <div className="font-mono text-[10px] uppercase tracking-wider mb-1" style={{ color: "var(--muted)" }}>Regulated layer — handled by licensed parties, not us</div>
+            {[
+              { title: "Custody", body: "Funds move directly between customer → licensed operator's collection account → licensed PSP", flow: "OPERATOR · PSP" },
+              { title: "Counterparty", body: "Every trade is between named parties — customer, operator, provider, beneficiary — disclosed at every step", flow: "OPERATOR ↔ PROVIDER" },
+              { title: "Price-setting", body: "Wholesale rate from the PSP. Customer rate from the operator. We surface the math; we don't set anything.", flow: "PSP wholesale · OP markup" },
+            ].map((b, i) => (
+              <div key={i} className="rounded-xl p-4 relative" style={{ background: "var(--bone)", border: "1px solid var(--line)" }}>
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex-1">
+                    <div className="font-display text-base font-semibold" style={{ color: "var(--ink)" }}>{b.title}</div>
+                    <div className="text-xs mt-1 leading-relaxed" style={{ color: "var(--muted)" }}>{b.body}</div>
+                  </div>
+                  <span className="rounded-md px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-wider flex-shrink-0" style={{ background: "white", color: "var(--ink)", border: "1px solid var(--line)" }}>{b.flow}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Bottom — the three invariants, redesigned */}
+        <div className="mt-8 pt-8 grid gap-4 sm:grid-cols-3" style={{ borderTop: "1px solid var(--line)" }}>
+          {points.map((p) => (
+            <div key={p.n} className="rounded-xl p-4 relative overflow-hidden" style={{ background: "var(--ink)", color: "var(--bone)" }}>
+              <div className="absolute -right-8 -top-8 h-24 w-24 rounded-full blur-2xl opacity-40" style={{ background: "var(--lime)" }} />
+              <div className="relative">
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="font-display text-2xl font-[500]" style={{ color: "var(--lime)" }}>{p.n}</span>
+                  <h3 className="font-display text-base font-semibold">{p.title}</h3>
+                </div>
+                <p className="text-xs leading-relaxed" style={{ color: "rgba(247,245,240,0.7)" }}>{p.body}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -3740,17 +3813,190 @@ function IsolationDiagramBackground() {
   );
 }
 
+// =============================================================================
+// TransactionConsole — replaces the old LayerStack with a live operations
+// console showing actual transaction phases. Left rail = live feed of in-flight
+// transactions, right side = phase-by-phase trace of the active one with timers,
+// status pills, and rich phase detail. Auto-cycles through demo transactions
+// every 9 seconds. Built to read as "this is the system at work right now."
+// =============================================================================
+function TransactionConsole() {
+  // Three demo transactions, each in a different phase. Cycles which one is
+  // the "active trace" focus.
+  const txns = [
+    {
+      ref: "QU-A4F7", customer: "Adaeze · Lagos Imports", amount: "$25,000", route: "→ Shenzhen Hardware Co",
+      phases: [
+        { actor: "Customer",  role: "L1", state: "done",        elapsed: "00:12", action: "Sent quote request via WhatsApp", detail: '"Pay $25K to Shenzhen supplier"' },
+        { actor: "Operator",  role: "L2", state: "done",        elapsed: "03:24", action: "AI compliance pass · rate locked ₦1,400/$ · quote sent", detail: "Invoice review · OFAC clean · markup +₦5" },
+        { actor: "Provider",  role: "L3", state: "in_progress", elapsed: "00:48", action: "PSP wiring USD → CNY", detail: "Awaiting deposit confirm · MT103 pending" },
+      ],
+      total: "04:24",
+      overallStatus: "Active",
+    },
+    {
+      ref: "QU-B12C", customer: "Adekunle Foods Ltd", amount: "£8,400", route: "→ UK supplier",
+      phases: [
+        { actor: "Customer",  role: "L1", state: "done",        elapsed: "00:08", action: "Quote request from portal", detail: "Form M opened · invoice attached" },
+        { actor: "Operator",  role: "L2", state: "in_progress", elapsed: "01:12", action: "Agent drafted reply · awaiting your approval", detail: "Suggested rate ₦1,940/£ · risk: low" },
+        { actor: "Provider",  role: "L3", state: "queued",      elapsed: "—",     action: "Queued — fires after operator approval", detail: "Provider: Standard rail · T+0" },
+      ],
+      total: "01:20",
+      overallStatus: "Awaiting approval",
+    },
+    {
+      ref: "QU-D8E1", customer: "TechHaven NG", amount: "€12,500", route: "→ Berlin supplier",
+      phases: [
+        { actor: "Customer",  role: "L1", state: "done",        elapsed: "00:05", action: "Quote initiated · invoice uploaded", detail: "Restructured as third-party trade" },
+        { actor: "Operator",  role: "L2", state: "done",        elapsed: "02:48", action: "Approved + sent · customer confirmed", detail: "Rate ₦1,650/€ · NGN total ₦20.6M" },
+        { actor: "Provider",  role: "L3", state: "done",        elapsed: "06:12", action: "Wire settled · MT103 captured", detail: "Status: ARRIVED · receipt issued both ways" },
+      ],
+      total: "09:05",
+      overallStatus: "Settled",
+    },
+  ];
+
+  const [activeIdx, setActiveIdx] = useState(0);
+  const [tick, setTick] = useState(0);
+  useEffect(() => {
+    const i = setInterval(() => setActiveIdx((s) => (s + 1) % txns.length), 9000);
+    const t = setInterval(() => setTick((s) => s + 1), 1000);
+    return () => { clearInterval(i); clearInterval(t); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const active = txns[activeIdx];
+
+  const stateLabel = (s) => s === "done" ? "Done" : s === "in_progress" ? "Active" : "Queued";
+  const stateColor = (s) => s === "done" ? "var(--emerald)" : s === "in_progress" ? "var(--lime)" : "rgba(247,245,240,0.4)";
+
+  return (
+    <div className="rounded-3xl overflow-hidden relative" style={{ background: "var(--ink)", border: "1px solid var(--ink)" }}>
+      {/* Top status bar */}
+      <div className="flex items-center justify-between px-5 py-3 flex-wrap gap-2" style={{ borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
+            <div className="h-1.5 w-1.5 rounded-full pulse-dot" style={{ background: "var(--lime)", boxShadow: "0 0 8px var(--lime)" }} />
+            <span className="font-mono text-[10px] uppercase tracking-wider" style={{ color: "var(--lime)" }}>Live · Operations console</span>
+          </div>
+          <span className="font-mono text-[10px] uppercase tracking-wider" style={{ color: "rgba(247,245,240,0.4)" }}>{txns.length} in-flight</span>
+        </div>
+        <span className="font-mono text-[10px] uppercase tracking-wider" style={{ color: "rgba(247,245,240,0.5)" }}>Cycle {(tick % 9) + 1} / 9</span>
+      </div>
+
+      <div className="grid lg:grid-cols-[280px_1fr]">
+        {/* Left rail — live txn feed */}
+        <div className="p-4 sm:p-5 hidden lg:flex flex-col gap-2" style={{ background: "rgba(0,0,0,0.25)", borderRight: "1px solid rgba(255,255,255,0.06)" }}>
+          <div className="font-mono text-[9px] uppercase tracking-wider mb-2" style={{ color: "rgba(247,245,240,0.45)" }}>Live transactions</div>
+          {txns.map((t, i) => {
+            const isActive = i === activeIdx;
+            return (
+              <button key={t.ref} onClick={() => setActiveIdx(i)} className="text-left rounded-xl p-3 transition" style={{
+                background: isActive ? "rgba(197,242,74,0.06)" : "transparent",
+                border: `1px solid ${isActive ? "rgba(197,242,74,0.35)" : "rgba(255,255,255,0.04)"}`,
+              }}>
+                <div className="flex items-center justify-between gap-2 mb-1">
+                  <span className="font-mono text-[10px]" style={{ color: isActive ? "var(--lime)" : "rgba(247,245,240,0.55)" }}>{t.ref}</span>
+                  {isActive && <div className="h-1 w-1 rounded-full pulse-dot" style={{ background: "var(--lime)" }} />}
+                </div>
+                <div className="font-display text-sm" style={{ color: isActive ? "var(--bone)" : "rgba(247,245,240,0.6)" }}>{t.amount} <span className="opacity-70 text-[11px]">{t.route}</span></div>
+                <div className="font-mono text-[9px] mt-1" style={{ color: "rgba(247,245,240,0.4)" }}>{t.customer}</div>
+              </button>
+            );
+          })}
+          <div className="mt-auto pt-4 space-y-1">
+            <div className="flex items-center justify-between font-mono text-[10px]" style={{ color: "rgba(247,245,240,0.5)" }}>
+              <span>Avg txn time</span><span>8.2 min</span>
+            </div>
+            <div className="flex items-center justify-between font-mono text-[10px]" style={{ color: "rgba(247,245,240,0.5)" }}>
+              <span>Today</span><span>47 txns · $1.2M</span>
+            </div>
+            <div className="flex items-center justify-between font-mono text-[10px]" style={{ color: "rgba(247,245,240,0.5)" }}>
+              <span>Success rate</span><span style={{ color: "var(--lime)" }}>99.6%</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Right — active trace */}
+        <div className="p-5 sm:p-7">
+          {/* Active header */}
+          <div className="flex items-start justify-between mb-5 flex-wrap gap-2">
+            <div>
+              <div className="font-mono text-[10px] uppercase tracking-wider mb-1" style={{ color: "rgba(247,245,240,0.45)" }}>Trace · {active.ref}</div>
+              <div className="font-display text-2xl sm:text-3xl font-semibold" style={{ color: "var(--bone)" }}>{active.customer}</div>
+              <div className="font-mono text-xs mt-1" style={{ color: "rgba(247,245,240,0.55)" }}>{active.amount} <span className="opacity-60">{active.route}</span></div>
+            </div>
+            <span className="rounded-full px-2.5 py-1 font-mono text-[10px] font-semibold uppercase tracking-wider" style={{
+              background: active.overallStatus === "Settled" ? "rgba(15,95,63,0.2)" : active.overallStatus === "Active" ? "rgba(197,242,74,0.15)" : "rgba(212,168,44,0.15)",
+              color: active.overallStatus === "Settled" ? "var(--emerald)" : active.overallStatus === "Active" ? "var(--lime)" : "var(--amber)",
+            }}>{active.overallStatus}</span>
+          </div>
+
+          {/* Phases */}
+          <div className="space-y-3">
+            {active.phases.map((p, i) => {
+              const isProgress = p.state === "in_progress";
+              const isDone = p.state === "done";
+              return (
+                <div key={i} className="relative">
+                  <div className="rounded-xl p-4 sm:p-5 relative overflow-hidden" style={{
+                    background: isProgress ? "rgba(197,242,74,0.05)" : isDone ? "rgba(15,95,63,0.04)" : "rgba(255,255,255,0.02)",
+                    border: `1px solid ${isProgress ? "rgba(197,242,74,0.35)" : isDone ? "rgba(15,95,63,0.25)" : "rgba(255,255,255,0.05)"}`,
+                    boxShadow: isProgress ? "0 0 24px rgba(197,242,74,0.12)" : "none",
+                  }}>
+                    {/* Side accent bar */}
+                    <div className="absolute left-0 top-0 bottom-0 w-1" style={{ background: stateColor(p.state) }} />
+                    <div className="grid gap-3 sm:grid-cols-[120px_1fr_auto] items-start">
+                      <div>
+                        <div className="font-mono text-[9px] uppercase tracking-wider mb-1" style={{ color: "rgba(247,245,240,0.5)" }}>{p.role} · {stateLabel(p.state)}</div>
+                        <div className="font-display text-base font-semibold" style={{ color: isDone || isProgress ? "var(--bone)" : "rgba(247,245,240,0.5)" }}>{p.actor}</div>
+                      </div>
+                      <div>
+                        <div className="text-sm leading-snug" style={{ color: isDone || isProgress ? "var(--bone)" : "rgba(247,245,240,0.5)" }}>{p.action}</div>
+                        <div className="font-mono text-[10.5px] mt-1" style={{ color: isProgress ? "var(--lime)" : "rgba(247,245,240,0.45)" }}>{p.detail}</div>
+                      </div>
+                      <div className="text-right">
+                        <div className="font-mono text-[10px] uppercase tracking-wider" style={{ color: "rgba(247,245,240,0.45)" }}>Elapsed</div>
+                        <div className="font-display text-lg font-semibold" style={{ color: stateColor(p.state) }}>{p.elapsed}</div>
+                      </div>
+                    </div>
+                  </div>
+                  {i < active.phases.length - 1 && (
+                    <div className="flex justify-center py-1">
+                      <svg width="28" height="20" viewBox="0 0 28 20" className="opacity-70">
+                        <line x1="14" y1="2" x2="14" y2="18" stroke={isDone ? "rgba(15,95,63,0.5)" : "rgba(255,255,255,0.08)"} strokeWidth="1.5" strokeDasharray="2 3" />
+                      </svg>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Footer */}
+          <div className="mt-5 pt-4 flex items-center justify-between flex-wrap gap-2" style={{ borderTop: "1px solid rgba(255,255,255,0.06)" }}>
+            <div className="flex items-center gap-2">
+              <span className="font-mono text-[10px] uppercase tracking-wider" style={{ color: "rgba(247,245,240,0.45)" }}>Total elapsed</span>
+              <span className="font-display text-lg font-semibold" style={{ color: "var(--lime)" }}>{active.total}</span>
+            </div>
+            <span className="font-mono text-[10px] uppercase tracking-wider" style={{ color: "rgba(247,245,240,0.45)" }}>Same-day SLA · Software layer only</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function HowItWorks() {
   return (
-    <section className="border-y relative overflow-hidden" style={{ borderColor: "var(--line)" }}>
-      <TransactionFlowBackground />
-      <div className="relative mx-auto max-w-screen-2xl px-4 py-16 sm:px-6 lg:px-8 lg:py-20">
+    <section className="border-y" style={{ borderColor: "var(--line)" }}>
+      <div className="mx-auto max-w-screen-2xl px-4 py-16 sm:px-6 lg:px-8 lg:py-20">
         <div className="mb-10 max-w-2xl">
           <SectionEyebrow>How it works</SectionEyebrow>
           <h2 className="font-display mt-3 text-4xl font-[450] leading-[1.05] tracking-tight sm:text-5xl">Three layers. <span className="italic" style={{ color: "var(--emerald)" }}>One transaction.</span></h2>
-          <p className="mt-4 max-w-xl text-base leading-relaxed" style={{ color: "var(--muted)" }}>Every cross-border payment on XaePay flows through three named parties. Each layer plays its role; XaePay is the software that connects them.</p>
+          <p className="mt-4 max-w-xl text-base leading-relaxed" style={{ color: "var(--muted)" }}>Every cross-border payment on XaePay flows through three named parties — customer, operator, provider. Watch one happen.</p>
         </div>
-        <LayerStack />
+        <TransactionConsole />
       </div>
     </section>
   );
