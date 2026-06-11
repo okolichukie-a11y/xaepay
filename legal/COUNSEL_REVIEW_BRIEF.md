@@ -337,6 +337,92 @@ Entered into between XaeccoX Inc. and the countersigning licensed payment provid
 
 ---
 
+## 9A. Additional operator-side features under design (added 2026-06-10)
+
+These are features the platform is actively building. We'd like counsel's read on each before they go to live operators, especially their Nigerian regulatory implications.
+
+### 9A.1 Proforma Invoice Agent / Third-Party Trade Restructure
+
+**What it does.** When a Nigerian customer needs to pay a foreign supplier but doesn't have direct USD banking infrastructure, a XaePay-licensed operator (BDC, IMTO, freight forwarder) acts as a contractual *trade partner*. The agent:
+
+1. Reads the original supplier invoice (supplier → end customer) via AI extraction
+2. Restructures it into a new invoice where:
+   - **Supplier** stays as supplier
+   - **Operator** is named as the buyer / payer
+   - **End customer** is named as the consignee + ultimate beneficial owner of the goods
+3. Both the original and restructured invoices are preserved; nothing is hidden
+4. A trade-partner agreement between operator and end customer is signed before the agent acts
+5. Form M handling: the agent prompts the operator to specify who is the importer-of-record (themselves or the end customer)
+6. Standard compliance review (sanctions, RFI risk, document completeness) runs against the restructured invoice
+7. The restructured invoice is what flows to the payment provider for execution
+
+**Why it matters commercially.** This is how a large share of Nigerian cross-border trade already happens informally. Operators fronting USD to suppliers on behalf of customers is a standard pattern; the goal is to *formalise + document* it cleanly.
+
+**Specific questions for counsel:**
+
+1. Can a Nigerian licensed BDC / IMTO / agent legally be named as "buyer" on a supplier invoice where the consignee + UBO is a third party (the end customer)? Under what license category does this fall?
+2. What is the correct Form M structure for this flow? Does Form M need to be opened by the operator (named buyer) or by the end customer (UBO)? What documentation supports CBN's view of the importer-of-record?
+3. Where do VAT, customs duties, and withholding-tax obligations sit (operator vs end customer)? Is there a tax-pass-through structure that's defensible?
+4. What contractual language between operator and end customer would make this defensible to CBN / SCUML / NFIU on audit? (We'll draft based on counsel guidance.)
+5. Does this structure trigger any TBML reporting obligations the operator should be aware of?
+6. Are there license categories Nigerian operators commonly hold (or could acquire) that explicitly authorise acting as a trade-partner buyer-of-record? If so, which?
+
+### 9A.2 Trade-partner correspondent network (other licensed BDC agents)
+
+**What it does.** XaePay would surface a "Trade Partners" registry inside the operator dashboard where licensed operators can register one another as collaboration counterparties. A single cross-border payment may then be jointly handled (e.g., Operator A in Lagos has the customer relationship; Operator B in Abuja has spare USD liquidity; they split the transaction and the margin transparently). All collaboration is documented.
+
+**Specific questions for counsel:**
+
+1. Can two licensed Nigerian BDCs (or other licensed agents) legally split a single cross-border transaction with documented margin allocation, without crossing into joint-venture / correspondent-banking territory that would require additional licensing?
+2. Whose books does the transaction sit on for CBN reporting purposes — the BDC of customer record, the BDC of funding record, or both?
+3. What's the right transfer-pricing approach when two BDCs share margin on a single deal?
+4. What AML division of responsibility is required between collaborating BDCs?
+5. Are there CBN guidelines on inter-BDC collaboration we should follow explicitly?
+
+### 9A.3 Liquidity partners — including USDT / USDC off-ramp providers
+
+**What it does.** XaePay would surface a "Liquidity Partners" registry where operators can document their own FX / asset liquidity sources (other BDCs, P2P OTC desks, USDT/USDC off-ramp counterparties). The XaePay platform never touches the asset itself. The operator-to-liquidity-partner relationship is between those parties; XaePay only records the relationship + routes references on each transaction.
+
+**Specific questions for counsel:**
+
+1. Does XaePay's positioning ("we record references, we never touch crypto, the partner relationships are between regulated parties") protect it from being classified as a VASP under Nigerian SEC's framework? US / global equivalents?
+2. For Nigerian operators using USDT / USDC liquidity: what licensing or authorisation do *they* need post-2023 SEC framework? Is a BDC license sufficient, or do they need a separate VASP authorisation?
+3. For PSPs that accept USDT / USDC for off-ramp to fiat settlement: what authorisation do they need to do this legally in Nigeria?
+4. What documentation should a XaePay-surfaced liquidity-partner relationship preserve to make it defensible on audit (proof of authorisation, transaction logs, settlement confirmations)?
+5. Is there a meaningful difference between using USDT (an issuer-controlled stablecoin) vs USDC vs other stablecoins for Nigerian regulatory purposes?
+
+### 9A.4 Multi-PSP onboarding (operators bring their own payment providers)
+
+**What it does.** Instead of only routing through the platform-default PSP (currently one licensed partner), operators could onboard additional PSPs they already have relationships with. XaePay then routes through whichever PSP is best-fit for a given corridor / cost / speed.
+
+**Specific questions for counsel:**
+
+1. When an operator brings a PSP relationship onto XaePay, what vetting responsibility (if any) does XaePay have for that PSP's licensing and AML compliance?
+2. Should there be a written PSP-onboarding addendum signed by the operator that acknowledges their responsibility for the PSP relationship and indemnifies XaePay for the underlying execution?
+3. Does adding multiple PSPs change XaePay's own regulatory exposure (e.g., does it move us toward looking like an MSB / aggregator rather than software-only)?
+4. What documentation must XaePay collect from each new PSP before transactions are routed through them?
+
+### 9A.5 Operator AI Agent ("Agentic" tier)
+
+**What it does.** A subscription tier (₦50K/mo) where the operator's portal is augmented with AI agents that draft routine work (quote responses, KYC reminders, payment confirmations, regulatory report email summaries). Every agent action requires explicit operator approval before any external send / state change. Nothing auto-sends.
+
+**Specific questions for counsel:**
+
+1. Is there any Nigerian regulatory issue with AI-drafted communications to customers about regulated transactions, given (a) all sends require human operator approval and (b) full audit trail is preserved?
+2. Should the AI agent's drafts be disclosed to customers ("this message was drafted by AI and reviewed by your operator")? In what jurisdictions is such disclosure legally required, recommended, or unnecessary?
+3. Do AI-generated regulatory report drafts (which the operator reviews + files) raise any concerns under CBN / SCUML / NFIU reporting standards?
+4. Liability allocation: if an operator approves an AI draft that turns out to contain an error, is XaePay's liability limited by its "tool provider" positioning, or is there exposure we should address contractually?
+
+### 9A.6 Engagement priority within 9A
+
+- **9A.1 (proforma)** is the most strategically valuable and most urgent — it unlocks the largest share of Nigerian SME cross-border trade volume
+- **9A.5 (AI agent)** is the next most urgent — already in customer-facing pricing
+- **9A.2 + 9A.3 + 9A.4** can be reviewed together as a "partner network" cluster — slower timeline OK
+
+We're happy to scope the legal review across two engagements: (1) the documents under review in §8 (already on your plate), (2) §9A items as a second engagement. Or one combined engagement if you prefer.
+
+---
+
 ## 9. Engagement notes
 
 - **Format for redlines:** plain markdown comments, tracked-changes Word document, or PDF redlines — any of these work for us.
