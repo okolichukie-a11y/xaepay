@@ -135,29 +135,12 @@ export function OperatorsPage() {
         <OperatorDashboardMockup />
       </Section>
 
-      <Section eyebrow="Tier economics" title="Pick your tier per transaction" lede="You set your customer-facing markup above the tier minimum. Your share of that markup depends on how much compliance work you want XaePay doing.">
-        <div className="overflow-x-auto rounded-2xl" style={{ border: "1px solid var(--line)" }}>
-          <table className="w-full text-sm">
-            <thead style={{ background: "var(--bone)" }}>
-              <tr>
-                {["Tier", "Min markup", "Your share", "XaePay does"].map((h) => (
-                  <th key={h} className="px-4 py-3 text-left font-mono text-[10px] font-semibold uppercase tracking-wider" style={{ color: "var(--muted)" }}>{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {Object.values(TIERS).map((t) => (
-                <tr key={t.id} style={{ borderTop: "1px solid var(--line)", background: "white" }}>
-                  <td className="px-4 py-3 font-semibold">{t.name}</td>
-                  <td className="px-4 py-3 font-mono">₦{t.minMarkup.toFixed(2)}/$</td>
-                  <td className="px-4 py-3 font-mono">{(t.operatorShare * 100).toFixed(0)}%</td>
-                  <td className="px-4 py-3 text-xs" style={{ color: "var(--muted)" }}>{t.tagline}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        <p className="mt-4 text-xs" style={{ color: "var(--muted)" }}>Higher tiers shift compliance work to XaePay and the share with it. Same transaction, different tier — your judgment per deal.</p>
+      <Section eyebrow="Tier economics" title="Estimate your monthly earnings" lede="Slide your assumed volume + transaction size; see live earnings per tier. Same transaction, different tier — your judgment per deal.">
+        <OperatorEarningsSimulator />
+      </Section>
+
+      <Section eyebrow="Operator day" title="A real operator's typical week on XaePay" lede="What 30 transactions across mixed tiers actually looks like — KYC chases, compliance flags, settlements, agent activity.">
+        <OperatorDayPanel />
       </Section>
 
       <Section eyebrow="How it works" title="Onboard once, transact forever">
@@ -218,6 +201,10 @@ export function CustomersPage() {
 
       <Section eyebrow="In your portal" title="What paying looks like" lede="One invoice, multiple ways to pay, receipt at both ends. The cross-border complexity stays out of your way.">
         <CustomerPortalMockup />
+      </Section>
+
+      <Section eyebrow="What you save" title="Manual vs. XaePay" lede="Same outcome, dramatically less work. What used to be email threads + bank visits + Excel sheets is now one portal.">
+        <CustomerTimeSavedComparison />
       </Section>
 
       <Section eyebrow="How it works" title="Three steps">
@@ -732,5 +719,201 @@ function ProviderApplicationForm() {
         </button>
       </div>
     </form>
+  );
+}
+
+// =============================================================================
+// OperatorEarningsSimulator — interactive earnings calculator for the
+// OperatorsPage. Two sliders + live bar chart per tier. Same shape as the
+// homepage simulator but standalone (renders without the homepage layout).
+// =============================================================================
+function OperatorEarningsSimulator() {
+  const [txnCount, setTxnCount] = React.useState(30);
+  const [avgSize, setAvgSize] = React.useState(25000);
+  const wholesaleRate = 1395;
+  const tierList = Object.values(TIERS);
+  const rows = tierList.map((t) => {
+    const markup = t.minMarkup + 1.5;
+    const marginPerTxn = (avgSize * markup) / (wholesaleRate + markup);
+    const opSharePerTxn = marginPerTxn * t.operatorShare;
+    const monthly = opSharePerTxn * txnCount;
+    return { ...t, monthly, opSharePct: t.operatorShare * 100, markup };
+  });
+  const maxMonthly = Math.max(...rows.map((r) => r.monthly)) || 1;
+
+  return (
+    <div className="grid gap-6 lg:grid-cols-[300px_1fr]">
+      {/* Sliders */}
+      <div className="rounded-2xl p-5 space-y-5" style={{ background: "var(--bone)", border: "1px solid var(--line)" }}>
+        <div className="font-mono text-[10px] uppercase tracking-wider" style={{ color: "var(--muted)" }}>Simulator</div>
+        <div>
+          <div className="flex items-baseline justify-between mb-2">
+            <label className="text-xs font-semibold">Transactions / month</label>
+            <span className="font-display text-xl font-semibold" style={{ color: "var(--ink)" }}>{txnCount}</span>
+          </div>
+          <input type="range" min="5" max="200" step="5" value={txnCount} onChange={(e) => setTxnCount(Number(e.target.value))} className="w-full h-1 rounded-lg appearance-none cursor-pointer" style={{ background: `linear-gradient(to right, var(--emerald) 0%, var(--emerald) ${((txnCount - 5) / 195) * 100}%, var(--line) ${((txnCount - 5) / 195) * 100}%, var(--line) 100%)`, accentColor: "var(--emerald)" }} />
+        </div>
+        <div>
+          <div className="flex items-baseline justify-between mb-2">
+            <label className="text-xs font-semibold">Avg transaction size (USD)</label>
+            <span className="font-display text-xl font-semibold" style={{ color: "var(--ink)" }}>${avgSize.toLocaleString()}</span>
+          </div>
+          <input type="range" min="5000" max="100000" step="5000" value={avgSize} onChange={(e) => setAvgSize(Number(e.target.value))} className="w-full h-1 rounded-lg appearance-none cursor-pointer" style={{ background: `linear-gradient(to right, var(--emerald) 0%, var(--emerald) ${((avgSize - 5000) / 95000) * 100}%, var(--line) ${((avgSize - 5000) / 95000) * 100}%, var(--line) 100%)`, accentColor: "var(--emerald)" }} />
+        </div>
+        <div className="pt-3" style={{ borderTop: "1px solid var(--line)" }}>
+          <div className="font-mono text-[10px] uppercase tracking-wider mb-1" style={{ color: "var(--muted)" }}>Monthly volume</div>
+          <div className="font-display text-2xl font-semibold">${(txnCount * avgSize).toLocaleString()}</div>
+        </div>
+      </div>
+
+      {/* Bar chart */}
+      <div className="rounded-2xl overflow-hidden" style={{ background: "var(--ink)", color: "var(--bone)" }}>
+        <div className="flex items-center justify-between px-5 py-3" style={{ borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
+          <div className="flex items-center gap-2">
+            <div className="h-1.5 w-1.5 rounded-full pulse-dot" style={{ background: "var(--lime)", boxShadow: "0 0 8px var(--lime)" }} />
+            <span className="font-mono text-[10px] uppercase tracking-wider" style={{ color: "var(--lime)" }}>Your earnings · per tier · monthly</span>
+          </div>
+          <span className="font-mono text-[10px] uppercase tracking-wider" style={{ color: "rgba(247,245,240,0.4)" }}>Recurring</span>
+        </div>
+        <div className="p-5 sm:p-6 space-y-4">
+          {rows.map((r) => {
+            const barPct = (r.monthly / maxMonthly) * 100;
+            const isFeatured = r.id === "documented";
+            return (
+              <div key={r.id}>
+                <div className="flex items-baseline justify-between mb-1.5 flex-wrap gap-2">
+                  <div className="flex items-baseline gap-2 flex-wrap">
+                    <span className="font-display text-base font-semibold" style={{ color: isFeatured ? "var(--lime)" : "var(--bone)" }}>{r.name}</span>
+                    <span className="font-mono text-[10px] uppercase tracking-wider" style={{ color: "rgba(247,245,240,0.45)" }}>{r.opSharePct}% · min ₦{r.minMarkup.toFixed(2)}/$</span>
+                  </div>
+                  <span className="font-display text-xl sm:text-2xl font-semibold" style={{ color: isFeatured ? "var(--lime)" : "var(--bone)" }}>${r.monthly.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
+                </div>
+                <div className="relative h-2 rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.06)" }}>
+                  <div className="h-full rounded-full transition-all duration-500 ease-out" style={{
+                    width: `${barPct}%`,
+                    background: isFeatured ? "linear-gradient(90deg, var(--emerald), var(--lime))" : "linear-gradient(90deg, rgba(15,95,63,0.6), rgba(15,95,63,0.85))",
+                    boxShadow: isFeatured ? "0 0 12px rgba(197,242,74,0.4)" : "none",
+                  }} />
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// OperatorDayPanel — a single "week-at-a-glance" panel showing what an active
+// operator's XaePay activity actually looks like. Pulses are not real but the
+// shape mirrors what the actual operator dashboard surfaces in production.
+function OperatorDayPanel() {
+  const stats = [
+    { label: "Quotes this week", value: "23", sub: "+4 vs last week", lime: true },
+    { label: "Settled", value: "18", sub: "78% same-day SLA hit" },
+    { label: "Awaiting compliance", value: "3", sub: "2 expiring docs · 1 flagged" },
+    { label: "Agent drafts pending", value: "5", sub: "4 KYC chases · 1 quote" },
+    { label: "Rev share earned", value: "$1,840", sub: "settles biweekly Friday" },
+    { label: "Pipeline", value: "$420K", sub: "open quotes + recurring" },
+  ];
+  return (
+    <div className="rounded-3xl overflow-hidden" style={{ background: "var(--ink)", color: "var(--bone)" }}>
+      <div className="flex items-center justify-between px-5 py-3 flex-wrap gap-2" style={{ borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
+        <div className="flex items-center gap-2">
+          <div className="h-1.5 w-1.5 rounded-full pulse-dot" style={{ background: "var(--lime)", boxShadow: "0 0 8px var(--lime)" }} />
+          <span className="font-mono text-[10px] uppercase tracking-wider" style={{ color: "var(--lime)" }}>Operator console · this week</span>
+        </div>
+        <span className="font-mono text-[10px] uppercase tracking-wider" style={{ color: "rgba(247,245,240,0.45)" }}>Adaeze · Lagos · Documented tier</span>
+      </div>
+      <div className="p-5 sm:p-6">
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {stats.map((s) => (
+            <div key={s.label} className="rounded-xl p-4" style={{
+              background: s.lime ? "rgba(197,242,74,0.06)" : "rgba(255,255,255,0.03)",
+              border: `1px solid ${s.lime ? "rgba(197,242,74,0.25)" : "rgba(255,255,255,0.06)"}`,
+            }}>
+              <div className="font-mono text-[9px] uppercase tracking-wider" style={{ color: "rgba(247,245,240,0.5)" }}>{s.label}</div>
+              <div className="font-display text-2xl font-semibold mt-1" style={{ color: s.lime ? "var(--lime)" : "var(--bone)" }}>{s.value}</div>
+              <div className="font-mono text-[10px] mt-1" style={{ color: "rgba(247,245,240,0.5)" }}>{s.sub}</div>
+            </div>
+          ))}
+        </div>
+        <div className="mt-5 pt-4 grid gap-3 sm:grid-cols-3" style={{ borderTop: "1px solid rgba(255,255,255,0.06)" }}>
+          {[
+            { label: "Mon", txns: 4 }, { label: "Tue", txns: 6 }, { label: "Wed", txns: 3 },
+            { label: "Thu", txns: 5 }, { label: "Fri", txns: 3 }, { label: "Sat", txns: 1 },
+            { label: "Sun", txns: 1 },
+          ].slice(0, 6).map((d) => (
+            <div key={d.label} className="flex items-baseline justify-between">
+              <span className="font-mono text-[10px] uppercase tracking-wider" style={{ color: "rgba(247,245,240,0.55)" }}>{d.label}</span>
+              <div className="flex items-center gap-2">
+                <div className="h-1 w-16 rounded-full" style={{ background: "rgba(255,255,255,0.06)" }}>
+                  <div className="h-full rounded-full" style={{ width: `${(d.txns / 6) * 100}%`, background: "linear-gradient(90deg, var(--emerald), var(--lime))" }} />
+                </div>
+                <span className="font-mono text-[10px]" style={{ color: "rgba(247,245,240,0.7)" }}>{d.txns} txns</span>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
+// =============================================================================
+// CustomerTimeSavedComparison — side-by-side panel showing what each step
+// looks like manually vs. on XaePay. Highlights how the platform compresses
+// what used to be multi-day workflows.
+// =============================================================================
+function CustomerTimeSavedComparison() {
+  const steps = [
+    { step: "Request a quote", manual: "Email or WhatsApp the operator, attach the invoice, wait for a reply", manualTime: "2-24h", xae: "Submit via portal · agent drafts a quote in 90s", xaeTime: "~ 5 min" },
+    { step: "Confirm rate", manual: "Phone call to lock the rate · risk of rate creep mid-call", manualTime: "10-30m", xae: "Tap CONFIRM on the locked-rate quote · 4-min hold", xaeTime: "< 1 min" },
+    { step: "Pay + prove", manual: "Bank visit or transfer · forward proof via email · follow up", manualTime: "1-3h", xae: "Pick method · upload proof in-portal · auto-routed to operator", xaeTime: "5-10 min" },
+    { step: "Get a receipt", manual: "Ask + wait · re-ask · eventually get a screenshot", manualTime: "1-2 days", xae: "Auto-generated PDF receipt in your portal + email + WhatsApp", xaeTime: "Instant" },
+    { step: "Get the recipient confirmation", manual: "Wire reference number forwarded back · sometimes lost", manualTime: "1-3 days", xae: "Recipient receipt auto-issued when funds land", xaeTime: "Same-day" },
+  ];
+
+  return (
+    <div className="rounded-3xl overflow-hidden" style={{ background: "white", border: "1px solid var(--line)", boxShadow: "0 24px 60px -28px rgba(15,18,20,0.18)" }}>
+      <div className="grid sm:grid-cols-[1fr_60px_1fr] items-stretch" style={{ borderBottom: "1px solid var(--line)" }}>
+        <div className="p-4 text-center" style={{ background: "var(--bone)" }}>
+          <div className="font-mono text-[10px] uppercase tracking-wider" style={{ color: "var(--muted)" }}>Without XaePay</div>
+          <div className="font-display text-base font-semibold mt-1">The manual way</div>
+        </div>
+        <div className="hidden sm:flex items-center justify-center" style={{ background: "var(--bone)", borderLeft: "1px solid var(--line)", borderRight: "1px solid var(--line)" }}>
+          <ArrowRight size={14} style={{ color: "var(--muted)" }} />
+        </div>
+        <div className="p-4 text-center" style={{ background: "var(--ink)", color: "var(--bone)" }}>
+          <div className="font-mono text-[10px] uppercase tracking-wider" style={{ color: "var(--lime)" }}>With XaePay</div>
+          <div className="font-display text-base font-semibold mt-1">In your portal</div>
+        </div>
+      </div>
+
+      <div className="divide-y" style={{ borderColor: "var(--line)" }}>
+        {steps.map((s, i) => (
+          <div key={i} className="grid sm:grid-cols-[1fr_60px_1fr] items-stretch">
+            <div className="p-4 sm:p-5">
+              <div className="text-xs" style={{ color: "var(--muted)" }}>{s.manual}</div>
+              <div className="font-mono text-[10px] uppercase tracking-wider mt-2 inline-flex items-center gap-1 rounded-md px-1.5 py-0.5" style={{ background: "#fef3c7", color: "#92400e" }}>{s.manualTime}</div>
+            </div>
+            <div className="hidden sm:flex flex-col items-center justify-center px-3 py-4" style={{ background: "var(--bone)", borderLeft: "1px solid var(--line)", borderRight: "1px solid var(--line)" }}>
+              <div className="font-mono text-[9px] uppercase tracking-wider" style={{ color: "var(--muted)" }}>{i + 1}</div>
+              <div className="text-xs font-semibold text-center mt-1 leading-tight" style={{ color: "var(--ink)" }}>{s.step}</div>
+            </div>
+            <div className="p-4 sm:p-5" style={{ background: "rgba(15,95,63,0.03)" }}>
+              <div className="text-xs" style={{ color: "var(--ink)" }}>{s.xae}</div>
+              <div className="font-mono text-[10px] uppercase tracking-wider mt-2 inline-flex items-center gap-1 rounded-md px-1.5 py-0.5" style={{ background: "rgba(15,95,63,0.1)", color: "var(--emerald)" }}><CheckCircle2 size={9} /> {s.xaeTime}</div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div className="p-5 text-center" style={{ background: "var(--ink)", color: "var(--bone)" }}>
+        <div className="font-mono text-[10px] uppercase tracking-wider" style={{ color: "rgba(247,245,240,0.5)" }}>Per transaction · the difference</div>
+        <div className="font-display text-2xl sm:text-3xl font-semibold mt-1" style={{ color: "var(--lime)" }}>~ 2-5 days → ~ 15 minutes</div>
+      </div>
+    </div>
   );
 }

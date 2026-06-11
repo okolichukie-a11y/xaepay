@@ -3090,140 +3090,73 @@ function MiniProviderNodes() {
 // richest stories get mini-visuals embedded; the others stay compact-text.
 // Mixed sizes break the uniform-grid monotony the homepage had previously.
 // =============================================================================
-// =============================================================================
-// CapabilityStrip — replaces the bento grid with a Platform Stack visualization.
-// Four conceptual layers (Agent / Orchestration / Interface / Integration),
-// each rendered as a horizontal band on dark ink. Each band shows the layer
-// name + its capability chips. Live activity strip on the right keeps the
-// "this is running right now" feel without faking too much.
-// =============================================================================
 function CapabilityStrip() {
-  const layers = [
-    {
-      id: "agent",
-      label: "AGENT LAYER",
-      tagline: "AI that drafts your routine work · you approve every action",
-      accent: "lime",
-      capabilities: [
-        { label: "AI Compliance", icon: Shield },
-        { label: "Quote Review", icon: MessageCircle },
-        { label: "KYC Chase", icon: User },
-        { label: "Payment Match", icon: CheckCircle2 },
-        { label: "Report Draft", icon: BarChart3 },
-        { label: "Invoice Review", icon: FileText },
-        { label: "Recurring Confirm", icon: RefreshCw },
-      ],
-    },
-    {
-      id: "orchestration",
-      label: "ORCHESTRATION LAYER",
-      tagline: "The platform's nervous system · routing, docs, audit",
-      accent: "emerald",
-      capabilities: [
-        { label: "Multi-provider routing", icon: ArrowLeftRight },
-        { label: "Documentation engine", icon: FileText },
-        { label: "Cross-operator reputation", icon: ShieldCheck },
-        { label: "Compliance packs", icon: Package },
-        { label: "Audit trail", icon: Eye },
-        { label: "Recipient + customer KYC", icon: User },
-      ],
-    },
-    {
-      id: "interface",
-      label: "INTERFACE LAYER",
-      tagline: "Three surfaces · three channels · one source of truth",
-      accent: "emerald",
-      capabilities: [
-        { label: "Operator dashboard", icon: Briefcase },
-        { label: "Customer portal", icon: User },
-        { label: "Provider portal", icon: Layers },
-        { label: "WhatsApp delivery", icon: MessageCircle },
-        { label: "Email + invoice links", icon: Mail },
-        { label: "Branded invoices", icon: Receipt },
-      ],
-    },
-    {
-      id: "integration",
-      label: "INTEGRATION LAYER",
-      tagline: "The regulated rails that money actually moves through",
-      accent: "lime",
-      capabilities: [
-        { label: "Licensed PSP rails", icon: ShieldCheck },
-        { label: "NGN ↔ FX corridors", icon: ArrowLeftRight },
-        { label: "Webhooks", icon: Zap },
-        { label: "API access · enterprise", icon: ExternalLink },
-        { label: "Multi-currency", icon: Coins },
-      ],
-    },
-  ];
-
   return (
     <section>
       <div className="mx-auto max-w-screen-2xl px-4 py-16 sm:px-6 lg:px-8 lg:py-20">
         <div className="mb-10 max-w-2xl">
           <SectionEyebrow>Capabilities</SectionEyebrow>
-          <h2 className="font-display mt-3 text-4xl font-[450] leading-[1.05] tracking-tight sm:text-5xl">The platform, <span className="italic" style={{ color: "var(--emerald)" }}>laid out.</span></h2>
-          <p className="mt-4 max-w-xl text-base leading-relaxed" style={{ color: "var(--muted)" }}>Four layers of capability. {layers.reduce((s, l) => s + l.capabilities.length, 0)} surfaces live today. Each layer carries its own concern; together they're what operators run their business on.</p>
+          <h2 className="font-display mt-3 text-4xl font-[450] leading-[1.05] tracking-tight sm:text-5xl">Everything in <span className="italic" style={{ color: "var(--emerald)" }}>one platform.</span></h2>
+          <p className="mt-4 max-w-xl text-base leading-relaxed" style={{ color: "var(--muted)" }}>The product surface keeps growing. Today, all of this is live.</p>
         </div>
 
-        <div className="rounded-3xl overflow-hidden" style={{ background: "var(--ink)", color: "var(--bone)", boxShadow: "0 24px 60px -28px rgba(15,18,20,0.35)" }}>
-          {/* Top status bar */}
-          <div className="flex items-center justify-between px-5 py-3 flex-wrap gap-2" style={{ borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
-            <div className="flex items-center gap-2">
-              <div className="h-1.5 w-1.5 rounded-full pulse-dot" style={{ background: "var(--lime)", boxShadow: "0 0 8px var(--lime)" }} />
-              <span className="font-mono text-[10px] uppercase tracking-wider" style={{ color: "var(--lime)" }}>Platform stack · live</span>
+        {/* Bento grid — 7 cards, 3 sizes */}
+        <div className="grid gap-4 lg:grid-cols-3 lg:auto-rows-[minmax(220px,auto)]">
+          {/* Row 1: BIG (corridor) + MEDIUM (invoicing) */}
+          <div className="lg:col-span-2 rounded-2xl p-5 sm:p-6 relative overflow-hidden" style={{ background: "white", border: "1px solid var(--line)" }}>
+            <div className="grid gap-5 sm:grid-cols-[1fr_240px] items-center h-full">
+              <div>
+                <div className="flex h-9 w-9 items-center justify-center rounded-lg mb-3" style={{ background: "var(--bone-2)", color: "var(--emerald)" }}><ArrowLeftRight size={16} /></div>
+                <h3 className="font-display text-lg font-semibold">Cross-border routing</h3>
+                <p className="mt-2 text-sm leading-relaxed" style={{ color: "var(--muted)" }}>NGN ↔ USD live today. GBP, EUR, CNY, AED, INR routes come online as we expand. Locked rates, same-day settlement through licensed providers.</p>
+              </div>
+              <div className="hidden sm:block"><MiniCorridor /></div>
             </div>
-            <span className="font-mono text-[10px] uppercase tracking-wider" style={{ color: "rgba(247,245,240,0.45)" }}>{layers.length} layers · {layers.reduce((s, l) => s + l.capabilities.length, 0)} capabilities</span>
           </div>
 
-          {/* Layer bands */}
-          <div className="p-4 sm:p-6 space-y-3">
-            {layers.map((l, i) => {
-              const isLime = l.accent === "lime";
-              return (
-                <div key={l.id} className="rounded-2xl overflow-hidden relative" style={{
-                  background: isLime ? "rgba(197,242,74,0.04)" : "rgba(15,95,63,0.04)",
-                  border: `1px solid ${isLime ? "rgba(197,242,74,0.25)" : "rgba(15,95,63,0.25)"}`,
-                }}>
-                  {/* Layer header */}
-                  <div className="flex items-center justify-between px-4 sm:px-5 py-3 flex-wrap gap-2" style={{ borderBottom: `1px solid ${isLime ? "rgba(197,242,74,0.15)" : "rgba(15,95,63,0.15)"}` }}>
-                    <div className="flex items-center gap-3 min-w-0">
-                      <span className="font-mono text-[10px] font-semibold uppercase tracking-wider flex-shrink-0" style={{ color: isLime ? "var(--lime)" : "var(--emerald)" }}>L{i + 1}</span>
-                      <div className="min-w-0">
-                        <div className="font-display text-base sm:text-lg font-semibold" style={{ color: "var(--bone)" }}>{l.label}</div>
-                        <div className="font-mono text-[10px] mt-0.5" style={{ color: "rgba(247,245,240,0.55)" }}>{l.tagline}</div>
-                      </div>
-                    </div>
-                    <span className="rounded-md px-2 py-0.5 font-mono text-[9px] uppercase tracking-wider flex-shrink-0" style={{
-                      background: isLime ? "rgba(197,242,74,0.15)" : "rgba(15,95,63,0.15)",
-                      color: isLime ? "var(--lime)" : "var(--emerald)",
-                    }}>{l.capabilities.length} live</span>
-                  </div>
-
-                  {/* Capability chips */}
-                  <div className="px-4 sm:px-5 py-4 flex flex-wrap gap-2">
-                    {l.capabilities.map((c) => {
-                      const Icon = c.icon;
-                      return (
-                        <div key={c.label} className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 transition" style={{
-                          background: "rgba(255,255,255,0.03)",
-                          border: "1px solid rgba(255,255,255,0.06)",
-                        }}>
-                          <Icon size={11} style={{ color: isLime ? "var(--lime)" : "var(--emerald)" }} />
-                          <span className="text-xs" style={{ color: "rgba(247,245,240,0.85)" }}>{c.label}</span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              );
-            })}
+          <div className="rounded-2xl p-5 sm:p-6" style={{ background: "white", border: "1px solid var(--line)" }}>
+            <div className="flex h-9 w-9 items-center justify-center rounded-lg mb-3" style={{ background: "var(--bone-2)", color: "var(--emerald)" }}><Receipt size={16} /></div>
+            <h3 className="font-display text-lg font-semibold">Invoicing tools</h3>
+            <p className="mt-2 text-sm leading-relaxed" style={{ color: "var(--muted)" }}>Operators bill customers. Business customers bill their own clients. Multi-method payment options on every invoice — bank, card, USSD, link.</p>
           </div>
 
-          {/* Bottom status bar */}
-          <div className="flex items-center justify-between px-5 py-3 flex-wrap gap-2" style={{ borderTop: "1px solid rgba(255,255,255,0.06)", background: "rgba(0,0,0,0.2)" }}>
-            <span className="font-mono text-[10px] uppercase tracking-wider" style={{ color: "rgba(247,245,240,0.45)" }}>One platform · four layers · every transaction touches all of them</span>
-            <span className="font-mono text-[10px] uppercase tracking-wider" style={{ color: "var(--lime)" }}>● operational</span>
+          {/* Row 2: MEDIUM (compliance, with mini-viz) + BIG (multi-provider with viz) */}
+          <div className="rounded-2xl p-5 sm:p-6 relative overflow-hidden" style={{ background: "white", border: "1px solid var(--line)" }}>
+            <div className="flex h-9 w-9 items-center justify-center rounded-lg mb-3" style={{ background: "var(--bone-2)", color: "var(--emerald)" }}><Shield size={16} /></div>
+            <h3 className="font-display text-lg font-semibold">Compliance documentation</h3>
+            <p className="mt-2 text-sm leading-relaxed" style={{ color: "var(--muted)" }}>Auto-assembled audit packs, RFI-prevention agent, customer + recipient KYC orchestration. Tier-aware.</p>
+            <div className="mt-4"><MiniComplianceDocs /></div>
+          </div>
+
+          <div className="lg:col-span-2 rounded-2xl p-5 sm:p-6 relative overflow-hidden" style={{ background: "var(--ink)", color: "var(--bone)", border: "1px solid var(--ink)" }}>
+            <div className="absolute -right-20 -top-20 h-40 w-40 rounded-full blur-3xl opacity-30" style={{ background: "var(--lime)" }} />
+            <div className="relative grid gap-5 sm:grid-cols-[1fr_280px] items-center h-full">
+              <div>
+                <div className="flex h-9 w-9 items-center justify-center rounded-lg mb-3" style={{ background: "rgba(197,242,74,0.15)", color: "var(--lime)" }}><Layers size={16} /></div>
+                <h3 className="font-display text-lg font-semibold">Multi-provider rails</h3>
+                <p className="mt-2 text-sm leading-relaxed" style={{ color: "rgba(247,245,240,0.7)" }}>A licensed PSP is live today. The routing engine picks the best-fit per transaction based on corridor + cost + speed as more providers come online.</p>
+              </div>
+              <div className="hidden sm:block"><MiniProviderNodes /></div>
+            </div>
+          </div>
+
+          {/* Row 3: 3 equal — receipts, portals, agents */}
+          <div className="rounded-2xl p-5 sm:p-6" style={{ background: "white", border: "1px solid var(--line)" }}>
+            <div className="flex h-9 w-9 items-center justify-center rounded-lg mb-3" style={{ background: "var(--bone-2)", color: "var(--emerald)" }}><CheckCircle2 size={16} /></div>
+            <h3 className="font-display text-lg font-semibold">Receipts both ways</h3>
+            <p className="mt-2 text-sm leading-relaxed" style={{ color: "var(--muted)" }}>Customer receipt on payment. Recipient receipt on settlement. Issued automatically, downloadable, forwardable.</p>
+          </div>
+
+          <div className="rounded-2xl p-5 sm:p-6" style={{ background: "white", border: "1px solid var(--line)" }}>
+            <div className="flex h-9 w-9 items-center justify-center rounded-lg mb-3" style={{ background: "var(--bone-2)", color: "var(--emerald)" }}><User size={16} /></div>
+            <h3 className="font-display text-lg font-semibold">Customer portals</h3>
+            <p className="mt-2 text-sm leading-relaxed" style={{ color: "var(--muted)" }}>Customers see their quotes, invoices, claims, receipts. WhatsApp + email + portal — three channels per critical message.</p>
+          </div>
+
+          <div className="rounded-2xl p-5 sm:p-6 relative overflow-hidden" style={{ background: "white", border: "1px solid var(--line)" }}>
+            <div className="flex h-9 w-9 items-center justify-center rounded-lg mb-3" style={{ background: "rgba(197,242,74,0.15)", color: "var(--ink)" }}><Sparkles size={16} /></div>
+            <h3 className="font-display text-lg font-semibold">AI compliance + reporting agents</h3>
+            <p className="mt-2 text-sm leading-relaxed" style={{ color: "var(--muted)" }}>AI-powered invoice review, RFI-prevention agent, recurring-quote runner, auto-generated regulatory reports.</p>
           </div>
         </div>
       </div>
