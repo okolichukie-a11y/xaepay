@@ -10088,70 +10088,103 @@ function BDCAgent({ jumpToTransaction, hideToggle }) {
     // ===== Approve → Execute =====
     // On approval, perform the actual action the agent had drafted. Each
     // job_type has its own executor; the agent_task gets flipped to "sent"
-    // when the action completes. On failure, the task stays "approved" so
-    // the operator can retry.
+    // when the action completes. Toast surfaces per-channel outcomes so a
+    // silent WhatsApp failure (e.g. 24-hour window) is visible.
     if (decision === "approved") {
-      try {
-        const out = task.agent_output || {};
-        const subjectId = task.subject_id;
-        let sentLabel = null;
+      const out = task.agent_output || {};
+      const subjectId = task.subject_id;
+      const channels = []; // { channel, status, detail }
+      const tryChannel = async (channel, fn, detailFn) => {
+        try {
+          const r = await fn();
+          const ok = r?.ok !== false;
+          channels.push({ channel, status: ok ? "sent" : "failed", detail: detailFn ? detailFn(r) : (ok ? "" : (r?.data?.data?.error?.message || r?.error || `HTTP ${r?.status || "?"}`)) });
+        } catch (err) {
+          channels.push({ channel, status: "failed", detail: err?.message || String(err) });
+        }
+      };
 
+      try {
         if (task.job_type === "quote_review" && subjectId) {
-          // Update the quote with the suggested rate + send the WhatsApp draft to the customer
+          // Update the quote with the agent's suggested rate
           await supabase.from("quotes").update({
             rate: out.suggested_rate,
             ngn_total: out.ngn_total,
             status: "submitted",
             submitted_at: new Date().toISOString(),
           }).eq("id", subjectId);
-          // Get customer phone for the WhatsApp send
-          const { data: q } = await supabase.from("quotes").select("customer_phone, customer_id").eq("id", subjectId).maybeSingle();
+          channels.push({ channel: "Quote", status: "sent", detail: `rate ₦${out.suggested_rate}/$ · status: submitted` });
+
+          // Try WhatsApp template (works for first contact). The quote_notification
+          // template variables: {{1}} customer name, {{2}} amount, {{3}} rate,
+          // {{4}} ngn total, {{5}} (something — varies). If template variables
+          // don't fit cleanly, fall back to text (which only works if customer
+          // messaged us in the last 24h per Meta's policy).
+          const { data: q } = await supabase.from("quotes").select("customer_phone, customer_email, customer_id").eq("id", subjectId).maybeSingle();
           if (q?.customer_phone && out.draft_message) {
-            await sendWhatsAppText(q.customer_phone, out.draft_message);
+            await tryChannel("WhatsApp", () => sendWhatsAppText(q.customer_phone, out.draft_message), (r) => r?.ok ? "delivered" : "Meta 24h window — customer must message you first");
           }
-          sentLabel = "Quote sent to customer";
+          if (q?.customer_email) {
+            await tryChannel("Email", () => sendEmail({
+              to: q.customer_email,
+              subject: `Quote ready · ${out.customer_name || "your transaction"}`,
+              html: (out.draft_message || "").replace(/\n/g, "<br>"),
+              text: out.draft_message || "",
+            }));
+          }
+
         } else if (task.job_type === "kyc_chase") {
           if (out.customer_phone && out.draft_message) {
-            await sendWhatsAppText(out.customer_phone, out.draft_message);
+            await tryChannel("WhatsApp", () => sendWhatsAppText(out.customer_phone, out.draft_message), (r) => r?.ok ? "delivered" : "Meta 24h window — customer must message you first");
           }
           if (out.customer_email && out.draft_email_subject) {
-            await sendEmail({ to: out.customer_email, subject: out.draft_email_subject, html: (out.draft_email_body || "").replace(/\n/g, "<br>"), text: out.draft_email_body });
+            await tryChannel("Email", () => sendEmail({
+              to: out.customer_email,
+              subject: out.draft_email_subject,
+              html: (out.draft_email_body || "").replace(/\n/g, "<br>"),
+              text: out.draft_email_body || "",
+            }));
           }
-          sentLabel = "Chase sent to customer";
+
         } else if (task.job_type === "payment_match" && subjectId && out.match_status === "match") {
-          // Flip the invoice_payment to confirmed (which triggers the receipt PDF flow)
           await supabase.from("invoice_payments").update({
             status: "confirmed",
             confirmed_at: new Date().toISOString(),
             confirmed_by: auth.user.id,
           }).eq("id", subjectId);
-          if (out.invoice_id && out.draft_message) {
-            // optional: send confirm message — for now just record action
-          }
-          sentLabel = "Payment confirmed";
+          channels.push({ channel: "Invoice", status: "sent", detail: "marked paid · receipt auto-issues" });
+
         } else if (task.job_type === "report_draft") {
           if (out.suggested_recipient && out.draft_email_subject) {
             const attachmentNote = out.pdf_url ? `\n\nReport PDF: ${out.pdf_url}` : "";
-            await sendEmail({
+            await tryChannel("Email", () => sendEmail({
               to: out.suggested_recipient,
               subject: out.draft_email_subject,
               html: ((out.draft_email_body || "") + attachmentNote).replace(/\n/g, "<br>"),
               text: (out.draft_email_body || "") + attachmentNote,
-            });
+            }), (r) => r?.ok ? `sent to ${out.suggested_recipient}` : (r?.data?.error || r?.error || "send failed"));
+          } else {
+            channels.push({ channel: "Email", status: "skipped", detail: "no recipient configured" });
           }
-          sentLabel = "Report emailed";
+
         } else if (task.job_type === "invoice_review") {
-          // No external send; approve just acknowledges the operator has reviewed
-          sentLabel = "Invoice review acknowledged";
+          channels.push({ channel: "Review", status: "sent", detail: "acknowledged · no external send" });
         }
 
-        // Mark the task as sent if we actually executed something
-        if (sentLabel) {
-          await supabase.from("agent_tasks").update({
-            status: "sent",
-            sent_at: new Date().toISOString(),
-          }).eq("id", task.id);
-          push(sentLabel, "success");
+        // Persist channel outcomes in operator_notes for audit
+        const channelSummary = channels.map((c) => `${c.channel}: ${c.status}${c.detail ? ` (${c.detail})` : ""}`).join(" · ");
+        const anyFailed = channels.some((c) => c.status === "failed");
+        await supabase.from("agent_tasks").update({
+          status: anyFailed ? "approved" : "sent",
+          sent_at: anyFailed ? null : new Date().toISOString(),
+          operator_notes: channelSummary,
+        }).eq("id", task.id);
+
+        // Toast: each channel on its own line
+        if (anyFailed) {
+          push(`Partial: ${channelSummary}`, "warn");
+        } else {
+          push(`Approved · ${channelSummary}`, "success");
         }
       } catch (err) {
         // eslint-disable-next-line no-console
