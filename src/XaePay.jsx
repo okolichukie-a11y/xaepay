@@ -44,95 +44,137 @@ export const TIERS = {
   pro:        { id: "pro",        name: "Compliance Pro", minMarkup: 5.00, operatorShare: 0.30, xaepayShare: 0.70, tagline: "Deep validation + quarterly compliance pack",                  monthlyFloor: 500000, monthlyCeiling: null },
 };
 
-function SplashScreen() {
-  // System-init splash. Shows the platform "warming up" — 5 subsystems come
-  // online sequentially over ~3s while a progress bar fills. Reads as "this
-  // is a real system booting" instead of "loading…" Responsive sizing for
-  // mobile vs desktop. Hidden via splashMinDone gate elsewhere (3000ms).
-  const subsystems = [
-    { label: "Compliance agent",   id: "compliance" },
-    { label: "Routing engine",     id: "routing" },
-    { label: "Provider network",   id: "provider" },
-    { label: "Document agent",     id: "documents" },
-    { label: "Settlement agent",   id: "settlement" },
-  ];
+// BootPanel — the reusable subsystem-initialization panel. Used inside the
+// cold-start SplashScreen + the post-sign-in BootOverlay. Each subsystem has
+// a specific icon + detail line so the visual is richer than a plain checklist.
+function BootPanel({ context = "cold", durationMs = 3000 }) {
+  // Different copy for cold-start splash vs post-sign-in. Same visual.
+  const subsystemsByContext = {
+    cold: [
+      { label: "Compliance agent",  detail: "AI invoice review · sanctions screen",     id: "compliance" },
+      { label: "Routing engine",    detail: "Corridor + provider match",                id: "routing" },
+      { label: "Provider network",  detail: "Licensed PSPs · webhooks · settlement",    id: "provider" },
+      { label: "Document agent",    detail: "Audit packs · KYC orchestration",          id: "documents" },
+      { label: "Settlement agent",  detail: "MT103 capture · receipt issuance",         id: "settlement" },
+    ],
+    postauth: [
+      { label: "Operator profile",  detail: "Loading your business + brand settings",   id: "profile" },
+      { label: "Customer roster",   detail: "Fetching your active customers + KYC",     id: "customers" },
+      { label: "Open quotes",       detail: "Checking pending + in-progress txns",      id: "quotes" },
+      { label: "Compliance signals",detail: "Scanning for expiring docs + RFI risks",   id: "compliance" },
+      { label: "Agent inbox",       detail: "Refreshing drafted tasks awaiting you",    id: "agent" },
+    ],
+  };
+  const subsystems = subsystemsByContext[context] || subsystemsByContext.cold;
   const [readyIdx, setReadyIdx] = useState(-1);
   useEffect(() => {
-    // Advance one subsystem every ~500ms so all 5 are ready before the 3s
-    // splash gate elapses. The "syncing" frame on the next-up subsystem gives
-    // the user something to look at between each ready event.
+    // Spread the ready events evenly across the boot duration. We want all
+    // subsystems to land "Ready" just before the gate timer expires.
+    const intervalMs = Math.max(150, Math.floor(durationMs / (subsystems.length + 0.5)));
     const i = setInterval(() => {
       setReadyIdx((s) => (s >= subsystems.length - 1 ? s : s + 1));
-    }, 500);
+    }, intervalMs);
     return () => clearInterval(i);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [context, durationMs]);
   const pctReady = ((readyIdx + 1) / subsystems.length) * 100;
+  const headerLabel = context === "postauth" ? "Loading your session" : "Booting platform";
 
   return (
+    <div className="w-full rounded-2xl p-4 sm:p-5 fade-in" style={{ background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.06)", boxShadow: "0 24px 48px -24px rgba(197,242,74,0.18)" }}>
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-2">
+          <div className="h-1.5 w-1.5 rounded-full pulse-dot" style={{ background: "var(--lime)", boxShadow: "0 0 8px var(--lime)" }} />
+          <span className="font-mono text-[10px] uppercase tracking-wider" style={{ color: "var(--lime)" }}>{headerLabel}</span>
+        </div>
+        <span className="font-mono text-[10px] uppercase tracking-wider" style={{ color: "rgba(247,245,240,0.4)" }}>{Math.max(readyIdx + 1, 0)} / {subsystems.length}</span>
+      </div>
+      <ul className="space-y-2">
+        {subsystems.map((s, i) => {
+          const isReady = i <= readyIdx;
+          const isSyncing = i === readyIdx + 1;
+          return (
+            <li key={s.id} className="flex items-start justify-between gap-3 transition-all duration-300" style={{ opacity: isReady || isSyncing ? 1 : 0.35 }}>
+              <div className="flex items-start gap-2.5 min-w-0 flex-1">
+                <div className="flex h-5 w-5 items-center justify-center rounded-full flex-shrink-0 mt-0.5" style={{
+                  background: isReady ? "var(--lime)" : isSyncing ? "rgba(197,242,74,0.15)" : "rgba(255,255,255,0.04)",
+                  border: `1px solid ${isReady ? "var(--lime)" : isSyncing ? "rgba(197,242,74,0.5)" : "rgba(255,255,255,0.1)"}`,
+                  boxShadow: isSyncing ? "0 0 10px rgba(197,242,74,0.4)" : "none",
+                  transition: "all 0.3s ease",
+                }}>
+                  {isReady ? <CheckCircle2 size={11} style={{ color: "var(--ink)" }} strokeWidth={3} /> : isSyncing ? <div className="h-1.5 w-1.5 rounded-full pulse-dot" style={{ background: "var(--lime)" }} /> : null}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="text-xs sm:text-sm font-medium" style={{ color: isReady ? "var(--bone)" : isSyncing ? "var(--lime)" : "rgba(247,245,240,0.5)" }}>{s.label}</div>
+                  <div className="font-mono text-[9px] sm:text-[10px] mt-0.5 leading-snug" style={{ color: isReady ? "rgba(247,245,240,0.4)" : isSyncing ? "rgba(197,242,74,0.7)" : "rgba(247,245,240,0.25)" }}>
+                    {s.detail}
+                  </div>
+                </div>
+              </div>
+              <span className="font-mono text-[9px] uppercase tracking-wider mt-1 flex-shrink-0" style={{ color: isReady ? "rgba(247,245,240,0.55)" : isSyncing ? "var(--lime)" : "rgba(247,245,240,0.25)" }}>
+                {isReady ? "Ready" : isSyncing ? "Syncing…" : "—"}
+              </span>
+            </li>
+          );
+        })}
+      </ul>
+      {/* Progress bar with subtle scan-line shimmer */}
+      <div className="mt-4 relative h-[3px] rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.06)" }}>
+        <div className="h-full rounded-full transition-all duration-500 ease-out relative overflow-hidden" style={{
+          width: `${pctReady}%`,
+          background: "linear-gradient(90deg, var(--emerald), var(--lime))",
+          boxShadow: "0 0 12px rgba(197,242,74,0.5)",
+        }}>
+          <div className="scan-line absolute inset-0" />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SplashScreen() {
+  // Cold-start splash. Logo + wordmark + BootPanel. Gated by splashMinDone
+  // upstream (3000ms).
+  return (
     <div className="fixed inset-0 w-screen h-[100dvh] flex flex-col items-center justify-center px-6 overflow-hidden" style={{ background: "var(--ink)", color: "var(--bone)" }}>
-      {/* Backdrop grid + mesh for depth */}
       <div className="absolute inset-0 hero-grid opacity-50" />
       <div className="absolute inset-0" style={{ background: "radial-gradient(ellipse 80% 60% at 50% 40%, rgba(15,95,63,0.25), transparent 60%), radial-gradient(ellipse 60% 40% at 50% 70%, rgba(197,242,74,0.06), transparent 70%)" }} />
 
       <div className="relative flex flex-col items-center gap-8 sm:gap-10 w-full max-w-md">
-        {/* Logo with glow */}
         <div className="splash-logo flex h-20 w-20 sm:h-24 sm:w-24 items-center justify-center rounded-2xl" style={{ background: "linear-gradient(135deg, var(--emerald), var(--emerald-deep))" }}>
           <span className="font-display text-4xl sm:text-5xl font-semibold" style={{ color: "var(--lime)" }}>X</span>
         </div>
-
-        {/* Wordmark */}
         <div className="text-center">
           <div className="splash-wordmark font-display text-4xl sm:text-5xl font-semibold tracking-tight">XaePay</div>
           <div className="splash-tagline font-mono text-[10px] sm:text-[11px] uppercase mt-3" style={{ color: "rgba(247,245,240,0.5)" }}>by XaeccoX</div>
         </div>
-
-        {/* Subsystems initializing */}
-        <div className="w-full rounded-2xl p-4 sm:p-5 fade-in" style={{ background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.06)" }}>
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-2">
-              <div className="h-1.5 w-1.5 rounded-full pulse-dot" style={{ background: "var(--lime)", boxShadow: "0 0 8px var(--lime)" }} />
-              <span className="font-mono text-[10px] uppercase tracking-wider" style={{ color: "var(--lime)" }}>Booting platform</span>
-            </div>
-            <span className="font-mono text-[10px] uppercase tracking-wider" style={{ color: "rgba(247,245,240,0.4)" }}>{Math.max(readyIdx + 1, 0)} / {subsystems.length}</span>
-          </div>
-          <ul className="space-y-1.5">
-            {subsystems.map((s, i) => {
-              const isReady = i <= readyIdx;
-              const isSyncing = i === readyIdx + 1;
-              return (
-                <li key={s.id} className="flex items-center justify-between gap-3 text-xs sm:text-sm transition-all duration-300" style={{ opacity: isReady || isSyncing ? 1 : 0.3 }}>
-                  <div className="flex items-center gap-2 min-w-0">
-                    <div className="flex h-4 w-4 items-center justify-center rounded-full flex-shrink-0" style={{
-                      background: isReady ? "var(--lime)" : isSyncing ? "rgba(197,242,74,0.15)" : "rgba(255,255,255,0.05)",
-                      border: `1px solid ${isReady ? "var(--lime)" : isSyncing ? "rgba(197,242,74,0.4)" : "rgba(255,255,255,0.1)"}`,
-                    }}>
-                      {isReady ? <CheckCircle2 size={10} style={{ color: "var(--ink)" }} strokeWidth={3} /> : isSyncing ? <div className="h-1 w-1 rounded-full pulse-dot" style={{ background: "var(--lime)" }} /> : null}
-                    </div>
-                    <span style={{ color: isReady ? "var(--bone)" : isSyncing ? "var(--lime)" : "rgba(247,245,240,0.45)" }}>{s.label}</span>
-                  </div>
-                  <span className="font-mono text-[9px] uppercase tracking-wider" style={{ color: isReady ? "rgba(247,245,240,0.5)" : isSyncing ? "var(--lime)" : "rgba(247,245,240,0.25)" }}>
-                    {isReady ? "Ready" : isSyncing ? "Syncing…" : "Pending"}
-                  </span>
-                </li>
-              );
-            })}
-          </ul>
-
-          {/* Progress bar */}
-          <div className="mt-4 h-[3px] rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.06)" }}>
-            <div className="h-full rounded-full transition-all duration-500 ease-out" style={{
-              width: `${pctReady}%`,
-              background: "linear-gradient(90deg, var(--emerald), var(--lime))",
-              boxShadow: "0 0 12px rgba(197,242,74,0.4)",
-            }} />
-          </div>
-        </div>
-
-        {/* Footer status — reinforces the "real system" feel */}
+        <BootPanel context="cold" durationMs={3000} />
         <div className="text-center">
           <div className="font-mono text-[9px] uppercase tracking-wider" style={{ color: "rgba(247,245,240,0.4)" }}>xaepay // operating system</div>
         </div>
+      </div>
+    </div>
+  );
+}
+
+// Post-sign-in boot overlay. Shows briefly after the user lands in their
+// authenticated view (operator dashboard, customer portal, etc.) — gives the
+// "loading your session" moment a polished feel instead of a blank flash.
+function PostAuthBootOverlay({ userName }) {
+  return (
+    <div className="fixed inset-0 z-[80] w-screen h-[100dvh] flex flex-col items-center justify-center px-6 overflow-hidden fade-in" style={{ background: "var(--ink)", color: "var(--bone)" }}>
+      <div className="absolute inset-0 hero-grid opacity-40" />
+      <div className="absolute inset-0" style={{ background: "radial-gradient(ellipse 80% 60% at 50% 40%, rgba(15,95,63,0.30), transparent 60%), radial-gradient(ellipse 60% 40% at 50% 70%, rgba(197,242,74,0.06), transparent 70%)" }} />
+
+      <div className="relative flex flex-col items-center gap-6 w-full max-w-md">
+        <div className="splash-logo flex h-14 w-14 items-center justify-center rounded-xl" style={{ background: "linear-gradient(135deg, var(--emerald), var(--emerald-deep))" }}>
+          <span className="font-display text-3xl font-semibold" style={{ color: "var(--lime)" }}>X</span>
+        </div>
+        <div className="text-center">
+          <div className="font-display text-2xl sm:text-3xl font-semibold tracking-tight">Welcome back{userName ? `, ${userName}` : ""}</div>
+          <div className="font-mono text-[10px] uppercase mt-2" style={{ color: "rgba(247,245,240,0.5)" }}>warming up your operator session</div>
+        </div>
+        <BootPanel context="postauth" durationMs={2000} />
       </div>
     </div>
   );
@@ -418,6 +460,21 @@ function AppShell() {
   }, [initialCustomerId]);
   const [view, setView] = useState("landing");
   const [mobileOpen, setMobileOpen] = useState(false);
+  // Post-sign-in boot overlay — briefly shown when the user transitions from
+  // landing to an authenticated view, so the dashboard reveal feels intentional
+  // (rather than a flash of empty state while data fetches).
+  const [postAuthBoot, setPostAuthBoot] = useState(false);
+  const prevViewRef = React.useRef(view);
+  useEffect(() => {
+    const prev = prevViewRef.current;
+    prevViewRef.current = view;
+    const authenticatedViews = new Set(["bdc", "customer", "customer-portal", "provider-portal", "lp", "diaspora"]);
+    if (prev === "landing" && authenticatedViews.has(view)) {
+      setPostAuthBoot(true);
+      const t = setTimeout(() => setPostAuthBoot(false), 2200);
+      return () => clearTimeout(t);
+    }
+  }, [view]);
   const [accessOpen, setAccessOpen] = useState(false); // legacy multi-role picker (kept for direct callers)
   const [becomePartnerOpen, setBecomePartnerOpen] = useState(false); // MVP 4-step partner onboarding
   const [signInOpen, setSignInOpen] = useState(false);
@@ -680,6 +737,7 @@ function AppShell() {
       {view === "bdc" && <BDCDashboard session={session} initialCustomerId={initialCustomerId} onInitialCustomerHandled={() => setInitialCustomerId(null)} />}
       {view === "lp" && <LPDashboard session={session} />}
       {view === "diaspora" && <DiasporaApp session={session} />}
+      {postAuthBoot && <PostAuthBootOverlay userName={session?.name || (auth.user?.user_metadata?.full_name) || null} />}
       <SignInModal open={signInOpen} onClose={() => setSignInOpen(false)} />
       <BecomePartnerModal open={becomePartnerOpen} onClose={() => setBecomePartnerOpen(false)} onComplete={(data) => { setBecomePartnerOpen(false); completeOnboarding(data); }} />
       <RequestAccessModal open={accessOpen} onClose={() => setAccessOpen(false)} onChoose={startOnboarding} onWaitlist={() => { setAccessOpen(false); setWaitlistOpen(true); }} />
@@ -2955,7 +3013,7 @@ function CapabilityStrip() {
         <div className="rounded-2xl p-5 sm:p-6 relative overflow-hidden" style={{ background: "white", border: "1px solid var(--line)" }}>
           <div className="flex h-9 w-9 items-center justify-center rounded-lg mb-3" style={{ background: "rgba(197,242,74,0.15)", color: "var(--ink)" }}><Sparkles size={16} /></div>
           <h3 className="font-display text-lg font-semibold">AI compliance + reporting agents</h3>
-          <p className="mt-2 text-sm leading-relaxed" style={{ color: "var(--muted)" }}>Claude-powered invoice review, RFI-prevention agent, recurring-quote runner, auto-generated regulatory reports.</p>
+          <p className="mt-2 text-sm leading-relaxed" style={{ color: "var(--muted)" }}>AI-powered invoice review, RFI-prevention agent, recurring-quote runner, auto-generated regulatory reports.</p>
         </div>
       </div>
     </section>
@@ -9801,7 +9859,7 @@ function ProformaRestructureModal({ tx, onClose, onDone }) {
           <div className="space-y-4">
             {extracting && (
               <div className="rounded-xl p-6 text-center text-sm" style={{ background: "var(--bone)", border: "1px solid var(--line)", color: "var(--muted)" }}>
-                <Loader2 className="animate-spin inline mr-2" size={14} /> Extracting invoice data via Claude vision…
+                <Loader2 className="animate-spin inline mr-2" size={14} /> Extracting invoice data via AI vision…
               </div>
             )}
             {extractError && (
