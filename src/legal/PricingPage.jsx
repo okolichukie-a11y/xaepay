@@ -79,6 +79,26 @@ const PRICING_TIERS = [
     ctaLabel: "Talk to us",
     ctaHref: "mailto:legal@xaepay.com?subject=Business%20plan%20inquiry",
   },
+  {
+    id: "agentic",
+    name: "Agentic",
+    ngn: 50000,
+    usd: 33,
+    tagline: "Operator runs on AI agents",
+    invoiceLimit: null,
+    features: [
+      "Everything in Business",
+      "AI Operator Agent — drafts quote responses for every customer request",
+      "AI KYC Agent — drafts personalised reminders for missing/expiring docs",
+      "AI Payment Match Agent — reads proof images, drafts confirms",
+      "AI Report Agent — drafts regulatory filings + flags unusual patterns",
+      "500 agent actions / month included (₦100 per action overage)",
+      "Agent Cockpit · global mode switch · full audit trail",
+      "Priority WhatsApp support + monthly success call",
+    ],
+    ctaLabel: "Try Agentic",
+    ctaHref: "mailto:legal@xaepay.com?subject=Agentic%20plan%20inquiry",
+  },
 ];
 
 const WHATSAPP_URL = "https://wa.me/15717245894";

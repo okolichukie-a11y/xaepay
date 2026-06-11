@@ -7,7 +7,7 @@ import {
   ArrowLeft, ArrowLeftRight, Loader2, Layers, TrendingUp, Wallet, DollarSign, Mail,
   RefreshCw, ShieldCheck, Paperclip, Cpu, Check,
 } from "lucide-react";
-import { supabase, sendWhatsAppText, sendWhatsAppTemplate, fetchCedarRate, submitCustomerToCedar, submitRecipientToCedar, submitReceiverAccountToCedar, submitCedarTransaction, approveCedarQuote, confirmCedarDeposit, cancelCedarTransaction, uploadCedarFile, uploadFileBoth, uploadInvoicePdf, uploadInvoicePaymentProof, uploadReceiptPdf, uploadRecipientReceiptPdf, uploadBrandLogo, uploadRegulatoryReportFile, pickServiceProviderForQuote, runComplianceReview, runComplianceWatchman, submitDocumentToCedar, runAgentQuoteReview, sendEmail, safeUrl, logAuditEvent, getPlatformSettingInt } from "./lib/supabase.js";
+import { supabase, sendWhatsAppText, sendWhatsAppTemplate, fetchCedarRate, submitCustomerToCedar, submitRecipientToCedar, submitReceiverAccountToCedar, submitCedarTransaction, approveCedarQuote, confirmCedarDeposit, cancelCedarTransaction, uploadCedarFile, uploadFileBoth, uploadInvoicePdf, uploadInvoicePaymentProof, uploadReceiptPdf, uploadRecipientReceiptPdf, uploadBrandLogo, uploadRegulatoryReportFile, pickServiceProviderForQuote, runComplianceReview, runComplianceWatchman, submitDocumentToCedar, runAgentQuoteReview, runAgentKycChase, runAgentPaymentMatch, runAgentReportDraft, sendEmail, safeUrl, logAuditEvent, getPlatformSettingInt } from "./lib/supabase.js";
 import { generateQuotePdf, uploadQuotePdf, downloadQuotePdf } from "./lib/pdf.js";
 import { generateCompliancePackPdf, downloadCompliancePackPdf, generateTransactionConfirmationPdf, downloadTransactionConfirmationPdf, generateInvoicePdf, downloadInvoicePdf, generateReceiptPdf, downloadReceiptPdf, generateRecipientReceiptPdf, downloadRecipientReceiptPdf, generateMonthlyTransactionReportPdf, downloadRegulatoryReportPdf, buildTransactionsCsv, generateQuarterlyCustomerActivityReportPdf, buildCustomerActivityCsv } from "./lib/pdf-doc.js";
 import { TermsOfService, PrivacyPolicy, DataDeletion, RefundPolicy, ServiceProviderMSA } from "./legal/LegalPages.jsx";
@@ -5303,7 +5303,7 @@ function CustomerInvoiceDrawer({ invoice, customer, onClose, onPaid }) {
         if (!up.ok) { push(`Couldn't upload proof: ${up.error}`, "warn"); setSubmitting(false); return; }
         proofUrl = up.url; proofPath = up.path;
       }
-      const { error } = await supabase.from("invoice_payments").insert({
+      const { data: insertedPayment, error } = await supabase.from("invoice_payments").insert({
         invoice_id: invoice.id,
         method_type: selectedMethod.type,
         method_label: selectedMethod.label || null,
@@ -5313,8 +5313,12 @@ function CustomerInvoiceDrawer({ invoice, customer, onClose, onPaid }) {
         notes: claimNotes || null,
         proof_url: proofUrl,
         proof_path: proofPath,
-      });
+      }).select("id").maybeSingle();
       if (error) throw error;
+      // Operator Agent — Job #4 (Payment Matching). Fire-and-forget. No-op
+      // if the operator's agent_mode is off. Reads the proof image with
+      // Claude vision and drafts a confirm message for the operator.
+      if (insertedPayment?.id) runAgentPaymentMatch(insertedPayment.id).catch(() => {});
       push("Payment claim submitted — your operator will confirm shortly", "success");
       setSelectedMethodId(null); setClaimRef(""); setClaimNotes(""); setProofFile(null);
       // Refresh claims list inline so the UI flips to "awaiting confirmation"
@@ -6489,7 +6493,18 @@ function ComplianceRemindersPanel({ onReminderClick }) {
       .select("*")
       .eq("status", "open")
       .order("created_at", { ascending: false });
-    if (!error) setNotifs(data || []);
+    if (!error) {
+      const next = data || [];
+      // Operator Agent — Job #2 (KYC Chase). For each open notification not
+      // already covered by an agent_task, fire the agent. No-op if the
+      // operator hasn't enabled agent_mode. Idempotent inside the function.
+      next.forEach((n) => {
+        if (n.subject_type === "customer" && n.subject_id) {
+          runAgentKycChase(n.id).catch(() => {});
+        }
+      });
+      setNotifs(next);
+    }
   };
 
   useEffect(() => { fetchNotifs(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [auth.user?.id]);
@@ -8752,7 +8767,7 @@ function BDCRegulatoryReports() {
       if (!csvUp.ok) { push(`CSV upload failed: ${csvUp.error}`, "warn"); }
 
       // Save record
-      const { error: insertErr } = await supabase.from("regulatory_reports").insert({
+      const { data: insertedReport, error: insertErr } = await supabase.from("regulatory_reports").insert({
         operator_user_id: auth.user.id,
         report_type: "monthly_transactions",
         period_label: periodLabel,
@@ -8764,8 +8779,9 @@ function BDCRegulatoryReports() {
         csv_path: csvUp.ok ? csvUp.path : null,
         metadata: summary,
         generated_by: auth.user.id,
-      });
+      }).select("id").maybeSingle();
       if (insertErr) throw insertErr;
+      if (insertedReport?.id) runAgentReportDraft(insertedReport.id).catch(() => {});
 
       // Also download the PDF for the operator immediately
       downloadRegulatoryReportPdf(pdf, "monthly-transactions", periodLabel);
@@ -8901,7 +8917,7 @@ function BDCRegulatoryReports() {
       if (!pdfUp.ok) { push(`PDF upload failed: ${pdfUp.error}`, "warn"); }
       if (!csvUp.ok) { push(`CSV upload failed: ${csvUp.error}`, "warn"); }
 
-      const { error: insertErr } = await supabase.from("regulatory_reports").insert({
+      const { data: insertedReport, error: insertErr } = await supabase.from("regulatory_reports").insert({
         operator_user_id: auth.user.id,
         report_type: "quarterly_customer_activity",
         period_label: periodLabel,
@@ -8913,8 +8929,9 @@ function BDCRegulatoryReports() {
         csv_path: csvUp.ok ? csvUp.path : null,
         metadata: { ...summary, totalCount: totalTxnCount },
         generated_by: auth.user.id,
-      });
+      }).select("id").maybeSingle();
       if (insertErr) throw insertErr;
+      if (insertedReport?.id) runAgentReportDraft(insertedReport.id).catch(() => {});
 
       downloadRegulatoryReportPdf(pdf, "quarterly-customer-activity", periodLabel);
       push(`Report generated for ${periodLabel} · ${rows.length} active customers`, "success");
@@ -9228,38 +9245,80 @@ function AgentTaskRow({ task, onDecide, onJumpToQuote, compact }) {
   const riskColor = risk === "critical" || risk === "high" ? "#991b1b" : risk === "medium" ? "#92400e" : "var(--emerald)";
   const riskBg = risk === "critical" || risk === "high" ? "#fee2e2" : risk === "medium" ? "#fef3c7" : "rgba(15,95,63,0.08)";
   const isPending = task.status === "pending_review";
+  const jobType = task.job_type;
+
+  // Job-type-specific headline
+  let headline = "Task";
+  let sub = null;
+  if (jobType === "quote_review") {
+    headline = `${out.customer_name || "Customer"} · ${out.currency} ${parseFloat(out.amount || 0).toLocaleString()} → ${out.destination || "destination"}`;
+    if (out.suggested_rate) {
+      sub = `Suggested rate: ₦${out.suggested_rate.toLocaleString()}/$ · NGN total: ₦${(out.ngn_total || 0).toLocaleString()}`;
+    }
+  } else if (jobType === "kyc_chase") {
+    headline = `${out.customer_name || "Customer"} · ${out.notif_title || "compliance reminder"}`;
+    if (out.urgency) sub = `Urgency: ${out.urgency}${out.notif_body ? ` · ${out.notif_body}` : ""}`;
+  } else if (jobType === "payment_match") {
+    headline = `${out.customer_name || "Customer"} · ${out.invoice_number || "invoice"} · ${out.currency} ${parseFloat(out.expected_amount || 0).toLocaleString()}`;
+    const ms = out.match_status;
+    sub = ms === "match" ? `Payment matches expected amount`
+      : ms === "amount_mismatch" ? `Mismatch: received ${out.extracted?.amount ?? out.claimed_amount}, expected ${out.expected_amount}`
+      : ms === "unreadable" ? `Proof image couldn't be auto-read`
+      : `No proof image — claimed: ${out.claimed_amount}`;
+  } else if (jobType === "report_draft") {
+    headline = `${out.report_type_label || "Report"} · ${out.period_label || ""}`;
+    sub = `Suggested recipient: ${out.suggested_recipient || "—"}`;
+  } else if (jobType === "recurring_confirm") {
+    headline = `Recurring · ${out.customer_name || "Customer"} · ${out.currency} ${parseFloat(out.amount || 0).toLocaleString()}`;
+    sub = `Suggested rate: ₦${(out.suggested_rate || 0).toLocaleString()}/$`;
+  }
+
+  const draftBlocks = [];
+  if (out.draft_message) draftBlocks.push({ label: "WhatsApp draft", body: out.draft_message });
+  if (out.draft_email_subject || out.draft_email_body) {
+    draftBlocks.push({ label: "Email draft", body: `Subject: ${out.draft_email_subject || ""}\n\n${out.draft_email_body || ""}` });
+  }
 
   return (
     <div className="p-4">
       <div className="flex items-start justify-between gap-3 flex-wrap">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-1 flex-wrap">
-            <span className="rounded-md px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-wider" style={{ background: "var(--bone)", color: "var(--muted)", border: "1px solid var(--line)" }}>{task.job_type.replace(/_/g, " ")}</span>
+            <span className="rounded-md px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-wider" style={{ background: "var(--bone)", color: "var(--muted)", border: "1px solid var(--line)" }}>{jobType.replace(/_/g, " ")}</span>
             <span className="rounded-md px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-wider" style={{ background: riskBg, color: riskColor }}>Risk: {risk}</span>
             {task.status !== "pending_review" && <span className="rounded-md px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-wider" style={{ background: "var(--bone)", color: "var(--muted)", border: "1px solid var(--line)" }}>{task.status}</span>}
             <span className="font-mono text-[10px]" style={{ color: "var(--muted)" }}>{relativeTime(task.created_at)}</span>
           </div>
-          <div className="font-semibold text-sm">
-            {out.customer_name || "Customer"} · {out.currency} {parseFloat(out.amount || 0).toLocaleString()} → {out.destination || "destination"}
-          </div>
-          {out.suggested_rate && (
-            <div className="font-mono text-[11px] mt-1" style={{ color: "var(--muted)" }}>
-              Suggested rate: ₦{out.suggested_rate.toLocaleString()}/$ · NGN total: ₦{(out.ngn_total || 0).toLocaleString()}
-            </div>
-          )}
+          <div className="font-semibold text-sm">{headline}</div>
+          {sub && <div className="font-mono text-[11px] mt-1" style={{ color: "var(--muted)" }}>{sub}</div>}
         </div>
         <button onClick={() => setOpen((v) => !v)} className="font-mono text-[10px] uppercase tracking-wider underline" style={{ color: "var(--muted)" }}>{open ? "Hide" : "Show draft"}</button>
       </div>
 
       {open && (
         <div className="mt-3 space-y-3">
-          {/* Drafted message */}
-          {out.draft_message && (
-            <div className="rounded-lg p-3" style={{ background: "var(--bone)", border: "1px solid var(--line)" }}>
-              <div className="font-mono text-[9px] uppercase tracking-wider mb-2" style={{ color: "var(--muted)" }}>Drafted message · WhatsApp</div>
-              <div className="text-sm whitespace-pre-line" style={{ color: "var(--ink)" }}>{out.draft_message}</div>
+          {/* Proof image preview for payment_match */}
+          {jobType === "payment_match" && out.proof_url && (
+            <a href={safeUrl(out.proof_url)} target="_blank" rel="noreferrer" className="block rounded-lg overflow-hidden" style={{ border: "1px solid var(--line)", maxHeight: "200px" }}>
+              <img src={out.proof_url} alt="Payment proof" style={{ maxHeight: "200px", width: "auto" }} />
+            </a>
+          )}
+
+          {/* Report attachments for report_draft */}
+          {jobType === "report_draft" && (out.pdf_url || out.csv_url) && (
+            <div className="flex gap-2">
+              {out.pdf_url && <a href={safeUrl(out.pdf_url)} target="_blank" rel="noreferrer" className="rounded-md px-2.5 py-1.5 font-mono text-[10px] uppercase tracking-wider" style={{ background: "var(--ink)", color: "var(--bone)" }}><Download size={11} className="inline mr-1" /> PDF</a>}
+              {out.csv_url && <a href={safeUrl(out.csv_url)} target="_blank" rel="noreferrer" className="rounded-md px-2.5 py-1.5 font-mono text-[10px] uppercase tracking-wider" style={{ background: "var(--bone)", color: "var(--ink)", border: "1px solid var(--line)" }}><Download size={11} className="inline mr-1" /> CSV</a>}
             </div>
           )}
+
+          {/* Drafted messages */}
+          {draftBlocks.map((d, i) => (
+            <div key={i} className="rounded-lg p-3" style={{ background: "var(--bone)", border: "1px solid var(--line)" }}>
+              <div className="font-mono text-[9px] uppercase tracking-wider mb-2" style={{ color: "var(--muted)" }}>{d.label}</div>
+              <div className="text-sm whitespace-pre-line" style={{ color: "var(--ink)" }}>{d.body}</div>
+            </div>
+          ))}
 
           {/* Agent reasoning */}
           {task.agent_reasoning && (
@@ -9269,12 +9328,12 @@ function AgentTaskRow({ task, onDecide, onJumpToQuote, compact }) {
             </div>
           )}
 
-          {/* Decision buttons + jump-to-quote */}
+          {/* Decision buttons + jump-to-context */}
           {isPending && onDecide && (
             <div className="flex items-center gap-2 flex-wrap">
               <PrimaryBtn onClick={() => onDecide(task, "approved")}><Check size={12} /> Approve draft</PrimaryBtn>
               <SecondaryBtn onClick={() => onDecide(task, "rejected", "Operator rejected the draft")}><X size={12} /> Reject</SecondaryBtn>
-              {task.subject_id && onJumpToQuote && (
+              {jobType === "quote_review" && task.subject_id && onJumpToQuote && (
                 <button onClick={() => onJumpToQuote(task.subject_id)} className="font-mono text-[10px] uppercase tracking-wider underline" style={{ color: "var(--emerald)" }}>Open quote →</button>
               )}
               <button onClick={() => onDecide(task, "dismissed")} className="font-mono text-[10px] uppercase tracking-wider underline ml-auto" style={{ color: "var(--muted)" }}>Dismiss</button>

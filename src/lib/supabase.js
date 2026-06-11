@@ -580,24 +580,50 @@ export async function runComplianceWatchman(tier = "pro") {
 // agent_mode = true; otherwise the function returns {skipped:true} and nothing
 // happens. Safe to call on every quote submission.
 export async function runAgentQuoteReview(quoteId) {
+  return await callAgentFn("agent-quote-review", { quote_id: quoteId });
+}
+
+// Operator Agent — Job #2 (KYC Document Chasing). Called for each open
+// compliance notification. Agent drafts a personalized WhatsApp + email
+// asking the customer for the missing doc.
+export async function runAgentKycChase(notificationId) {
+  return await callAgentFn("agent-kyc-chase", { notification_id: notificationId });
+}
+
+// Operator Agent — Job #4 (Payment Matching). Called when a customer
+// uploads "I've paid" proof on an invoice. Agent reads the proof image
+// (Claude vision) and drafts a confirm message or discrepancy flag.
+export async function runAgentPaymentMatch(invoicePaymentId) {
+  return await callAgentFn("agent-payment-match", { invoice_payment_id: invoicePaymentId });
+}
+
+// Operator Agent — Job #5 (Report Drafting). Called after a regulatory
+// report is generated. Agent drafts a summary email to the operator's
+// compliance officer.
+export async function runAgentReportDraft(reportId) {
+  return await callAgentFn("agent-report-draft", { report_id: reportId });
+}
+
+// Shared transport for all agent Edge Function calls.
+async function callAgentFn(name, body) {
   try {
     const session = (await supabase.auth.getSession()).data.session;
     if (!session) return { ok: false, error: "Not signed in" };
-    const res = await fetch(`${url}/functions/v1/agent-quote-review`, {
+    const res = await fetch(`${url}/functions/v1/${name}`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${session.access_token}`,
         apikey: anonKey,
       },
-      body: JSON.stringify({ quote_id: quoteId }),
+      body: JSON.stringify(body),
     });
     let data = null;
     try { data = await res.json(); } catch { /* non-JSON */ }
     return { ok: res.ok, status: res.status, data };
   } catch (err) {
     // eslint-disable-next-line no-console
-    console.error("runAgentQuoteReview failed:", err);
+    console.error(`${name} failed:`, err);
     return { ok: false, error: err?.message || String(err) };
   }
 }
