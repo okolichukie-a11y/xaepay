@@ -109,13 +109,19 @@ Output ONLY valid JSON with this exact shape, no preamble:
       if (aRes.ok) {
         const aData = await aRes.json();
         const text = aData?.content?.[0]?.text?.trim() || "";
+        // Strip Claude's optional markdown fences before parsing JSON.
+        // Without this, when Claude wraps the response in ```json ... ```,
+        // JSON.parse fails and we ship raw markdown to the customer.
+        const cleaned = text.replace(/^```(?:json)?\s*/i, "").replace(/\s*```\s*$/, "").trim();
         try {
-          const parsed = JSON.parse(text);
+          const parsed = JSON.parse(cleaned);
           draftWa = parsed.whatsapp || "";
           draftEmailSubject = parsed.email_subject || "";
           draftEmailBody = parsed.email_body || "";
         } catch {
-          draftWa = text;
+          // If JSON parse still fails, treat the cleaned text as the WhatsApp
+          // body — at least the customer doesn't see markdown gibberish.
+          draftWa = cleaned;
         }
         reasoning = `Claude Haiku draft for ${notif.title}. Urgency ${urgency}.`;
       }

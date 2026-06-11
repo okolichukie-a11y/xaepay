@@ -87,14 +87,16 @@ Output ONLY valid JSON, no preamble:
       if (aRes.ok) {
         const aData = await aRes.json();
         const text = aData?.content?.[0]?.text?.trim() || "{}";
+        // Strip optional markdown fences before parsing
+        const cleaned = text.replace(/^```(?:json)?\s*/i, "").replace(/\s*```\s*$/, "").trim();
         try {
-          const parsed = JSON.parse(text);
+          const parsed = JSON.parse(cleaned);
           draftSubject = parsed.subject || "";
           draftBody = parsed.body || "";
           reasoning = `Claude Haiku draft. Notable pattern: ${parsed.notable_pattern || "none flagged"}.`;
         } catch {
           draftSubject = `${reportTypeLabel} · ${report.period_label}`;
-          draftBody = text;
+          draftBody = cleaned;
           reasoning = "Claude returned non-JSON; using raw text.";
         }
       }

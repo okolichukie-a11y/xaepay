@@ -108,7 +108,9 @@ Output ONLY valid JSON, no preamble:
       if (aRes.ok) {
         const aData = await aRes.json();
         const text = aData?.content?.[0]?.text?.trim() || "{}";
-        try { extracted = JSON.parse(text); } catch { extracted = {}; }
+        // Strip optional markdown fences before parsing
+        const cleaned = text.replace(/^```(?:json)?\s*/i, "").replace(/\s*```\s*$/, "").trim();
+        try { extracted = JSON.parse(cleaned); } catch { extracted = {}; }
         if (!extracted.readable) {
           matchStatus = "unreadable";
         } else if (extracted.amount != null) {

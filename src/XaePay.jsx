@@ -10137,12 +10137,17 @@ function BDCAgent({ jumpToTransaction, hideToggle }) {
           if (out.customer_phone && out.draft_message) {
             await tryChannel("WhatsApp", () => sendWhatsAppText(out.customer_phone, out.draft_message), (r) => r?.ok ? "delivered" : "Meta 24h window — customer must message you first");
           }
-          if (out.customer_email && out.draft_email_subject) {
+          if (out.customer_email) {
+            // Fall back to a sensible subject + body if the agent's email draft
+            // is empty (which happens if Claude returns the whole prompt as one
+            // text blob rather than JSON-structured).
+            const subject = out.draft_email_subject || `Action needed · ${out.notif_title || "Compliance reminder"}`;
+            const bodySrc = out.draft_email_body || out.draft_message || out.notif_body || "Please review the request in your portal.";
             await tryChannel("Email", () => sendEmail({
               to: out.customer_email,
-              subject: out.draft_email_subject,
-              html: (out.draft_email_body || "").replace(/\n/g, "<br>"),
-              text: out.draft_email_body || "",
+              subject,
+              html: bodySrc.replace(/\n/g, "<br>"),
+              text: bodySrc,
             }));
           }
 
