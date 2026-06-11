@@ -604,6 +604,14 @@ export async function runAgentReportDraft(reportId) {
   return await callAgentFn("agent-report-draft", { report_id: reportId });
 }
 
+// Operator Agent — Job #6 (Invoice / Proforma Invoice Review). Called
+// after a customer or operator uploads an invoice on a cross-border
+// quote. Internally triggers compliance-review, extracts invoice data,
+// drafts an Agent Inbox task summarising match status against the quote.
+export async function runAgentInvoiceReview(quoteId, uploadedBy = "unknown") {
+  return await callAgentFn("agent-invoice-review", { quote_id: quoteId, uploaded_by: uploadedBy });
+}
+
 // Shared transport for all agent Edge Function calls.
 async function callAgentFn(name, body) {
   try {

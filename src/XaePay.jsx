@@ -7,7 +7,7 @@ import {
   ArrowLeft, ArrowLeftRight, Loader2, Layers, TrendingUp, Wallet, DollarSign, Mail,
   RefreshCw, ShieldCheck, Paperclip, Cpu, Check,
 } from "lucide-react";
-import { supabase, sendWhatsAppText, sendWhatsAppTemplate, fetchCedarRate, submitCustomerToCedar, submitRecipientToCedar, submitReceiverAccountToCedar, submitCedarTransaction, approveCedarQuote, confirmCedarDeposit, cancelCedarTransaction, uploadCedarFile, uploadFileBoth, uploadInvoicePdf, uploadInvoicePaymentProof, uploadReceiptPdf, uploadRecipientReceiptPdf, uploadBrandLogo, uploadRegulatoryReportFile, pickServiceProviderForQuote, runComplianceReview, runComplianceWatchman, submitDocumentToCedar, runAgentQuoteReview, runAgentKycChase, runAgentPaymentMatch, runAgentReportDraft, sendEmail, safeUrl, logAuditEvent, getPlatformSettingInt } from "./lib/supabase.js";
+import { supabase, sendWhatsAppText, sendWhatsAppTemplate, fetchCedarRate, submitCustomerToCedar, submitRecipientToCedar, submitReceiverAccountToCedar, submitCedarTransaction, approveCedarQuote, confirmCedarDeposit, cancelCedarTransaction, uploadCedarFile, uploadFileBoth, uploadInvoicePdf, uploadInvoicePaymentProof, uploadReceiptPdf, uploadRecipientReceiptPdf, uploadBrandLogo, uploadRegulatoryReportFile, pickServiceProviderForQuote, runComplianceReview, runComplianceWatchman, submitDocumentToCedar, runAgentQuoteReview, runAgentKycChase, runAgentPaymentMatch, runAgentReportDraft, runAgentInvoiceReview, sendEmail, safeUrl, logAuditEvent, getPlatformSettingInt } from "./lib/supabase.js";
 import { generateQuotePdf, uploadQuotePdf, downloadQuotePdf } from "./lib/pdf.js";
 import { generateCompliancePackPdf, downloadCompliancePackPdf, generateTransactionConfirmationPdf, downloadTransactionConfirmationPdf, generateInvoicePdf, downloadInvoicePdf, generateReceiptPdf, downloadReceiptPdf, generateRecipientReceiptPdf, downloadRecipientReceiptPdf, generateMonthlyTransactionReportPdf, downloadRegulatoryReportPdf, buildTransactionsCsv, generateQuarterlyCustomerActivityReportPdf, buildCustomerActivityCsv } from "./lib/pdf-doc.js";
 import { TermsOfService, PrivacyPolicy, DataDeletion, RefundPolicy, ServiceProviderMSA } from "./legal/LegalPages.jsx";
@@ -4916,13 +4916,19 @@ function CustomerRequestQuoteModal({ open, onClose, customer, onCreated }) {
       };
       const { data: row, error } = await supabase.from("quotes").insert(patch).select("*").single();
       if (error) throw error;
-      if (data.invoiceUrl) {
-        runComplianceReview(row.id).catch(() => {});
-      }
       // Operator Agent — fire-and-forget. No-op if the operator hasn't enabled
       // agent_mode on their profile. When ON, agent drafts a quote response
       // into agent_tasks for the operator to approve.
       runAgentQuoteReview(row.id).catch(() => {});
+      // If the customer attached an invoice, fire the invoice-review agent
+      // too (which internally calls compliance-review for extraction +
+      // creates an inbox task summarising the match against the quote).
+      // If no invoice attached, just compliance-review for risk only.
+      if (data.invoiceUrl) {
+        runAgentInvoiceReview(row.id, "customer").catch(() => {});
+      } else {
+        runComplianceReview(row.id).catch(() => {});
+      }
       push(`Quote request sent to ${customer.bdc_name || "your operator"}`, "success");
       onCreated && onCreated();
       setData(empty);
@@ -6138,9 +6144,11 @@ function CustomerQuoteCard({ q, onDecide, onInvoiceUploaded }) {
     } else {
       push(`Invoice uploaded to PSP only (XaePay copy failed: ${both.storageError || "unknown"})`, "warn");
     }
-    // Fire-and-forget; the realtime subscription on the parent will pick up the
-    // review_decision update when the Edge Function finishes.
-    runComplianceReview(q.id).catch(() => {});
+    // Fire the invoice-review agent (which internally calls compliance-review
+    // and writes an Agent Inbox task summarising extraction + match status).
+    // No-op for the agent task if the operator hasn't enabled agent_mode —
+    // compliance-review still runs and writes review_decision on the quote.
+    runAgentInvoiceReview(q.id, "customer").catch(() => {});
     onInvoiceUploaded && onInvoiceUploaded();
   };
   return (
@@ -9271,6 +9279,11 @@ function AgentTaskRow({ task, onDecide, onJumpToQuote, compact }) {
   } else if (jobType === "recurring_confirm") {
     headline = `Recurring · ${out.customer_name || "Customer"} · ${out.currency} ${parseFloat(out.amount || 0).toLocaleString()}`;
     sub = `Suggested rate: ₦${(out.suggested_rate || 0).toLocaleString()}/$`;
+  } else if (jobType === "invoice_review") {
+    headline = `Invoice · ${out.quote_ref || ""} · ${out.extracted_vendor || "supplier"} → ${out.customer_name || "customer"}`;
+    const ms = out.match_status;
+    const dec = out.compliance_decision;
+    sub = `Uploaded by ${out.uploaded_by} · ${ms === "match" ? "Matches quote" : ms === "amount_mismatch" ? `Amount mismatch: invoice ${out.extracted_currency || ""} ${out.extracted_total}, quote ${out.quote_currency} ${out.quote_amount}` : ms === "currency_mismatch" ? `Currency mismatch (${out.extracted_currency} vs ${out.quote_currency})` : "Awaiting extraction"} · Compliance: ${dec || "in progress"}`;
   }
 
   const draftBlocks = [];
@@ -9302,6 +9315,30 @@ function AgentTaskRow({ task, onDecide, onJumpToQuote, compact }) {
             <a href={safeUrl(out.proof_url)} target="_blank" rel="noreferrer" className="block rounded-lg overflow-hidden" style={{ border: "1px solid var(--line)", maxHeight: "200px" }}>
               <img src={out.proof_url} alt="Payment proof" style={{ maxHeight: "200px", width: "auto" }} />
             </a>
+          )}
+
+          {/* Invoice link + extracted line items for invoice_review */}
+          {jobType === "invoice_review" && (
+            <div className="space-y-2">
+              {out.invoice_url && (
+                <a href={safeUrl(out.invoice_url)} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 rounded-md px-2.5 py-1.5 font-mono text-[10px] uppercase tracking-wider" style={{ background: "var(--ink)", color: "var(--bone)" }}>
+                  <FileText size={11} /> Open original invoice
+                </a>
+              )}
+              {Array.isArray(out.extracted_line_items) && out.extracted_line_items.length > 0 && (
+                <div className="rounded-lg p-3" style={{ background: "var(--bone)", border: "1px solid var(--line)" }}>
+                  <div className="font-mono text-[9px] uppercase tracking-wider mb-2" style={{ color: "var(--muted)" }}>Extracted line items</div>
+                  <ul className="text-xs space-y-1 list-disc list-inside" style={{ color: "var(--ink)" }}>
+                    {out.extracted_line_items.slice(0, 8).map((li, i) => <li key={i}>{String(li).slice(0, 120)}</li>)}
+                  </ul>
+                </div>
+              )}
+              {out.compliance_reason && (
+                <div className="rounded-lg p-2.5 text-xs" style={{ background: "#fef3c7", border: "1px solid rgba(146,64,14,0.2)", color: "#92400e" }}>
+                  Compliance: {out.compliance_reason}
+                </div>
+              )}
+            </div>
           )}
 
           {/* Report attachments for report_draft */}
@@ -9962,9 +9999,11 @@ function OperatorQuoteModal({ open, onClose, onCreated }) {
 
     // Fire compliance review in the background if an invoice was attached up-front.
     // The Edge Function persists the decision back to the quote row; operator sees
-    // it in the TxDrawer once it lands.
+    // it in the TxDrawer once it lands. Also fire the agent-invoice-review wrapper
+    // so the Agent Inbox surfaces extraction + match summary in agent mode.
     if (data.invoiceUrl) {
       push("Running AI compliance check on the invoice…", "info");
+      runAgentInvoiceReview(quoteRow.id, "operator").catch(() => {});
       runComplianceReview(quoteRow.id).then((r) => {
         if (r?.ok) {
           const d = r.data?.decision || "ran";
@@ -11435,13 +11474,16 @@ function TxDrawer({ tx, onClose, onRefresh }) {
       return;
     }
     if (both.supabaseUrl && both.cedarUrl) {
-      push("Invoice uploaded to XaePay + Cedar — running compliance check…", "success");
+      push("Invoice uploaded to XaePay + PSP — running compliance check…", "success");
     } else if (both.supabaseUrl) {
-      push(`Invoice uploaded to XaePay (Cedar copy failed: ${both.cedarError || "unknown"}) — compliance check running`, "warn");
+      push(`Invoice uploaded to XaePay (PSP copy failed: ${both.cedarError || "unknown"}) — compliance check running`, "warn");
     } else {
-      push(`Invoice uploaded to Cedar only (XaePay copy failed: ${both.storageError || "unknown"})`, "warn");
+      push(`Invoice uploaded to PSP only (XaePay copy failed: ${both.storageError || "unknown"})`, "warn");
     }
-    runComplianceReview(tx.dbId).catch(() => {});
+    // Operator uploading invoice on a customer's behalf — fire the
+    // invoice-review agent (calls compliance-review internally + writes
+    // an Agent Inbox task summarising match against the quote).
+    runAgentInvoiceReview(tx.dbId, "operator").catch(() => {});
     onRefresh && onRefresh();
   };
   return (
