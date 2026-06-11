@@ -7,9 +7,9 @@ import {
   ArrowLeft, ArrowLeftRight, Loader2, Layers, TrendingUp, Wallet, DollarSign, Mail,
   RefreshCw, ShieldCheck, Paperclip, Cpu, Check,
 } from "lucide-react";
-import { supabase, sendWhatsAppText, sendWhatsAppTemplate, fetchCedarRate, submitCustomerToCedar, submitRecipientToCedar, submitReceiverAccountToCedar, submitCedarTransaction, approveCedarQuote, confirmCedarDeposit, cancelCedarTransaction, uploadCedarFile, uploadFileBoth, uploadInvoicePdf, uploadInvoicePaymentProof, uploadReceiptPdf, uploadRecipientReceiptPdf, uploadBrandLogo, uploadRegulatoryReportFile, pickServiceProviderForQuote, runComplianceReview, runComplianceWatchman, submitDocumentToCedar, runAgentQuoteReview, runAgentKycChase, runAgentPaymentMatch, runAgentReportDraft, runAgentInvoiceReview, sendEmail, safeUrl, logAuditEvent, getPlatformSettingInt } from "./lib/supabase.js";
+import { supabase, sendWhatsAppText, sendWhatsAppTemplate, fetchCedarRate, submitCustomerToCedar, submitRecipientToCedar, submitReceiverAccountToCedar, submitCedarTransaction, approveCedarQuote, confirmCedarDeposit, cancelCedarTransaction, uploadCedarFile, uploadFileBoth, uploadInvoicePdf, uploadInvoicePaymentProof, uploadReceiptPdf, uploadRecipientReceiptPdf, uploadBrandLogo, uploadRegulatoryReportFile, pickServiceProviderForQuote, runComplianceReview, runComplianceWatchman, submitDocumentToCedar, runAgentQuoteReview, runAgentKycChase, runAgentPaymentMatch, runAgentReportDraft, runAgentInvoiceReview, extractProformaInvoice, uploadProformaOriginalInvoice, uploadProformaRestructuredInvoice, sendEmail, safeUrl, logAuditEvent, getPlatformSettingInt } from "./lib/supabase.js";
 import { generateQuotePdf, uploadQuotePdf, downloadQuotePdf } from "./lib/pdf.js";
-import { generateCompliancePackPdf, downloadCompliancePackPdf, generateTransactionConfirmationPdf, downloadTransactionConfirmationPdf, generateInvoicePdf, downloadInvoicePdf, generateReceiptPdf, downloadReceiptPdf, generateRecipientReceiptPdf, downloadRecipientReceiptPdf, generateMonthlyTransactionReportPdf, downloadRegulatoryReportPdf, buildTransactionsCsv, generateQuarterlyCustomerActivityReportPdf, buildCustomerActivityCsv } from "./lib/pdf-doc.js";
+import { generateCompliancePackPdf, downloadCompliancePackPdf, generateTransactionConfirmationPdf, downloadTransactionConfirmationPdf, generateInvoicePdf, downloadInvoicePdf, generateReceiptPdf, downloadReceiptPdf, generateRecipientReceiptPdf, downloadRecipientReceiptPdf, generateMonthlyTransactionReportPdf, downloadRegulatoryReportPdf, buildTransactionsCsv, generateQuarterlyCustomerActivityReportPdf, buildCustomerActivityCsv, generateProformaRestructuredPdf, downloadProformaRestructuredPdf } from "./lib/pdf-doc.js";
 import { TermsOfService, PrivacyPolicy, DataDeletion, RefundPolicy, ServiceProviderMSA } from "./legal/LegalPages.jsx";
 import { OperatorsPage, CustomersPage, ProvidersPage, SendUsdToNgnPage } from "./legal/UserPages.jsx";
 import { CounselBriefPage } from "./legal/CounselBriefPage.jsx";
@@ -9382,6 +9382,254 @@ function AgentTaskRow({ task, onDecide, onJumpToQuote, compact }) {
   );
 }
 
+// =============================================================================
+// ProformaRestructureCard — operator-side card on the TxDrawer that opens
+// the third-party-trade restructure wizard. Shows status if already
+// restructured; otherwise offers the "Restructure as third-party trade"
+// button.
+// =============================================================================
+const TRADE_PARTNER_ATTESTATION_TEXT = `The named operator is acting as the contractual trade partner and buyer of record for the underlying supplier invoice. The named end customer is the consignee and ultimate beneficial owner of the goods. Both parties acknowledge that the operator pays the supplier on the customer's behalf as part of a documented trade relationship, and that the customer settles with the operator separately. This restructure is for the formal documentation required by the licensed payment provider; the underlying commercial trade is unchanged.`;
+
+function ProformaRestructureCard({ tx, onChanged }) {
+  const [open, setOpen] = useState(false);
+  const restructured = !!tx.proforma_restructured;
+  return (
+    <div>
+      <Label>Third-party trade restructure</Label>
+      {restructured ? (
+        <div className="rounded-xl p-3 text-xs flex items-center justify-between" style={{ background: "rgba(15,95,63,0.06)", border: "1px solid rgba(15,95,63,0.2)" }}>
+          <div className="flex items-center gap-2" style={{ color: "var(--emerald)" }}>
+            <CheckCircle2 size={14} />
+            <div>
+              <div className="font-medium">Restructured as third-party trade</div>
+              <div className="font-mono text-[10px]" style={{ color: "var(--muted)" }}>Operator is named buyer · customer is consignee/UBO · Form M: {tx.form_m_responsibility || "—"}</div>
+            </div>
+          </div>
+          {tx.proforma_restructured_invoice_url && (
+            <a href={safeUrl(tx.proforma_restructured_invoice_url)} target="_blank" rel="noreferrer" className="font-medium underline" style={{ color: "var(--emerald)" }}>View</a>
+          )}
+        </div>
+      ) : (
+        <div className="rounded-xl p-3 space-y-2" style={{ background: "var(--bone)", border: "1px dashed var(--line)" }}>
+          <p className="text-xs" style={{ color: "var(--muted)" }}>Acting as trade-partner buyer on the customer's behalf? Restructure the invoice so the operator is named buyer of record + the customer is named consignee + UBO. Both parties must attest before the agent generates the new PDF.</p>
+          <PrimaryBtn onClick={() => setOpen(true)}><Sparkles size={12} /> Restructure as third-party trade</PrimaryBtn>
+        </div>
+      )}
+      {open && <ProformaRestructureModal tx={tx} onClose={() => setOpen(false)} onDone={() => { setOpen(false); onChanged && onChanged(); }} />}
+    </div>
+  );
+}
+
+function ProformaRestructureModal({ tx, onClose, onDone }) {
+  const { push } = useToast();
+  const auth = useAuth();
+  const [step, setStep] = useState(1);
+  const [operatorSigner, setOperatorSigner] = useState("");
+  const [customerSigner, setCustomerSigner] = useState(tx.customerName || "");
+  const [customerSignerEmail, setCustomerSignerEmail] = useState("");
+  const [customerSignerPhone, setCustomerSignerPhone] = useState(tx.customerPhone || "");
+  const [confirmationMethod, setConfirmationMethod] = useState("written_agreement");
+  const [confirmationNotes, setConfirmationNotes] = useState("");
+  const [extracting, setExtracting] = useState(false);
+  const [extracted, setExtracted] = useState(null);
+  const [extractError, setExtractError] = useState("");
+  const [operatorAddress, setOperatorAddress] = useState("");
+  const [operatorContact, setOperatorContact] = useState("");
+  const [consigneeAddress, setConsigneeAddress] = useState("");
+  const [formMResp, setFormMResp] = useState("operator");
+  const [generating, setGenerating] = useState(false);
+
+  const operatorName = auth.user?.user_metadata?.company || auth.user?.user_metadata?.full_name || auth.user?.email || "Operator";
+
+  useEffect(() => {
+    if (!tx?.invoiceUrl) return;
+    setExtracting(true);
+    extractProformaInvoice(tx.invoiceUrl).then((r) => {
+      setExtracting(false);
+      if (r.ok && r.data?.extracted) {
+        setExtracted(r.data.extracted);
+        if (r.data.extracted.ship_to_address) setConsigneeAddress(r.data.extracted.ship_to_address);
+      } else {
+        setExtractError(r.data?.error || r.error || "Could not extract invoice data");
+      }
+    });
+    /* eslint-disable-next-line react-hooks/exhaustive-deps */
+  }, []);
+
+  const completeRestructure = async () => {
+    if (generating || !auth.user || !extracted) return;
+    setGenerating(true);
+    try {
+      const { data: attestation, error: attErr } = await supabase.from("trade_partner_attestations").insert({
+        quote_id: tx.dbId,
+        operator_user_id: auth.user.id,
+        customer_id: tx.customerId || null,
+        attestation_text: TRADE_PARTNER_ATTESTATION_TEXT,
+        operator_attested_at: new Date().toISOString(),
+        operator_signer_name: operatorSigner || operatorName,
+        customer_attested_at: new Date().toISOString(),
+        customer_signer_name: customerSigner,
+        customer_signer_email: customerSignerEmail || null,
+        customer_signer_phone: customerSignerPhone || null,
+        form_m_responsibility: formMResp,
+        notes: `Customer confirmation method: ${confirmationMethod}${confirmationNotes ? ` · ${confirmationNotes}` : ""}`,
+      }).select("id").single();
+      if (attErr) throw attErr;
+
+      const pdf = generateProformaRestructuredPdf({
+        operatorName,
+        supplier: { name: extracted.vendor_name, address: extracted.vendor_address, contact: extracted.vendor_contact, tax_id: extracted.vendor_tax_id },
+        buyer: { name: operatorName, address: operatorAddress, contact: operatorContact },
+        consignee: { name: customerSigner || tx.customerName, address: consigneeAddress, contact: customerSignerEmail || customerSignerPhone },
+        lineItems: extracted.line_items || [],
+        totals: { subtotal: extracted.subtotal, tax: extracted.tax, shipping: extracted.shipping, total: extracted.total_amount, currency: extracted.currency },
+        originalInvoice: extracted,
+        formMResponsibility: formMResp,
+      });
+      const blob = pdf.output("blob");
+
+      const up = await uploadProformaRestructuredInvoice(tx.dbId, blob);
+      if (!up.ok) throw new Error(up.error || "Upload failed");
+
+      const { error: updErr } = await supabase.from("quotes").update({
+        proforma_restructured: true,
+        proforma_original_invoice_url: tx.invoiceUrl,
+        proforma_restructured_invoice_url: up.url,
+        proforma_restructured_invoice_path: up.path,
+        proforma_restructured_at: new Date().toISOString(),
+        proforma_attestation_id: attestation.id,
+        form_m_responsibility: formMResp,
+        invoice_url: up.url,
+        invoice_uploaded_at: new Date().toISOString(),
+        invoice_uploaded_by: "operator-restructured",
+      }).eq("id", tx.dbId);
+      if (updErr) throw updErr;
+
+      runComplianceReview(tx.dbId).catch(() => {});
+      runAgentInvoiceReview(tx.dbId, "operator-restructured").catch(() => {});
+      downloadProformaRestructuredPdf(pdf, tx);
+
+      push("Invoice restructured · attestation recorded · audit trail preserved", "success");
+      onDone && onDone();
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error("Restructure failed:", err);
+      push(`Couldn't restructure: ${err?.message || err}`, "warn");
+    } finally {
+      setGenerating(false);
+    }
+  };
+
+  const canAdvance1 = !!operatorSigner && !!customerSigner && !!confirmationMethod;
+  const canFinish = !!extracted && !generating;
+
+  return (
+    <Modal open={true} onClose={onClose} title="Restructure as third-party trade" size="xl">
+      <div className="space-y-5">
+        <div className="flex items-center gap-2 font-mono text-[10px] uppercase tracking-wider" style={{ color: "var(--muted)" }}>
+          {[1, 2, 3].map((s) => (
+            <React.Fragment key={s}>
+              <div className="flex items-center gap-1.5">
+                <div className="h-1.5 w-1.5 rounded-full" style={{ background: step >= s ? "var(--emerald)" : "var(--line)" }} />
+                <span style={{ color: step === s ? "var(--ink)" : "var(--muted)" }}>{s === 1 ? "Attest" : s === 2 ? "Review" : "Confirm"}</span>
+              </div>
+              {s < 3 && <div className="h-px w-6" style={{ background: "var(--line)" }} />}
+            </React.Fragment>
+          ))}
+        </div>
+
+        {step === 1 && (
+          <div className="space-y-4">
+            <div className="rounded-xl p-4 text-xs" style={{ background: "var(--bone)", border: "1px solid var(--line)", color: "var(--muted)" }}>
+              <div className="font-semibold mb-2" style={{ color: "var(--ink)" }}>Trade-partner attestation</div>
+              {TRADE_PARTNER_ATTESTATION_TEXT}
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Field label="Operator signer (you)"><Input value={operatorSigner} onChange={(e) => setOperatorSigner(e.target.value)} placeholder={operatorName} /></Field>
+              <Field label="Customer signer name"><Input value={customerSigner} onChange={(e) => setCustomerSigner(e.target.value)} placeholder="Full legal name" /></Field>
+              <Field label="Customer email"><Input value={customerSignerEmail} onChange={(e) => setCustomerSignerEmail(e.target.value)} type="email" /></Field>
+              <Field label="Customer phone"><Input value={customerSignerPhone} onChange={(e) => setCustomerSignerPhone(e.target.value)} /></Field>
+              <Field label="Customer confirmation method">
+                <Select value={confirmationMethod} onChange={(e) => setConfirmationMethod(e.target.value)}>
+                  <option value="written_agreement">Signed written agreement</option>
+                  <option value="whatsapp">WhatsApp confirmation</option>
+                  <option value="email">Email confirmation</option>
+                  <option value="in_person">In-person verbal</option>
+                  <option value="other">Other</option>
+                </Select>
+              </Field>
+              <Field label="Notes (optional)"><Input value={confirmationNotes} onChange={(e) => setConfirmationNotes(e.target.value)} placeholder="e.g. dated 2026-06-10" /></Field>
+            </div>
+            <div className="flex justify-between">
+              <SecondaryBtn onClick={onClose}>Cancel</SecondaryBtn>
+              <PrimaryBtn onClick={() => setStep(2)} disabled={!canAdvance1}>Continue <ArrowRight size={12} /></PrimaryBtn>
+            </div>
+          </div>
+        )}
+
+        {step === 2 && (
+          <div className="space-y-4">
+            {extracting && (
+              <div className="rounded-xl p-6 text-center text-sm" style={{ background: "var(--bone)", border: "1px solid var(--line)", color: "var(--muted)" }}>
+                <Loader2 className="animate-spin inline mr-2" size={14} /> Extracting invoice data via Claude vision…
+              </div>
+            )}
+            {extractError && (
+              <div className="rounded-xl p-3 text-sm" style={{ background: "#fef3c7", border: "1px solid rgba(146,64,14,0.2)", color: "#92400e" }}>
+                {extractError}
+              </div>
+            )}
+            {extracted && (
+              <div className="space-y-3">
+                <div className="rounded-xl p-3" style={{ background: "var(--bone)", border: "1px solid var(--line)" }}>
+                  <div className="font-mono text-[10px] uppercase tracking-wider mb-2" style={{ color: "var(--muted)" }}>Extracted from original invoice</div>
+                  <div className="text-sm space-y-1" style={{ color: "var(--ink)" }}>
+                    <div><span className="font-semibold">Supplier:</span> {extracted.vendor_name || "—"}</div>
+                    <div><span className="font-semibold">Total:</span> {extracted.currency || ""} {extracted.total_amount ?? "—"}</div>
+                    <div><span className="font-semibold">Items:</span> {extracted.line_items?.length || 0}</div>
+                    <div><span className="font-semibold">Original buyer named:</span> {extracted.bill_to_name || "—"}</div>
+                    <div><span className="font-semibold">Original consignee named:</span> {extracted.ship_to_name || "—"}</div>
+                  </div>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <Field label="Operator address (buyer on restructured)"><Input value={operatorAddress} onChange={(e) => setOperatorAddress(e.target.value)} placeholder="Your registered business address" /></Field>
+                  <Field label="Operator contact"><Input value={operatorContact} onChange={(e) => setOperatorContact(e.target.value)} placeholder="phone / email" /></Field>
+                  <Field label="Consignee address (end customer)"><Input value={consigneeAddress} onChange={(e) => setConsigneeAddress(e.target.value)} placeholder="Delivery address" /></Field>
+                </div>
+              </div>
+            )}
+            <div className="flex justify-between">
+              <SecondaryBtn onClick={() => setStep(1)}><ArrowLeft size={12} /> Back</SecondaryBtn>
+              <PrimaryBtn onClick={() => setStep(3)} disabled={!extracted}>Continue <ArrowRight size={12} /></PrimaryBtn>
+            </div>
+          </div>
+        )}
+
+        {step === 3 && (
+          <div className="space-y-4">
+            <Field label="Form M responsibility">
+              <Select value={formMResp} onChange={(e) => setFormMResp(e.target.value)}>
+                <option value="operator">Operator (named buyer) opens Form M</option>
+                <option value="customer">End customer (UBO) opens Form M</option>
+                <option value="not_applicable">Not applicable for this transaction</option>
+              </Select>
+            </Field>
+            <div className="rounded-xl p-3 text-xs" style={{ background: "rgba(15,95,63,0.04)", border: "1px solid rgba(15,95,63,0.15)", color: "var(--muted)" }}>
+              When you click Generate, the agent will: (1) record the attestation, (2) build a new restructured invoice PDF, (3) upload it as the operative invoice for this quote, (4) preserve the original invoice in the audit trail, and (5) re-run compliance review on the restructured version. <strong style={{ color: "var(--ink)" }}>Nothing is sent externally yet — the restructured invoice flows to the PSP only when you submit the quote.</strong>
+            </div>
+            <div className="flex justify-between">
+              <SecondaryBtn onClick={() => setStep(2)}><ArrowLeft size={12} /> Back</SecondaryBtn>
+              <PrimaryBtn onClick={completeRestructure} disabled={!canFinish}>
+                {generating ? <><Loader2 className="animate-spin" size={12} /> Generating…</> : <><Sparkles size={12} /> Generate restructured invoice</>}
+              </PrimaryBtn>
+            </div>
+          </div>
+        )}
+      </div>
+    </Modal>
+  );
+}
+
 function BDCBrandSettings() {
   const { push } = useToast();
   const auth = useAuth();
@@ -11087,7 +11335,7 @@ function BDCTransactions({ jumpToTransactionId, onJumpHandled } = {}) {
     setLoading(true);
     const { data, error } = await supabase
       .from("quotes")
-      .select("id, customer_name, customer_phone, customer_id, beneficiary, destination, amount, currency, rate, ngn_total, rail, status, submitted_at, created_at, markup_pct, cost_basis_ngn, recipient_id, recipient_external_account_id, cedar_business_request_id, cedar_request_status, cedar_purpose, cedar_invoice_url, cedar_last_error, cedar_request_status_updated_at, cedar_bank_details, cedar_quote_rate, cedar_deposit_amount_minor, cedar_deposit_currency, cedar_payout_status, invoice_url, invoice_uploaded_at, invoice_uploaded_by, customer_deposit_slip_url, customer_deposit_slip_uploaded_at, review_decision, review_reason, review_details, review_tier, reviewed_at, operator_review_override, operator_review_override_at, operator_review_override_reason, invoice_total_amount, invoice_total_currency, invoice_payment_label, pdf_url, pdf_path, pdf_generated_at, purpose_note, recipient_receipt_pdf_url, recipient_receipt_pdf_path, recipient_receipt_issued_at, bdc_name")
+      .select("id, customer_name, customer_phone, customer_id, beneficiary, destination, amount, currency, rate, ngn_total, rail, status, submitted_at, created_at, markup_pct, cost_basis_ngn, recipient_id, recipient_external_account_id, cedar_business_request_id, cedar_request_status, cedar_purpose, cedar_invoice_url, cedar_last_error, cedar_request_status_updated_at, cedar_bank_details, cedar_quote_rate, cedar_deposit_amount_minor, cedar_deposit_currency, cedar_payout_status, invoice_url, invoice_uploaded_at, invoice_uploaded_by, customer_deposit_slip_url, customer_deposit_slip_uploaded_at, review_decision, review_reason, review_details, review_tier, reviewed_at, operator_review_override, operator_review_override_at, operator_review_override_reason, invoice_total_amount, invoice_total_currency, invoice_payment_label, pdf_url, pdf_path, pdf_generated_at, purpose_note, recipient_receipt_pdf_url, recipient_receipt_pdf_path, recipient_receipt_issued_at, bdc_name, proforma_restructured, proforma_original_invoice_url, proforma_restructured_invoice_url, proforma_restructured_at, form_m_responsibility")
       .order("created_at", { ascending: false })
       .limit(50);
     if (error) {
@@ -11540,6 +11788,11 @@ function TxDrawer({ tx, onClose, onRefresh }) {
             || (tx.cedarRequestStatus || "").toUpperCase().includes("COMPLETED")
             || (tx.cedarPayoutStatus || "").toUpperCase().includes("ARRIVED")
           ) && <RecipientReceiptPanel tx={tx} onChanged={() => onRefresh && onRefresh()} />
+        )}
+
+        {/* Proforma restructure — operator can act as trade-partner buyer of record on customer's behalf. Requires existing invoice + attestation. */}
+        {tx.dbId && tx.invoiceUrl && (
+          <ProformaRestructureCard tx={tx} onChanged={() => onRefresh && onRefresh()} />
         )}
 
         {/* Invoice — primary uploader is the customer (via portal); operator can upload here on customer's behalf. Required before customer can approve. */}

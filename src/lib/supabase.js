@@ -612,6 +612,62 @@ export async function runAgentInvoiceReview(quoteId, uploadedBy = "unknown") {
   return await callAgentFn("agent-invoice-review", { quote_id: quoteId, uploaded_by: uploadedBy });
 }
 
+// Proforma Invoice Agent — extraction service. Synchronous; returns the
+// extracted structured fields from the supplier invoice for the operator
+// to confirm in the Restructure wizard.
+export async function extractProformaInvoice(invoiceUrl) {
+  try {
+    const session = (await supabase.auth.getSession()).data.session;
+    if (!session) return { ok: false, error: "Not signed in" };
+    const res = await fetch(`${url}/functions/v1/agent-proforma-extract`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${session.access_token}`,
+        apikey: anonKey,
+      },
+      body: JSON.stringify({ invoice_url: invoiceUrl }),
+    });
+    let data = null;
+    try { data = await res.json(); } catch { /* */ }
+    return { ok: res.ok, status: res.status, data };
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error("extractProformaInvoice failed:", err);
+    return { ok: false, error: err?.message || String(err) };
+  }
+}
+
+// Upload the original supplier invoice (before restructure) into a
+// dedicated bucket path so it's preserved separately from the operative
+// (restructured) invoice the wire actually uses.
+export async function uploadProformaOriginalInvoice(quoteId, file) {
+  try {
+    const ext = (file.name && file.name.includes(".")) ? file.name.split(".").pop() : "pdf";
+    const path = `proforma-originals/${quoteId}/${Date.now()}.${ext}`;
+    const { error: upErr } = await supabase.storage.from("invoices").upload(path, file, { upsert: true });
+    if (upErr) return { ok: false, error: upErr.message };
+    const { data: pub } = supabase.storage.from("invoices").getPublicUrl(path);
+    return { ok: true, url: pub?.publicUrl, path };
+  } catch (err) {
+    return { ok: false, error: err?.message || String(err) };
+  }
+}
+
+// Upload the restructured invoice PDF (output of the proforma agent).
+// Distinct path so the audit trail is clean.
+export async function uploadProformaRestructuredInvoice(quoteId, blob) {
+  try {
+    const path = `proforma-restructured/${quoteId}/${Date.now()}.pdf`;
+    const { error: upErr } = await supabase.storage.from("invoices").upload(path, blob, { upsert: true, contentType: "application/pdf" });
+    if (upErr) return { ok: false, error: upErr.message };
+    const { data: pub } = supabase.storage.from("invoices").getPublicUrl(path);
+    return { ok: true, url: pub?.publicUrl, path };
+  } catch (err) {
+    return { ok: false, error: err?.message || String(err) };
+  }
+}
+
 // Shared transport for all agent Edge Function calls.
 async function callAgentFn(name, body) {
   try {

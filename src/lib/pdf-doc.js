@@ -977,6 +977,179 @@ export function downloadInvoicePdf(doc, invoice) {
 }
 
 // =============================================================================
+// Proforma restructured invoice PDF.
+// Restructures the original supplier invoice into a new formal invoice
+// where the OPERATOR is the buyer of record and the END CUSTOMER is the
+// consignee + ultimate beneficial owner. Preserves the original supplier
+// + line items + total + currency exactly. References the original
+// invoice number for the audit trail.
+// =============================================================================
+
+function buildProformaRestructuredPage(doc, args) {
+  const { supplier, buyer, consignee, lineItems, totals, originalInvoice, formMResponsibility, operatorName } = args;
+  const MARGIN_L = 18;
+  const PAGE_W = 210;
+  let y = 22;
+
+  // Top bar with "RESTRUCTURED" stamp
+  doc.setFillColor(INK);
+  doc.rect(0, 0, PAGE_W, 12, "F");
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(8);
+  doc.setTextColor("#c5f24a");
+  doc.text("RESTRUCTURED · THIRD-PARTY TRADE", MARGIN_L, 7.5);
+  doc.setFont("helvetica", "normal");
+  doc.setTextColor("#ffffff");
+  doc.text(`Original: ${originalInvoice?.invoice_number || "—"}`, PAGE_W - MARGIN_L, 7.5, { align: "right" });
+
+  y = 22;
+
+  // Header
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(24);
+  doc.setTextColor(INK);
+  doc.text("Invoice", MARGIN_L, y);
+  doc.setFont("courier", "normal");
+  doc.setFontSize(10);
+  doc.setTextColor(MUTED);
+  doc.text(originalInvoice?.invoice_number ? `REF/${originalInvoice.invoice_number}` : "—", PAGE_W - MARGIN_L, y, { align: "right" });
+  y += 6;
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(8);
+  doc.setTextColor(MUTED);
+  doc.text(`Restructured ${fmtDate(new Date().toISOString())} · Buyer-of-record substitution per trade-partner agreement`, MARGIN_L, y);
+  y += 12;
+
+  // Three-column parties block
+  const colW = (PAGE_W - 2 * MARGIN_L - 8) / 3;
+  const drawParty = (label, name, address, contact, taxId, accentColor) => (x) => {
+    doc.setDrawColor(LINE);
+    doc.setFillColor("#fafaf8");
+    doc.roundedRect(x, y, colW, 50, 2, 2, "FD");
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(8);
+    doc.setTextColor(accentColor || EMERALD);
+    doc.text(label.toUpperCase(), x + 4, y + 6);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(10);
+    doc.setTextColor(INK);
+    doc.text(String(name || "—").slice(0, 35), x + 4, y + 13);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8);
+    doc.setTextColor(MUTED);
+    if (address) doc.text(String(address).slice(0, 80), x + 4, y + 19, { maxWidth: colW - 8 });
+    if (contact) doc.text(String(contact).slice(0, 50), x + 4, y + 34, { maxWidth: colW - 8 });
+    if (taxId) doc.text(`Tax ID: ${String(taxId).slice(0, 30)}`, x + 4, y + 42, { maxWidth: colW - 8 });
+  };
+  drawParty("Supplier", supplier?.name, supplier?.address, supplier?.contact, supplier?.tax_id)(MARGIN_L);
+  drawParty("Buyer (Trade Partner)", buyer?.name || operatorName, buyer?.address, buyer?.contact, buyer?.tax_id, INK)(MARGIN_L + colW + 4);
+  drawParty("Consignee / UBO", consignee?.name, consignee?.address, consignee?.contact, consignee?.tax_id)(MARGIN_L + 2 * (colW + 4));
+  y += 56;
+
+  // Line items table
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(8);
+  doc.setTextColor(MUTED);
+  doc.text("DESCRIPTION", MARGIN_L, y);
+  doc.text("QTY", PAGE_W - MARGIN_L - 60, y, { align: "right" });
+  doc.text("UNIT", PAGE_W - MARGIN_L - 35, y, { align: "right" });
+  doc.text("AMOUNT", PAGE_W - MARGIN_L, y, { align: "right" });
+  y += 2;
+  doc.setDrawColor(LINE);
+  doc.line(MARGIN_L, y, PAGE_W - MARGIN_L, y);
+  y += 5;
+
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(9);
+  doc.setTextColor(INK);
+  (lineItems || []).forEach((it) => {
+    if (y > 250) {
+      doc.addPage();
+      y = 25;
+    }
+    doc.text(String(it.description || "—").slice(0, 70), MARGIN_L, y, { maxWidth: PAGE_W - MARGIN_L - 70 });
+    doc.setFont("courier", "normal");
+    doc.text(String(it.quantity ?? "—"), PAGE_W - MARGIN_L - 60, y, { align: "right" });
+    doc.text(String(it.unit_price != null ? fmtMoney(it.unit_price, totals?.currency) : "—"), PAGE_W - MARGIN_L - 35, y, { align: "right" });
+    doc.text(String(it.amount != null ? fmtMoney(it.amount, totals?.currency) : "—"), PAGE_W - MARGIN_L, y, { align: "right" });
+    doc.setFont("helvetica", "normal");
+    y += 6;
+  });
+
+  y += 4;
+  doc.setDrawColor(LINE);
+  doc.line(PAGE_W - MARGIN_L - 70, y, PAGE_W - MARGIN_L, y);
+  y += 6;
+
+  // Totals
+  const totalRow = (label, value, bold) => {
+    doc.setFont(bold ? "helvetica" : "helvetica", bold ? "bold" : "normal");
+    doc.setFontSize(bold ? 11 : 9);
+    doc.setTextColor(bold ? INK : MUTED);
+    doc.text(label, PAGE_W - MARGIN_L - 40, y);
+    doc.setFont("courier", bold ? "bold" : "normal");
+    doc.text(String(value), PAGE_W - MARGIN_L, y, { align: "right" });
+    y += bold ? 7 : 5;
+  };
+  if (totals?.subtotal != null) totalRow("Subtotal", fmtMoney(totals.subtotal, totals?.currency));
+  if (totals?.tax != null) totalRow("Tax", fmtMoney(totals.tax, totals?.currency));
+  if (totals?.shipping != null) totalRow("Shipping", fmtMoney(totals.shipping, totals?.currency));
+  totalRow("TOTAL", fmtMoney(totals?.total ?? 0, totals?.currency), true);
+
+  y += 4;
+
+  // Footer block — disclosures
+  if (y > 230) { doc.addPage(); y = 25; }
+  doc.setDrawColor(LINE);
+  doc.line(MARGIN_L, y, PAGE_W - MARGIN_L, y);
+  y += 6;
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(9);
+  doc.setTextColor(INK);
+  doc.text("Disclosures", MARGIN_L, y);
+  y += 5;
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(8);
+  doc.setTextColor(MUTED);
+  const discText = `This is a restructured invoice. The original supplier invoice (ref ${originalInvoice?.invoice_number || "—"}, dated ${originalInvoice?.invoice_date ? fmtDate(originalInvoice.invoice_date) : "—"}) named ${originalInvoice?.bill_to_name || "the consignee"} as the buyer. ${buyer?.name || operatorName} is acting as contractual trade-partner buyer on behalf of ${consignee?.name || "the consignee"}, who is the ultimate beneficial owner of the goods. Both parties have executed a trade-partner attestation prior to this restructure.`;
+  doc.text(discText, MARGIN_L, y, { maxWidth: PAGE_W - 2 * MARGIN_L });
+  y += 22;
+  if (originalInvoice?.payment_terms) {
+    doc.text(`Payment terms: ${originalInvoice.payment_terms}`, MARGIN_L, y);
+    y += 5;
+  }
+  if (originalInvoice?.incoterms) {
+    doc.text(`Incoterms: ${originalInvoice.incoterms}`, MARGIN_L, y);
+    y += 5;
+  }
+  if (formMResponsibility) {
+    const fmLabel = formMResponsibility === "operator" ? `${buyer?.name || operatorName} (operator) opens Form M` : formMResponsibility === "customer" ? `${consignee?.name || "Consignee"} (end customer) opens Form M` : "Form M not applicable";
+    doc.text(`Form M: ${fmLabel}`, MARGIN_L, y);
+    y += 5;
+  }
+  if (originalInvoice?.bank_details) {
+    y += 3;
+    doc.setFont("helvetica", "bold");
+    doc.text("Supplier bank details (as on original)", MARGIN_L, y);
+    y += 4;
+    doc.setFont("helvetica", "normal");
+    doc.text(String(originalInvoice.bank_details).slice(0, 400), MARGIN_L, y, { maxWidth: PAGE_W - 2 * MARGIN_L });
+  }
+}
+
+export function generateProformaRestructuredPdf(args) {
+  const doc = new jsPDF({ unit: "mm", format: "a4" });
+  buildProformaRestructuredPage(doc, args);
+  drawFooter(doc, doc.internal.getNumberOfPages(), 0);
+  return doc;
+}
+
+export function downloadProformaRestructuredPdf(doc, quote) {
+  const ref = (quote?.id || "quote").slice(0, 8).toUpperCase();
+  doc.save(`Restructured-${ref}-XaePay.pdf`);
+}
+
+// =============================================================================
 // Receipt — auto-generated when an invoice is marked paid. Acts as the
 // operator's proof-of-receipt to the customer. Receipt number is derived from
 // the invoice number (INV-XXXX → INV-XXXX/R) so we don't need a new sequence.
