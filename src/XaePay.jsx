@@ -10115,14 +10115,32 @@ function BDCAgent({ jumpToTransaction, hideToggle }) {
           }).eq("id", subjectId);
           channels.push({ channel: "Quote", status: "sent", detail: `rate ₦${out.suggested_rate}/$ · status: submitted` });
 
-          // Try WhatsApp template (works for first contact). The quote_notification
-          // template variables: {{1}} customer name, {{2}} amount, {{3}} rate,
-          // {{4}} ngn total, {{5}} (something — varies). If template variables
-          // don't fit cleanly, fall back to text (which only works if customer
-          // messaged us in the last 24h per Meta's policy).
+          // Use approved quote_notification template (5 vars):
+          //   {{1}} customer name, {{2}} reference, {{3}} amount,
+          //   {{4}} rate, {{5}} approval URL
+          // Delivers outside Meta's 24h window — works for first contact.
           const { data: q } = await supabase.from("quotes").select("customer_phone, customer_email, customer_id").eq("id", subjectId).maybeSingle();
-          if (q?.customer_phone && out.draft_message) {
-            await tryChannel("WhatsApp", () => sendWhatsAppText(q.customer_phone, out.draft_message), (r) => r?.ok ? "delivered" : "Meta 24h window — customer must message you first");
+          if (q?.customer_phone && out.customer_name) {
+            const ref = `QU-${subjectId.slice(0, 8).toUpperCase()}`;
+            const amountText = `${out.currency || "USD"} ${parseFloat(out.amount || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
+            const rateText = `₦${parseFloat(out.suggested_rate || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}/$`;
+            const approvalUrl = `https://xaepay.com/?quote=${subjectId}`;
+            await tryChannel(
+              "WhatsApp",
+              () => sendWhatsAppTemplate(
+                q.customer_phone,
+                "quote_notification",
+                "en",
+                [{ type: "body", parameters: [
+                  { type: "text", text: out.customer_name },
+                  { type: "text", text: ref },
+                  { type: "text", text: amountText },
+                  { type: "text", text: rateText },
+                  { type: "text", text: approvalUrl },
+                ]}]
+              ),
+              (r) => r?.ok ? "delivered via quote_notification template" : (r?.data?.data?.error?.message || r?.data?.error || "send failed")
+            );
           }
           if (q?.customer_email) {
             await tryChannel("Email", () => sendEmail({
