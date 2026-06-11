@@ -10134,8 +10134,18 @@ function BDCAgent({ jumpToTransaction, hideToggle }) {
           }
 
         } else if (task.job_type === "kyc_chase") {
-          if (out.customer_phone && out.draft_message) {
-            await tryChannel("WhatsApp", () => sendWhatsAppText(out.customer_phone, out.draft_message), (r) => r?.ok ? "delivered" : "Meta 24h window — customer must message you first");
+          if (out.customer_phone && out.customer_name) {
+            // Use the approved compliance_reminder WhatsApp template so the
+            // message delivers even outside the 24h session window. Template
+            // body is generic ("Proof of address expires in 14 days..."), but
+            // the email below carries the full personalized agent draft —
+            // WhatsApp serves as the always-deliverable ping.
+            await tryChannel("WhatsApp", () => sendWhatsAppTemplate(
+              out.customer_phone,
+              "compliance_reminder",
+              "en",
+              [{ type: "body", parameters: [{ type: "text", text: out.customer_name }] }]
+            ), (r) => r?.ok ? "delivered via compliance_reminder template" : (r?.data?.data?.error?.message || r?.data?.error || "send failed"));
           }
           if (out.customer_email) {
             // Fall back to a sensible subject + body if the agent's email draft
