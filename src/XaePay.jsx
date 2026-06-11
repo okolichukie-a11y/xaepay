@@ -8327,7 +8327,19 @@ function BDCDashboard({ session, initialCustomerId, onInitialCustomerHandled }) 
       {agentMode ? (
         // ============ AGENT COCKPIT — full-width agent view ============
         <div className="fade-in">
-          <BDCAgent jumpToTransaction={jumpToTransaction} hideToggle />
+          <BDCAgent
+            hideToggle
+            jumpToTransaction={async (txId) => {
+              // Flip to manual mode + jump to the transaction in one action.
+              // Otherwise the tab change is invisible because cockpit hides the
+              // tab nav. Persist the toggle change so re-render lands properly.
+              jumpToTransaction(txId);
+              if (auth.user) {
+                await supabase.from("operator_profiles").update({ agent_mode: false }).eq("auth_user_id", auth.user.id);
+                setAgentMode(false);
+              }
+            }}
+          />
         </div>
       ) : (
         // ============ NORMAL DASHBOARD — tabs + tab content ============
