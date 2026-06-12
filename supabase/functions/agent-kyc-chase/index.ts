@@ -123,7 +123,7 @@ Output ONLY valid JSON with this exact shape, no preamble:
           // body — at least the customer doesn't see markdown gibberish.
           draftWa = cleaned;
         }
-        reasoning = `Claude Haiku draft for ${notif.title}. Urgency ${urgency}.`;
+        reasoning = `AI draft for ${notif.title}. Urgency ${urgency}.`;
       }
     } catch (err) {
       console.error("Claude call failed:", err);

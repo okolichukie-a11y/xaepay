@@ -129,7 +129,7 @@ Output ONLY the draft message text. No preamble.`;
       if (aRes.ok) {
         const aData = await aRes.json();
         draftMessage = aData?.content?.[0]?.text?.trim() || "";
-        reasoning = `Claude Haiku draft based on amount ${quote.currency} ${quote.amount}, destination ${quote.destination || "n/a"}, compliance status ${review?.review_decision || "pending"}.`;
+        reasoning = `AI draft based on amount ${quote.currency} ${quote.amount}, destination ${quote.destination || "n/a"}, compliance status ${review?.review_decision || "pending"}.`;
       }
     } catch (err) {
       console.error("Claude call failed:", err);

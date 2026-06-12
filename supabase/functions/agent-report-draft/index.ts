@@ -93,7 +93,7 @@ Output ONLY valid JSON, no preamble:
           const parsed = JSON.parse(cleaned);
           draftSubject = parsed.subject || "";
           draftBody = parsed.body || "";
-          reasoning = `Claude Haiku draft. Notable pattern: ${parsed.notable_pattern || "none flagged"}.`;
+          reasoning = `AI draft. Notable pattern: ${parsed.notable_pattern || "none flagged"}.`;
         } catch {
           draftSubject = `${reportTypeLabel} · ${report.period_label}`;
           draftBody = cleaned;

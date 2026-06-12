@@ -10657,7 +10657,10 @@ function ProformaRestructureModal({ tx, onClose, onDone }) {
         setExtracted(r.data.extracted);
         if (r.data.extracted.ship_to_address) setConsigneeAddress(r.data.extracted.ship_to_address);
       } else {
-        setExtractError(r.data?.error || r.error || "Could not extract invoice data");
+        const errMsg = r.data?.error || r.error || "Could not extract invoice data";
+        const errDetail = r.data?.detail ? ` — ${r.data.detail}` : "";
+        const errStatus = r.data?.status ? ` (HTTP ${r.data.status})` : "";
+        setExtractError(`${errMsg}${errStatus}${errDetail}`);
       }
     });
     /* eslint-disable-next-line react-hooks/exhaustive-deps */

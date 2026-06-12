@@ -121,7 +121,7 @@ Output ONLY valid JSON, no preamble:
             matchStatus = "amount_mismatch";
           }
         }
-        reasoning = `Claude Haiku vision extracted: amount=${extracted.amount}, currency=${extracted.currency}, ref=${extracted.reference}. Expected ${invoice.currency} ${expectedAmount}.`;
+        reasoning = `AI vision extracted: amount=${extracted.amount}, currency=${extracted.currency}, ref=${extracted.reference}. Expected ${invoice.currency} ${expectedAmount}.`;
       }
     } catch (err) {
       console.error("Claude vision failed:", err);
