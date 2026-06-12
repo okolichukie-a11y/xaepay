@@ -58,7 +58,7 @@ Deno.serve(async (req) => {
     await fetch(`${SUPABASE_URL}/functions/v1/compliance-review`, {
       method: "POST",
       headers: { "Content-Type": "application/json", "Authorization": `Bearer ${SERVICE_ROLE_KEY}`, "apikey": SERVICE_ROLE_KEY },
-      body: JSON.stringify({ quote_id: quoteId }),
+      body: JSON.stringify({ quoteId }),
     });
   } catch (e) {
     console.error("compliance-review call failed:", e);
