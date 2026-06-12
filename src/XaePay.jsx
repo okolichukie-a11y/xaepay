@@ -9951,6 +9951,37 @@ function BDCRegulatoryReports() {
 // confirms, payment matches, report drafts) as agent_tasks rows. The operator
 // reviews, edits, and approves each one — nothing auto-sends in V1.
 // =============================================================================
+
+// Catches render errors thrown inside TxDrawer so a bad row of quote data
+// doesn't bring down the whole cockpit. Surfaces the message + stack inline
+// in place of the drawer so we can diagnose without DevTools.
+class DrawerErrorBoundary extends React.Component {
+  constructor(props) { super(props); this.state = { error: null }; }
+  static getDerivedStateFromError(error) { return { error }; }
+  componentDidCatch(error, info) {
+    // eslint-disable-next-line no-console
+    console.error("Drawer crashed:", error, info);
+  }
+  render() {
+    if (this.state.error) {
+      const msg = String(this.state.error?.message || this.state.error);
+      const stack = this.state.error?.stack || "";
+      return (
+        <div style={{ position: "fixed", top: 0, right: 0, width: "480px", maxWidth: "100vw", height: "100vh", background: "white", zIndex: 91, padding: "20px", overflow: "auto", borderLeft: "1px solid #e5e5e5", fontFamily: "system-ui, -apple-system, sans-serif" }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "12px" }}>
+            <h3 style={{ color: "#991b1b", fontWeight: 600, fontSize: "18px", margin: 0 }}>Drawer crashed</h3>
+            <button onClick={() => this.setState({ error: null })} style={{ background: "#0a0b0d", color: "white", border: "none", padding: "6px 12px", borderRadius: "8px", cursor: "pointer", fontSize: "12px" }}>Close</button>
+          </div>
+          <p style={{ fontSize: "11px", color: "#6b7280", marginBottom: "12px" }}>Copy this and paste it back to Claude — it's the exact error.</p>
+          <pre style={{ background: "#fee2e2", padding: "12px", borderRadius: "8px", fontSize: "11px", whiteSpace: "pre-wrap", wordBreak: "break-word", color: "#991b1b", marginBottom: "12px" }}>{msg}</pre>
+          <pre style={{ background: "#f3f4f6", padding: "12px", borderRadius: "8px", fontSize: "10px", whiteSpace: "pre-wrap", wordBreak: "break-word", maxHeight: "400px", overflow: "auto", color: "#374151" }}>{stack}</pre>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 function BDCAgent({ jumpToTransaction, hideToggle }) {
   const { push } = useToast();
   const auth = useAuth();
@@ -10415,7 +10446,9 @@ function BDCAgent({ jumpToTransaction, hideToggle }) {
 
       {/* Inline quote drawer — opens IN the cockpit on "Open quote →" click,
           so the operator doesn't bounce to manual mode to see context. */}
-      <TxDrawer tx={drawerTx} onClose={() => setDrawerTx(null)} onRefresh={fetchTasks} />
+      <DrawerErrorBoundary>
+        <TxDrawer tx={drawerTx} onClose={() => setDrawerTx(null)} onRefresh={fetchTasks} />
+      </DrawerErrorBoundary>
     </div>
   );
 }
