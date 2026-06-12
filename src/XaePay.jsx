@@ -10190,27 +10190,46 @@ function BDCAgent({ jumpToTransaction, hideToggle }) {
 
         } else if (task.job_type === "kyc_chase") {
           if (out.customer_phone && out.customer_name) {
-            // Try compliance_reminder template first (works outside 24h);
-            // if Meta rejects (param count mismatch, language issue), fall
-            // back to text which only works in the 24h window.
+            // Pick the right granular template based on notification context.
+            // notif_title format from compliance-watchman:
+            //   "<Customer> — missing <DocType>"            → compliance_doc_request
+            //   "<Customer> — <DocType> expiring soon"      → compliance_doc_expiring
+            const title = out.notif_title || "";
+            const isExpiring = /expiring/i.test(title);
+            const docMatch = isExpiring
+              ? title.match(/—\s*(.+?)\s*expiring/i)
+              : title.match(/—\s*missing\s*(.+)/i);
+            const docLabel = (docMatch?.[1] || "compliance document").trim();
+            const portalUrl = "https://xaepay.com/";
+            const expiresIn = "14 days";
+
+            const templateName = isExpiring ? "compliance_doc_expiring" : "compliance_doc_request";
+            const params = isExpiring
+              ? [
+                  { type: "text", text: out.customer_name },
+                  { type: "text", text: docLabel },
+                  { type: "text", text: expiresIn },
+                ]
+              : [
+                  { type: "text", text: out.customer_name },
+                  { type: "text", text: docLabel },
+                  { type: "text", text: portalUrl },
+                ];
+
             tryChannel(
               "WhatsApp",
               async () => {
-                const r = await sendWhatsAppTemplate(
-                  out.customer_phone,
-                  "compliance_reminder",
-                  "en",
-                  [{ type: "body", parameters: [{ type: "text", text: out.customer_name }] }]
-                );
-                if (r?.ok) return r;
+                const r = await sendWhatsAppTemplate(out.customer_phone, templateName, "en", [{ type: "body", parameters: params }]);
+                if (r?.ok) return { ok: true, data: { _detail: `delivered via ${templateName}` } };
+                // Template failed — fall back to free-form text (only works inside 24h window)
                 if (out.draft_message) {
                   const t = await sendWhatsAppText(out.customer_phone, out.draft_message);
-                  if (t?.ok) return { ok: true, data: { _detail: "delivered via text (template rejected)" } };
+                  if (t?.ok) return { ok: true, data: { _detail: "delivered via text fallback (template rejected)" } };
                   return t;
                 }
                 return r;
               },
-              (r) => r?.ok ? (r?.data?._detail || "delivered via compliance_reminder template") : (r?.data?.data?.error?.message || r?.data?.error || "send failed")
+              (r) => r?.ok ? r?.data?._detail : (r?.data?.data?.error?.message || r?.data?.error || "send failed")
             );
           }
           if (out.customer_email) {
