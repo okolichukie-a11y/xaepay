@@ -9964,21 +9964,13 @@ function BDCAgent({ jumpToTransaction, hideToggle }) {
   // cockpit. Same TxDrawer the transactions tab uses.
   const [drawerTx, setDrawerTx] = useState(null);
   const openQuoteDrawer = async (quoteId) => {
-    if (!quoteId) { push("Missing quote reference.", "warn"); return; }
-    let q = null;
-    try {
-      const { data, error } = await supabase
-        .from("quotes")
-        .select("*")
-        .eq("id", quoteId)
-        .maybeSingle();
-      if (error) { push(`Couldn't load quote: ${error.message}`, "warn"); return; }
-      if (!data) { push("Quote not found — it may have been deleted.", "warn"); return; }
-      q = data;
-    } catch (err) {
-      push(`Couldn't load quote: ${err?.message || "network error"}`, "warn");
-      return;
-    }
+    if (!quoteId) return;
+    const { data: q, error } = await supabase
+      .from("quotes")
+      .select("id, customer_name, customer_phone, customer_id, beneficiary, destination, amount, currency, rate, ngn_total, rail, status, submitted_at, created_at, markup_pct, cost_basis_ngn, recipient_id, recipient_external_account_id, cedar_business_request_id, cedar_request_status, cedar_purpose, cedar_invoice_url, cedar_last_error, cedar_request_status_updated_at, cedar_bank_details, cedar_quote_rate, cedar_deposit_amount_minor, cedar_deposit_currency, cedar_payout_status, invoice_url, invoice_uploaded_at, invoice_uploaded_by, customer_deposit_slip_url, customer_deposit_slip_uploaded_at, review_decision, review_reason, review_details, review_tier, reviewed_at, operator_review_override, operator_review_override_at, operator_review_override_reason, invoice_total_amount, invoice_total_currency, invoice_payment_label, pdf_url, pdf_path, pdf_generated_at, purpose_note, recipient_receipt_pdf_url, recipient_receipt_pdf_path, recipient_receipt_issued_at, bdc_name, proforma_restructured, proforma_original_invoice_url, proforma_restructured_invoice_url, proforma_restructured_at, form_m_responsibility")
+      .eq("id", quoteId)
+      .maybeSingle();
+    if (error || !q) { push(`Couldn't load quote: ${error?.message || "not found"}`, "warn"); return; }
     setDrawerTx({
       id: `XP-${q.id.slice(0, 4).toUpperCase()}`,
       dbId: q.id,
@@ -10430,12 +10422,6 @@ function BDCAgent({ jumpToTransaction, hideToggle }) {
 
 function AgentTaskRow({ task, onDecide, onJumpToQuote, compact }) {
   const [open, setOpen] = useState(!compact);
-  const [opening, setOpening] = useState(false);
-  const handleOpenQuote = async () => {
-    if (opening || !task.subject_id) return;
-    setOpening(true);
-    try { await onJumpToQuote(task.subject_id); } finally { setOpening(false); }
-  };
   const out = task.agent_output || {};
   const risk = task.agent_risk_level || "low";
   const riskColor = risk === "critical" || risk === "high" ? "#991b1b" : risk === "medium" ? "#92400e" : "var(--emerald)";
@@ -10559,9 +10545,7 @@ function AgentTaskRow({ task, onDecide, onJumpToQuote, compact }) {
               <PrimaryBtn onClick={() => onDecide(task, "approved")}><Check size={12} /> Approve draft</PrimaryBtn>
               <SecondaryBtn onClick={() => onDecide(task, "rejected", "Operator rejected the draft")}><X size={12} /> Reject</SecondaryBtn>
               {jobType === "quote_review" && task.subject_id && onJumpToQuote && (
-                <button onClick={handleOpenQuote} disabled={opening} className="font-mono text-[10px] uppercase tracking-wider underline inline-flex items-center gap-1 disabled:opacity-60" style={{ color: "var(--emerald)" }}>
-                  {opening ? <><Loader2 size={11} className="animate-spin" /> Opening…</> : <>Open quote →</>}
-                </button>
+                <button onClick={() => onJumpToQuote(task.subject_id)} className="font-mono text-[10px] uppercase tracking-wider underline" style={{ color: "var(--emerald)" }}>Open quote →</button>
               )}
               <button onClick={() => onDecide(task, "dismissed")} className="font-mono text-[10px] uppercase tracking-wider underline ml-auto" style={{ color: "var(--muted)" }}>Dismiss</button>
             </div>
