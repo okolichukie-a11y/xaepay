@@ -13423,7 +13423,8 @@ function CedarSubmitPanel({ tx, onSubmitted }) {
         const decision = (tx.reviewDecision || "").toLowerCase();
         const tier = tx.reviewTier || "";
         const requiresReview = ["verified", "documented", "pro"].includes(tier);
-        const failedChecks = (tx.reviewDetails && tx.reviewDetails.checks || []).filter((c) => !c.pass);
+        const rawChecks = tx.reviewDetails && tx.reviewDetails.checks;
+        const failedChecks = Array.isArray(rawChecks) ? rawChecks.filter((c) => !c.pass) : [];
         if (decision === "rejected") {
           return (
             <div className="rounded-lg p-3 text-xs space-y-2" style={{ background: "#fee2e2", color: "#991b1b" }}>
@@ -13813,7 +13814,7 @@ function ComplianceReviewPanel({ tx, onChanged }) {
 
   const decision = (tx.reviewDecision || "").toLowerCase();
   const tier = tx.reviewTier || "verified";
-  const checks = (tx.reviewDetails && tx.reviewDetails.checks) || [];
+  const checks = Array.isArray(tx.reviewDetails && tx.reviewDetails.checks) ? tx.reviewDetails.checks : [];
 
   // "In flight" = invoice attached + no decision yet + never reviewed (or reviewed
   // before this invoice was uploaded). The runComplianceReview call fires async
