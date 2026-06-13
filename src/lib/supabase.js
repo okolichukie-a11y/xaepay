@@ -645,9 +645,9 @@ export async function uploadProformaOriginalInvoice(quoteId, file) {
   try {
     const ext = (file.name && file.name.includes(".")) ? file.name.split(".").pop() : "pdf";
     const path = `proforma-originals/${quoteId}/${Date.now()}.${ext}`;
-    const { error: upErr } = await supabase.storage.from("invoices").upload(path, file, { upsert: true });
+    const { error: upErr } = await supabase.storage.from("cedar-files").upload(path, file, { upsert: true });
     if (upErr) return { ok: false, error: upErr.message };
-    const { data: pub } = supabase.storage.from("invoices").getPublicUrl(path);
+    const { data: pub } = supabase.storage.from("cedar-files").getPublicUrl(path);
     return { ok: true, url: pub?.publicUrl, path };
   } catch (err) {
     return { ok: false, error: err?.message || String(err) };
@@ -659,9 +659,9 @@ export async function uploadProformaOriginalInvoice(quoteId, file) {
 export async function uploadProformaRestructuredInvoice(quoteId, blob) {
   try {
     const path = `proforma-restructured/${quoteId}/${Date.now()}.pdf`;
-    const { error: upErr } = await supabase.storage.from("invoices").upload(path, blob, { upsert: true, contentType: "application/pdf" });
+    const { error: upErr } = await supabase.storage.from("cedar-files").upload(path, blob, { upsert: true, contentType: "application/pdf" });
     if (upErr) return { ok: false, error: upErr.message };
-    const { data: pub } = supabase.storage.from("invoices").getPublicUrl(path);
+    const { data: pub } = supabase.storage.from("cedar-files").getPublicUrl(path);
     return { ok: true, url: pub?.publicUrl, path };
   } catch (err) {
     return { ok: false, error: err?.message || String(err) };
