@@ -668,6 +668,34 @@ export async function uploadProformaRestructuredInvoice(quoteId, blob) {
   }
 }
 
+// Standalone proforma uploads — same bucket as the quote-linked flow but
+// a different path prefix so they're easy to identify in storage. `id` is
+// the standalone_proformas row id (a UUID, not a quote id).
+export async function uploadStandaloneProformaOriginal(id, file) {
+  try {
+    const ext = (file.name && file.name.includes(".")) ? file.name.split(".").pop() : "pdf";
+    const path = `proforma-standalone-originals/${id}/${Date.now()}.${ext}`;
+    const { error: upErr } = await supabase.storage.from("cedar-files").upload(path, file, { upsert: true });
+    if (upErr) return { ok: false, error: upErr.message };
+    const { data: pub } = supabase.storage.from("cedar-files").getPublicUrl(path);
+    return { ok: true, url: pub?.publicUrl, path };
+  } catch (err) {
+    return { ok: false, error: err?.message || String(err) };
+  }
+}
+
+export async function uploadStandaloneProformaRestructured(id, blob) {
+  try {
+    const path = `proforma-standalone-restructured/${id}/${Date.now()}.pdf`;
+    const { error: upErr } = await supabase.storage.from("cedar-files").upload(path, blob, { upsert: true, contentType: "application/pdf" });
+    if (upErr) return { ok: false, error: upErr.message };
+    const { data: pub } = supabase.storage.from("cedar-files").getPublicUrl(path);
+    return { ok: true, url: pub?.publicUrl, path };
+  } catch (err) {
+    return { ok: false, error: err?.message || String(err) };
+  }
+}
+
 // Shared transport for all agent Edge Function calls.
 async function callAgentFn(name, body) {
   try {

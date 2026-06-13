@@ -7,7 +7,7 @@ import {
   ArrowLeft, ArrowLeftRight, Loader2, Layers, TrendingUp, Wallet, DollarSign, Mail,
   RefreshCw, ShieldCheck, Paperclip, Cpu, Check,
 } from "lucide-react";
-import { supabase, sendWhatsAppText, sendWhatsAppTemplate, fetchCedarRate, submitCustomerToCedar, submitRecipientToCedar, submitReceiverAccountToCedar, submitCedarTransaction, approveCedarQuote, confirmCedarDeposit, cancelCedarTransaction, uploadCedarFile, uploadFileBoth, uploadInvoicePdf, uploadInvoicePaymentProof, uploadReceiptPdf, uploadRecipientReceiptPdf, uploadBrandLogo, uploadRegulatoryReportFile, pickServiceProviderForQuote, runComplianceReview, runComplianceWatchman, submitDocumentToCedar, runAgentQuoteReview, runAgentKycChase, runAgentPaymentMatch, runAgentReportDraft, runAgentInvoiceReview, extractProformaInvoice, uploadProformaOriginalInvoice, uploadProformaRestructuredInvoice, sendEmail, safeUrl, logAuditEvent, getPlatformSettingInt } from "./lib/supabase.js";
+import { supabase, sendWhatsAppText, sendWhatsAppTemplate, fetchCedarRate, submitCustomerToCedar, submitRecipientToCedar, submitReceiverAccountToCedar, submitCedarTransaction, approveCedarQuote, confirmCedarDeposit, cancelCedarTransaction, uploadCedarFile, uploadFileBoth, uploadInvoicePdf, uploadInvoicePaymentProof, uploadReceiptPdf, uploadRecipientReceiptPdf, uploadBrandLogo, uploadRegulatoryReportFile, pickServiceProviderForQuote, runComplianceReview, runComplianceWatchman, submitDocumentToCedar, runAgentQuoteReview, runAgentKycChase, runAgentPaymentMatch, runAgentReportDraft, runAgentInvoiceReview, extractProformaInvoice, uploadProformaOriginalInvoice, uploadProformaRestructuredInvoice, uploadStandaloneProformaOriginal, uploadStandaloneProformaRestructured, sendEmail, safeUrl, logAuditEvent, getPlatformSettingInt } from "./lib/supabase.js";
 import { generateQuotePdf, uploadQuotePdf, downloadQuotePdf } from "./lib/pdf.js";
 import { generateCompliancePackPdf, downloadCompliancePackPdf, generateTransactionConfirmationPdf, downloadTransactionConfirmationPdf, generateInvoicePdf, downloadInvoicePdf, generateReceiptPdf, downloadReceiptPdf, generateRecipientReceiptPdf, downloadRecipientReceiptPdf, generateMonthlyTransactionReportPdf, downloadRegulatoryReportPdf, buildTransactionsCsv, generateQuarterlyCustomerActivityReportPdf, buildCustomerActivityCsv, generateProformaRestructuredPdf, downloadProformaRestructuredPdf, generateSuspiciousTransactionReportPdf, buildSuspiciousTransactionCsv } from "./lib/pdf-doc.js";
 // Route pages are lazy-loaded so the homepage bundle doesn't carry their
@@ -8460,6 +8460,8 @@ function BDCInvoices() {
   const [loading, setLoading] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const [selected, setSelected] = useState(null);
+  const [standaloneOpen, setStandaloneOpen] = useState(false);
+  const [proformaRefreshKey, setProformaRefreshKey] = useState(0);
 
   const fetchInvoices = async () => {
     if (!isSignedIn) return;
@@ -8549,9 +8551,25 @@ function BDCInvoices() {
             </div>
           )}
         </Card>
+
+        {/* Standalone restructured invoices — one-off trade-partner restructures
+            that don't require an onboarded customer or live quote. */}
+        <Card padding="none">
+          <div className="flex items-center justify-between p-4 gap-2 flex-wrap" style={{ borderBottom: "1px solid var(--line)" }}>
+            <div>
+              <div className="text-sm font-semibold">Restructured invoices (third-party trade)</div>
+              <div className="text-xs mt-0.5" style={{ color: "var(--muted)" }}>Act as buyer of record on a supplier invoice — no quote required.</div>
+            </div>
+            <PrimaryBtn onClick={() => setStandaloneOpen(true)}><Plus size={14} /> New restructured invoice</PrimaryBtn>
+          </div>
+          <div className="p-4">
+            <StandaloneProformasList refreshKey={proformaRefreshKey} />
+          </div>
+        </Card>
       </div>
       <CreateInvoiceModal open={createOpen} onClose={() => setCreateOpen(false)} onCreated={() => { fetchInvoices(); setCreateOpen(false); }} />
       <InvoiceDrawer invoice={selected} onClose={() => setSelected(null)} onChanged={fetchInvoices} />
+      <StandaloneProformaModal open={standaloneOpen} onClose={() => setStandaloneOpen(false)} onDone={() => { setStandaloneOpen(false); setProformaRefreshKey((k) => k + 1); }} />
     </>
   );
 }
@@ -10669,6 +10687,14 @@ function ProformaRestructureModal({ tx, onClose, onDone }) {
   const [formMResp, setFormMResp] = useState("operator");
   const [generating, setGenerating] = useState(false);
 
+  // v1 additions — invoice basics, amount adjustment, payment terms
+  const [invoiceNumber, setInvoiceNumber] = useState("");
+  const [invoiceDate, setInvoiceDate] = useState("");
+  const [targetAmount, setTargetAmount] = useState(String(tx.amount || ""));
+  const [scalingMethod, setScalingMethod] = useState("quantity");
+  const [paymentTerms, setPaymentTerms] = useState("");
+  const dateCheck = checkInvoiceDate(invoiceDate);
+
   const operatorName = auth.user?.user_metadata?.company || auth.user?.user_metadata?.full_name || auth.user?.email || "Operator";
 
   useEffect(() => {
@@ -10677,8 +10703,12 @@ function ProformaRestructureModal({ tx, onClose, onDone }) {
     extractProformaInvoice(tx.invoiceUrl).then((r) => {
       setExtracting(false);
       if (r.ok && r.data?.extracted) {
-        setExtracted(r.data.extracted);
-        if (r.data.extracted.ship_to_address) setConsigneeAddress(r.data.extracted.ship_to_address);
+        const ex = r.data.extracted;
+        setExtracted(ex);
+        if (ex.ship_to_address) setConsigneeAddress(ex.ship_to_address);
+        if (ex.invoice_number) setInvoiceNumber(ex.invoice_number);
+        if (ex.invoice_date) setInvoiceDate(ex.invoice_date);
+        if (ex.payment_terms) setPaymentTerms(ex.payment_terms);
       } else {
         const errMsg = r.data?.error || r.error || "Could not extract invoice data";
         const errDetail = r.data?.detail ? ` — ${r.data.detail}` : "";
@@ -10688,6 +10718,11 @@ function ProformaRestructureModal({ tx, onClose, onDone }) {
     });
     /* eslint-disable-next-line react-hooks/exhaustive-deps */
   }, []);
+
+  const originalInvoiceTotal = parseFloat(extracted?.total_amount) || 0;
+  const targetTotalNum = parseFloat(targetAmount) || 0;
+  const amountDelta = targetTotalNum - originalInvoiceTotal;
+  const adjustedItems = scaleLineItems(extracted?.line_items || [], originalInvoiceTotal, targetTotalNum, scalingMethod);
 
   const completeRestructure = async () => {
     if (generating || !auth.user || !extracted) return;
@@ -10709,14 +10744,31 @@ function ProformaRestructureModal({ tx, onClose, onDone }) {
       }).select("id").single();
       if (attErr) throw attErr;
 
+      // PDF uses the operator-confirmed invoice number / date / payment terms,
+      // overriding any extracted values that were missing or stale.
+      const originalForPdf = {
+        ...extracted,
+        invoice_number: invoiceNumber || extracted.invoice_number,
+        invoice_date: invoiceDate || extracted.invoice_date,
+        payment_terms: paymentTerms || extracted.payment_terms,
+      };
+      const subtotal = adjustedItems.reduce((s, it) => s + (parseFloat(it.amount) || 0), 0);
+      const totals = {
+        subtotal: Math.round(subtotal * 100) / 100,
+        tax: extracted.tax,
+        shipping: extracted.shipping,
+        total: targetTotalNum > 0 ? targetTotalNum : (extracted.total_amount || 0),
+        currency: extracted.currency,
+      };
+
       const pdf = generateProformaRestructuredPdf({
         operatorName,
         supplier: { name: extracted.vendor_name, address: extracted.vendor_address, contact: extracted.vendor_contact, tax_id: extracted.vendor_tax_id },
         buyer: { name: operatorName, address: operatorAddress, contact: operatorContact },
         consignee: { name: customerSigner || tx.customerName, address: consigneeAddress, contact: customerSignerEmail || customerSignerPhone },
-        lineItems: extracted.line_items || [],
-        totals: { subtotal: extracted.subtotal, tax: extracted.tax, shipping: extracted.shipping, total: extracted.total_amount, currency: extracted.currency },
-        originalInvoice: extracted,
+        lineItems: adjustedItems,
+        totals,
+        originalInvoice: originalForPdf,
         formMResponsibility: formMResp,
       });
       const blob = pdf.output("blob");
@@ -10731,6 +10783,13 @@ function ProformaRestructureModal({ tx, onClose, onDone }) {
         proforma_restructured_invoice_path: up.path,
         proforma_restructured_at: new Date().toISOString(),
         proforma_attestation_id: attestation.id,
+        proforma_target_amount: targetTotalNum > 0 ? targetTotalNum : null,
+        proforma_scaling_method: scalingMethod,
+        proforma_payment_terms: paymentTerms || null,
+        proforma_invoice_number: invoiceNumber || null,
+        proforma_invoice_date: invoiceDate || null,
+        proforma_line_items_original: extracted.line_items || [],
+        proforma_line_items_adjusted: adjustedItems,
         form_m_responsibility: formMResp,
         invoice_url: up.url,
         invoice_uploaded_at: new Date().toISOString(),
@@ -10829,11 +10888,60 @@ function ProformaRestructureModal({ tx, onClose, onDone }) {
                   <Field label="Operator contact"><Input value={operatorContact} onChange={(e) => setOperatorContact(e.target.value)} placeholder="phone / email" /></Field>
                   <Field label="Consignee address (end customer)"><Input value={consigneeAddress} onChange={(e) => setConsigneeAddress(e.target.value)} placeholder="Delivery address" /></Field>
                 </div>
+
+                {/* v1 — invoice basics (required for compliance) */}
+                <div className="rounded-xl p-3 space-y-3" style={{ background: "var(--bone)", border: "1px solid var(--line)" }}>
+                  <div className="font-mono text-[10px] uppercase tracking-wider" style={{ color: "var(--muted)" }}>Invoice basics (compliance)</div>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <Field label="Invoice number (required)"><Input value={invoiceNumber} onChange={(e) => setInvoiceNumber(e.target.value)} placeholder="e.g. INV-2026-0012" /></Field>
+                    <Field label="Invoice date (≤ 90 days)"><Input value={invoiceDate} onChange={(e) => setInvoiceDate(e.target.value)} type="date" /></Field>
+                  </div>
+                  {invoiceDate && !dateCheck.valid && (
+                    <div className="text-xs" style={{ color: "#92400e" }}>
+                      {dateCheck.reason === "stale" && `Date is ${dateCheck.ageDays} days old — must be within last 90 days.`}
+                      {dateCheck.reason === "future" && `Date is in the future.`}
+                      {dateCheck.reason === "invalid" && `Date couldn't be parsed.`}
+                    </div>
+                  )}
+                </div>
+
+                {/* v1 — amount adjustment + scaling + payment terms */}
+                <div className="rounded-xl p-3 space-y-3" style={{ background: "var(--bone)", border: "1px solid var(--line)" }}>
+                  <div className="font-mono text-[10px] uppercase tracking-wider" style={{ color: "var(--muted)" }}>Amount on restructured invoice</div>
+                  <div className="text-xs" style={{ color: "var(--muted)" }}>Original supplier total: <strong style={{ color: "var(--ink)" }}>{extracted.currency} {originalInvoiceTotal.toLocaleString()}</strong>. Wire amount (quote): <strong style={{ color: "var(--ink)" }}>{tx.currency || ""} {Number(tx.amount || 0).toLocaleString()}</strong>.</div>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <Field label={`Target amount (${extracted.currency || "currency"})`}>
+                      <Input type="number" step="0.01" value={targetAmount} onChange={(e) => setTargetAmount(e.target.value)} placeholder={String(tx.amount || originalInvoiceTotal)} />
+                    </Field>
+                    <Field label="Difference">
+                      <div className="rounded-lg px-3 py-2 text-sm font-mono" style={{ background: "white", border: "1px solid var(--line)", color: Math.abs(amountDelta) < 0.5 ? "var(--muted)" : amountDelta > 0 ? "var(--emerald)" : "#92400e" }}>
+                        {amountDelta > 0 ? "+" : ""}{amountDelta.toFixed(2)} {extracted.currency || ""}
+                      </div>
+                    </Field>
+                  </div>
+                  <Field label="Reconciliation method">
+                    <div className="space-y-1.5">
+                      {[
+                        { id: "quantity",            label: "Scale quantities" },
+                        { id: "unit_price",          label: "Scale unit prices" },
+                        { id: "payment_terms_only",  label: "Payment terms only (no line-item change)" },
+                      ].map((opt) => (
+                        <label key={opt.id} className="flex items-center gap-2 cursor-pointer text-xs">
+                          <input type="radio" name="quote-scaling" checked={scalingMethod === opt.id} onChange={() => setScalingMethod(opt.id)} />
+                          <span style={{ color: "var(--ink)" }}>{opt.label}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </Field>
+                  <Field label={`Payment terms ${Math.abs(amountDelta) > 0.5 && scalingMethod === "payment_terms_only" ? "(required to explain difference)" : "(optional)"}`}>
+                    <Input value={paymentTerms} onChange={(e) => setPaymentTerms(e.target.value)} placeholder="e.g. 30% advance, balance on shipment · includes freight prepaid" />
+                  </Field>
+                </div>
               </div>
             )}
             <div className="flex justify-between">
               <SecondaryBtn onClick={() => setStep(1)}><ArrowLeft size={12} /> Back</SecondaryBtn>
-              <PrimaryBtn onClick={() => setStep(3)} disabled={!extracted}>Continue <ArrowRight size={12} /></PrimaryBtn>
+              <PrimaryBtn onClick={() => setStep(3)} disabled={!extracted || !invoiceNumber || !dateCheck.valid || targetTotalNum <= 0 || (Math.abs(amountDelta) > 0.5 && scalingMethod === "payment_terms_only" && !paymentTerms.trim())}>Continue <ArrowRight size={12} /></PrimaryBtn>
             </div>
           </div>
         )}
@@ -10860,6 +10968,498 @@ function ProformaRestructureModal({ tx, onClose, onDone }) {
         )}
       </div>
     </Modal>
+  );
+}
+
+// =============================================================================
+// Proforma v1 helpers — line-item scaling math + invoice date sanity check.
+// Shared by the standalone Invoicing flow and the quote-linked TxDrawer flow.
+// =============================================================================
+
+// Scale a line-items array to hit `targetTotal`. `method` picks whether to
+// adjust quantity (treat the new total as "more goods at same price") or
+// unit_price (treat the new total as "same goods at different price").
+// Returns a *new* array of items; never mutates the input.
+function scaleLineItems(items, originalTotal, targetTotal, method) {
+  if (!Array.isArray(items) || items.length === 0) return [];
+  const orig = parseFloat(originalTotal);
+  const target = parseFloat(targetTotal);
+  if (!Number.isFinite(orig) || orig === 0 || !Number.isFinite(target)) return items;
+  if (method === "payment_terms_only") return items;
+  const factor = target / orig;
+  return items.map((it) => {
+    const next = { ...it };
+    const qty = parseFloat(it.quantity);
+    const unit = parseFloat(it.unit_price);
+    if (method === "quantity" && Number.isFinite(unit)) {
+      const newQty = (Number.isFinite(qty) ? qty : 1) * factor;
+      next.quantity = Math.round(newQty * 100) / 100;
+      next.amount = Math.round(unit * next.quantity * 100) / 100;
+    } else if (method === "unit_price" && Number.isFinite(qty)) {
+      const newUnit = (Number.isFinite(unit) ? unit : 0) * factor;
+      next.unit_price = Math.round(newUnit * 100) / 100;
+      next.amount = Math.round(qty * next.unit_price * 100) / 100;
+    }
+    return next;
+  });
+}
+
+// Returns { valid, reason, ageDays } for the invoice date. Compliance rule:
+// invoice must be no older than 90 days and not in the future.
+function checkInvoiceDate(dateStr) {
+  if (!dateStr) return { valid: false, reason: "missing", ageDays: null };
+  const d = new Date(dateStr);
+  if (isNaN(d.getTime())) return { valid: false, reason: "invalid", ageDays: null };
+  const ageDays = Math.floor((Date.now() - d.getTime()) / (1000 * 60 * 60 * 24));
+  if (ageDays < 0) return { valid: false, reason: "future", ageDays };
+  if (ageDays > 90) return { valid: false, reason: "stale", ageDays };
+  return { valid: true, reason: "ok", ageDays };
+}
+
+// Standalone Restructure-as-Trade modal — invoked from the Invoicing tab
+// "+ New restructured invoice" button. Doesn't require a quote or an
+// onboarded customer. Writes to standalone_proformas table.
+function StandaloneProformaModal({ open, onClose, onDone }) {
+  const { push } = useToast();
+  const auth = useAuth();
+  const operatorName = auth.user?.user_metadata?.company || auth.user?.user_metadata?.full_name || auth.user?.email || "Operator";
+
+  const [step, setStep] = useState(1);
+
+  // Step 1: upload + extract
+  const [originalUrl, setOriginalUrl] = useState("");
+  const [originalPath, setOriginalPath] = useState("");
+  const [uploading, setUploading] = useState(false);
+  const [extracting, setExtracting] = useState(false);
+  const [extracted, setExtracted] = useState(null);
+  const [extractError, setExtractError] = useState("");
+  const tempId = React.useMemo(() => crypto.randomUUID(), []);
+
+  // Step 2: invoice basics
+  const [invoiceNumber, setInvoiceNumber] = useState("");
+  const [invoiceDate, setInvoiceDate] = useState("");
+  const dateCheck = checkInvoiceDate(invoiceDate);
+
+  // Step 3: target amount + scaling + payment terms
+  const [targetAmount, setTargetAmount] = useState("");
+  const [scalingMethod, setScalingMethod] = useState("quantity");
+  const [paymentTerms, setPaymentTerms] = useState("");
+
+  // Step 4: customer (consignee/UBO)
+  const [customerName, setCustomerName] = useState("");
+  const [customerEmail, setCustomerEmail] = useState("");
+  const [customerPhone, setCustomerPhone] = useState("");
+  const [customerAddress, setCustomerAddress] = useState("");
+
+  // Step 5: operator
+  const [operatorSigner, setOperatorSigner] = useState("");
+  const [operatorAddress, setOperatorAddress] = useState("");
+  const [operatorContact, setOperatorContact] = useState("");
+  const [formMResp, setFormMResp] = useState("operator");
+
+  // Step 6: attestation
+  const [customerSignerEmail, setCustomerSignerEmail] = useState("");
+  const [customerSignerPhone, setCustomerSignerPhone] = useState("");
+  const [confirmationMethod, setConfirmationMethod] = useState("written_agreement");
+  const [confirmationNotes, setConfirmationNotes] = useState("");
+  const [generating, setGenerating] = useState(false);
+
+  const handleUpload = async (file) => {
+    if (!file) return;
+    setUploading(true);
+    setExtractError("");
+    const up = await uploadStandaloneProformaOriginal(tempId, file);
+    if (!up.ok) {
+      setUploading(false);
+      push(`Upload failed: ${up.error}`, "warn");
+      return;
+    }
+    setOriginalUrl(up.url);
+    setOriginalPath(up.path);
+    setUploading(false);
+    setExtracting(true);
+    const r = await extractProformaInvoice(up.url);
+    setExtracting(false);
+    if (r.ok && r.data?.extracted) {
+      const ex = r.data.extracted;
+      setExtracted(ex);
+      if (ex.invoice_number) setInvoiceNumber(ex.invoice_number);
+      if (ex.invoice_date) setInvoiceDate(ex.invoice_date);
+      if (ex.total_amount) setTargetAmount(String(ex.total_amount));
+      if (ex.payment_terms) setPaymentTerms(ex.payment_terms);
+      if (ex.ship_to_name && !customerName) setCustomerName(ex.ship_to_name);
+      if (ex.ship_to_address && !customerAddress) setCustomerAddress(ex.ship_to_address);
+    } else {
+      const errMsg = r.data?.error || r.error || "Could not extract invoice";
+      const errDetail = r.data?.detail ? ` — ${r.data.detail}` : "";
+      const errStatus = r.data?.status ? ` (HTTP ${r.data.status})` : "";
+      setExtractError(`${errMsg}${errStatus}${errDetail}`);
+    }
+  };
+
+  const originalTotal = parseFloat(extracted?.total_amount) || 0;
+  const targetTotalNum = parseFloat(targetAmount) || 0;
+  const amountDelta = targetTotalNum - originalTotal;
+  const adjustedItems = scaleLineItems(extracted?.line_items || [], originalTotal, targetTotalNum, scalingMethod);
+  const requiresPaymentTermsExplanation = Math.abs(amountDelta) > 0.5 && scalingMethod === "payment_terms_only";
+
+  const completeRestructure = async () => {
+    if (generating || !auth.user || !extracted) return;
+    setGenerating(true);
+    try {
+      // Build the originalInvoice object the PDF generator reads. We override
+      // invoice_number / invoice_date / payment_terms with what the operator
+      // has confirmed in steps 2 + 3 (so the PDF reflects the corrected /
+      // augmented values, not the raw extraction).
+      const originalForPdf = {
+        ...extracted,
+        invoice_number: invoiceNumber,
+        invoice_date: invoiceDate,
+        payment_terms: paymentTerms || extracted.payment_terms,
+      };
+
+      const subtotal = adjustedItems.reduce((s, it) => s + (parseFloat(it.amount) || 0), 0);
+      const totals = {
+        subtotal: Math.round(subtotal * 100) / 100,
+        tax: extracted.tax,
+        shipping: extracted.shipping,
+        total: targetTotalNum,
+        currency: extracted.currency,
+      };
+
+      const pdf = generateProformaRestructuredPdf({
+        operatorName,
+        supplier: { name: extracted.vendor_name, address: extracted.vendor_address, contact: extracted.vendor_contact, tax_id: extracted.vendor_tax_id },
+        buyer: { name: operatorName, address: operatorAddress, contact: operatorContact },
+        consignee: { name: customerName, address: customerAddress, contact: customerEmail || customerPhone },
+        lineItems: adjustedItems,
+        totals,
+        originalInvoice: originalForPdf,
+        formMResponsibility: formMResp,
+      });
+      const blob = pdf.output("blob");
+
+      const up = await uploadStandaloneProformaRestructured(tempId, blob);
+      if (!up.ok) throw new Error(up.error || "Upload failed");
+
+      const { error: insErr } = await supabase.from("standalone_proformas").insert({
+        id: tempId,
+        operator_user_id: auth.user.id,
+        invoice_number: invoiceNumber,
+        invoice_date: invoiceDate,
+        currency: extracted.currency || "USD",
+        supplier_name: extracted.vendor_name,
+        supplier_address: extracted.vendor_address,
+        supplier_contact: extracted.vendor_contact,
+        supplier_tax_id: extracted.vendor_tax_id,
+        customer_name: customerName,
+        customer_email: customerEmail || null,
+        customer_phone: customerPhone || null,
+        customer_address: customerAddress || null,
+        operator_signer_name: operatorSigner || operatorName,
+        operator_address: operatorAddress || null,
+        operator_contact: operatorContact || null,
+        form_m_responsibility: formMResp === "not_applicable" ? "operator" : formMResp,
+        original_amount: originalTotal,
+        target_amount: targetTotalNum,
+        scaling_method: scalingMethod,
+        payment_terms: paymentTerms || null,
+        original_invoice_url: originalUrl,
+        original_invoice_path: originalPath,
+        restructured_invoice_url: up.url,
+        restructured_invoice_path: up.path,
+        extracted_data: extracted,
+        line_items_original: extracted.line_items || [],
+        line_items_adjusted: adjustedItems,
+        attestation_text: TRADE_PARTNER_ATTESTATION_TEXT,
+        customer_signer_name: customerName,
+        customer_signer_email: customerSignerEmail || null,
+        customer_signer_phone: customerSignerPhone || null,
+        confirmation_method: confirmationMethod,
+        notes: confirmationNotes || null,
+      });
+      if (insErr) throw insErr;
+
+      downloadProformaRestructuredPdf(pdf, { id: tempId });
+      push("Restructured invoice created · attestation recorded", "success");
+      onDone && onDone();
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error("Standalone restructure failed:", err);
+      push(`Couldn't create: ${err?.message || err}`, "warn");
+    } finally {
+      setGenerating(false);
+    }
+  };
+
+  if (!open) return null;
+
+  const canAdvance2 = !!invoiceNumber && dateCheck.valid;
+  const canAdvance3 = targetTotalNum > 0 && (!requiresPaymentTermsExplanation || !!paymentTerms.trim());
+  const canAdvance4 = !!customerName;
+  const canAdvance5 = !!operatorSigner && !!operatorAddress;
+  const canFinish = !!customerName && !!operatorSigner && !generating;
+
+  const stepLabels = ["Upload", "Verify", "Amount", "Customer", "Operator", "Attest"];
+
+  return (
+    <Modal open={true} onClose={onClose} title="New restructured invoice" size="xl">
+      <div className="space-y-5">
+        <div className="flex items-center gap-2 font-mono text-[10px] uppercase tracking-wider flex-wrap" style={{ color: "var(--muted)" }}>
+          {stepLabels.map((label, i) => (
+            <React.Fragment key={i}>
+              <div className="flex items-center gap-1.5">
+                <div className="h-1.5 w-1.5 rounded-full" style={{ background: step >= (i + 1) ? "var(--emerald)" : "var(--line)" }} />
+                <span style={{ color: step === (i + 1) ? "var(--ink)" : "var(--muted)" }}>{label}</span>
+              </div>
+              {i < stepLabels.length - 1 && <div className="h-px w-4" style={{ background: "var(--line)" }} />}
+            </React.Fragment>
+          ))}
+        </div>
+
+        {/* Step 1: Upload */}
+        {step === 1 && (
+          <div className="space-y-4">
+            <div className="rounded-xl p-4 text-xs" style={{ background: "rgba(15,95,63,0.04)", border: "1px solid rgba(15,95,63,0.15)", color: "var(--muted)" }}>
+              Upload the supplier's original invoice (PDF or image). The AI agent will extract vendor, line items, totals, and dates so you can confirm and adjust before generating the restructured version.
+            </div>
+            {!extracted && !uploading && !extracting && (
+              <div className="rounded-xl p-6 text-center" style={{ background: "var(--bone)", border: "1px dashed var(--line)" }}>
+                <input type="file" accept="image/*,application/pdf" onChange={(e) => handleUpload(e.target.files?.[0])} className="block mx-auto text-xs file:mr-3 file:rounded-lg file:border-0 file:bg-[color:var(--ink)] file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-[color:var(--bone)] hover:file:opacity-90" />
+              </div>
+            )}
+            {(uploading || extracting) && (
+              <div className="rounded-xl p-6 text-center text-sm" style={{ background: "var(--bone)", border: "1px solid var(--line)", color: "var(--muted)" }}>
+                <Loader2 className="animate-spin inline mr-2" size={14} /> {uploading ? "Uploading…" : "Extracting invoice data via AI vision…"}
+              </div>
+            )}
+            {extractError && (
+              <div className="rounded-xl p-3 text-sm" style={{ background: "#fef3c7", border: "1px solid rgba(146,64,14,0.2)", color: "#92400e" }}>
+                {extractError}
+              </div>
+            )}
+            {extracted && (
+              <div className="rounded-xl p-3" style={{ background: "var(--bone)", border: "1px solid var(--line)" }}>
+                <div className="font-mono text-[10px] uppercase tracking-wider mb-2" style={{ color: "var(--muted)" }}>Extracted</div>
+                <div className="text-sm space-y-1" style={{ color: "var(--ink)" }}>
+                  <div><span className="font-semibold">Supplier:</span> {extracted.vendor_name || "—"}</div>
+                  <div><span className="font-semibold">Original total:</span> {extracted.currency || ""} {extracted.total_amount ?? "—"}</div>
+                  <div><span className="font-semibold">Items:</span> {extracted.line_items?.length || 0}</div>
+                </div>
+              </div>
+            )}
+            <div className="flex justify-between">
+              <SecondaryBtn onClick={onClose}>Cancel</SecondaryBtn>
+              <PrimaryBtn onClick={() => setStep(2)} disabled={!extracted}>Continue <ArrowRight size={12} /></PrimaryBtn>
+            </div>
+          </div>
+        )}
+
+        {/* Step 2: Verify invoice number + date */}
+        {step === 2 && (
+          <div className="space-y-4">
+            <div className="rounded-xl p-3 text-xs" style={{ background: "rgba(15,95,63,0.04)", border: "1px solid rgba(15,95,63,0.15)", color: "var(--muted)" }}>
+              Compliance requires a real invoice number and a date within the last 90 days. If the original is missing or stale, set them here — the restructured PDF will use these values.
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Field label="Invoice number"><Input value={invoiceNumber} onChange={(e) => setInvoiceNumber(e.target.value)} placeholder="e.g. INV-2026-0012" /></Field>
+              <Field label="Invoice date"><Input value={invoiceDate} onChange={(e) => setInvoiceDate(e.target.value)} type="date" /></Field>
+            </div>
+            {invoiceDate && !dateCheck.valid && (
+              <div className="rounded-lg p-2.5 text-xs" style={{ background: "#fef3c7", border: "1px solid rgba(146,64,14,0.2)", color: "#92400e" }}>
+                {dateCheck.reason === "stale" && `Date is ${dateCheck.ageDays} days old — must be within last 90 days. Update before continuing.`}
+                {dateCheck.reason === "future" && `Date is in the future. Update before continuing.`}
+                {dateCheck.reason === "invalid" && `Date couldn't be parsed.`}
+              </div>
+            )}
+            {invoiceDate && dateCheck.valid && (
+              <div className="rounded-lg p-2.5 text-xs" style={{ background: "rgba(15,95,63,0.08)", border: "1px solid rgba(15,95,63,0.2)", color: "var(--emerald)" }}>
+                Date OK — {dateCheck.ageDays} days old.
+              </div>
+            )}
+            <div className="flex justify-between">
+              <SecondaryBtn onClick={() => setStep(1)}><ArrowLeft size={12} /> Back</SecondaryBtn>
+              <PrimaryBtn onClick={() => setStep(3)} disabled={!canAdvance2}>Continue <ArrowRight size={12} /></PrimaryBtn>
+            </div>
+          </div>
+        )}
+
+        {/* Step 3: Target amount + scaling + payment terms */}
+        {step === 3 && (
+          <div className="space-y-4">
+            <div className="rounded-xl p-3 text-xs" style={{ background: "var(--bone)", border: "1px solid var(--line)", color: "var(--muted)" }}>
+              Original invoice total: <strong style={{ color: "var(--ink)" }}>{extracted?.currency} {originalTotal.toLocaleString()}</strong>. Set the amount you're actually wiring. If it differs, pick how to reconcile.
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Field label={`Target amount (${extracted?.currency || "currency"})`}>
+                <Input type="number" step="0.01" value={targetAmount} onChange={(e) => setTargetAmount(e.target.value)} placeholder={String(originalTotal)} />
+              </Field>
+              <Field label="Difference">
+                <div className="rounded-lg px-3 py-2 text-sm font-mono" style={{ background: "var(--bone)", border: "1px solid var(--line)", color: Math.abs(amountDelta) < 0.5 ? "var(--muted)" : amountDelta > 0 ? "var(--emerald)" : "#92400e" }}>
+                  {amountDelta > 0 ? "+" : ""}{amountDelta.toFixed(2)} {extracted?.currency || ""}
+                </div>
+              </Field>
+            </div>
+            <Field label="Reconciliation method">
+              <div className="space-y-2">
+                {[
+                  { id: "quantity",            label: "Scale quantities",      hint: "Keep unit prices, adjust how many units. Implies more / fewer goods than original." },
+                  { id: "unit_price",          label: "Scale unit prices",     hint: "Keep quantities, adjust price per unit. Implies same goods at a different agreed price." },
+                  { id: "payment_terms_only",  label: "Payment terms only",    hint: "Don't change line items. Explain the difference in payment terms below (e.g. 30% deposit, freight prepaid)." },
+                ].map((opt) => (
+                  <label key={opt.id} className="flex items-start gap-2 cursor-pointer rounded-lg p-2.5" style={{ background: scalingMethod === opt.id ? "rgba(15,95,63,0.06)" : "var(--bone)", border: `1px solid ${scalingMethod === opt.id ? "var(--emerald)" : "var(--line)"}` }}>
+                    <input type="radio" name="scaling" checked={scalingMethod === opt.id} onChange={() => setScalingMethod(opt.id)} className="mt-1" />
+                    <div>
+                      <div className="text-sm font-semibold" style={{ color: "var(--ink)" }}>{opt.label}</div>
+                      <div className="text-xs" style={{ color: "var(--muted)" }}>{opt.hint}</div>
+                    </div>
+                  </label>
+                ))}
+              </div>
+            </Field>
+            <Field label={`Payment terms ${requiresPaymentTermsExplanation ? "(required to explain difference)" : "(optional)"}`}>
+              <Input value={paymentTerms} onChange={(e) => setPaymentTerms(e.target.value)} placeholder="e.g. 30% advance, 70% on delivery · includes freight prepaid" />
+            </Field>
+            {adjustedItems.length > 0 && scalingMethod !== "payment_terms_only" && targetTotalNum > 0 && (
+              <div className="rounded-xl p-3 text-xs" style={{ background: "var(--bone)", border: "1px solid var(--line)" }}>
+                <div className="font-mono uppercase tracking-wider text-[10px] mb-2" style={{ color: "var(--muted)" }}>Adjusted line items preview</div>
+                <ul className="space-y-1">
+                  {adjustedItems.slice(0, 5).map((it, i) => (
+                    <li key={i} className="flex justify-between" style={{ color: "var(--ink)" }}>
+                      <span>{String(it.description || "—").slice(0, 50)}</span>
+                      <span className="font-mono">{it.quantity} × {it.unit_price} = {it.amount}</span>
+                    </li>
+                  ))}
+                  {adjustedItems.length > 5 && <li style={{ color: "var(--muted)" }}>…and {adjustedItems.length - 5} more</li>}
+                </ul>
+              </div>
+            )}
+            <div className="flex justify-between">
+              <SecondaryBtn onClick={() => setStep(2)}><ArrowLeft size={12} /> Back</SecondaryBtn>
+              <PrimaryBtn onClick={() => setStep(4)} disabled={!canAdvance3}>Continue <ArrowRight size={12} /></PrimaryBtn>
+            </div>
+          </div>
+        )}
+
+        {/* Step 4: Customer */}
+        {step === 4 && (
+          <div className="space-y-4">
+            <div className="rounded-xl p-3 text-xs" style={{ background: "rgba(15,95,63,0.04)", border: "1px solid rgba(15,95,63,0.15)", color: "var(--muted)" }}>
+              The end customer is the consignee + ultimate beneficial owner. This is the party the goods are for; you're paying the supplier on their behalf.
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Field label="Customer name (required)"><Input value={customerName} onChange={(e) => setCustomerName(e.target.value)} placeholder="Full legal name or business" /></Field>
+              <Field label="Customer email"><Input value={customerEmail} onChange={(e) => setCustomerEmail(e.target.value)} type="email" /></Field>
+              <Field label="Customer phone"><Input value={customerPhone} onChange={(e) => setCustomerPhone(e.target.value)} /></Field>
+              <Field label="Consignee address"><Input value={customerAddress} onChange={(e) => setCustomerAddress(e.target.value)} placeholder="Delivery / destination" /></Field>
+            </div>
+            <div className="flex justify-between">
+              <SecondaryBtn onClick={() => setStep(3)}><ArrowLeft size={12} /> Back</SecondaryBtn>
+              <PrimaryBtn onClick={() => setStep(5)} disabled={!canAdvance4}>Continue <ArrowRight size={12} /></PrimaryBtn>
+            </div>
+          </div>
+        )}
+
+        {/* Step 5: Operator + Form M */}
+        {step === 5 && (
+          <div className="space-y-4">
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Field label="Operator signer (you)"><Input value={operatorSigner} onChange={(e) => setOperatorSigner(e.target.value)} placeholder={operatorName} /></Field>
+              <Field label="Operator address (buyer of record)"><Input value={operatorAddress} onChange={(e) => setOperatorAddress(e.target.value)} placeholder="Your registered business address" /></Field>
+              <Field label="Operator contact"><Input value={operatorContact} onChange={(e) => setOperatorContact(e.target.value)} placeholder="phone / email" /></Field>
+              <Field label="Form M responsibility">
+                <Select value={formMResp} onChange={(e) => setFormMResp(e.target.value)}>
+                  <option value="operator">Operator (named buyer) opens Form M</option>
+                  <option value="customer">End customer (UBO) opens Form M</option>
+                </Select>
+              </Field>
+            </div>
+            <div className="flex justify-between">
+              <SecondaryBtn onClick={() => setStep(4)}><ArrowLeft size={12} /> Back</SecondaryBtn>
+              <PrimaryBtn onClick={() => setStep(6)} disabled={!canAdvance5}>Continue <ArrowRight size={12} /></PrimaryBtn>
+            </div>
+          </div>
+        )}
+
+        {/* Step 6: Attestation + Generate */}
+        {step === 6 && (
+          <div className="space-y-4">
+            <div className="rounded-xl p-4 text-xs" style={{ background: "var(--bone)", border: "1px solid var(--line)", color: "var(--muted)" }}>
+              <div className="font-semibold mb-2" style={{ color: "var(--ink)" }}>Trade-partner attestation</div>
+              {TRADE_PARTNER_ATTESTATION_TEXT}
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Field label="Customer signer email"><Input value={customerSignerEmail} onChange={(e) => setCustomerSignerEmail(e.target.value)} type="email" /></Field>
+              <Field label="Customer signer phone"><Input value={customerSignerPhone} onChange={(e) => setCustomerSignerPhone(e.target.value)} /></Field>
+              <Field label="Customer confirmation method">
+                <Select value={confirmationMethod} onChange={(e) => setConfirmationMethod(e.target.value)}>
+                  <option value="written_agreement">Signed written agreement</option>
+                  <option value="whatsapp">WhatsApp confirmation</option>
+                  <option value="email">Email confirmation</option>
+                  <option value="in_person">In-person verbal</option>
+                  <option value="other">Other</option>
+                </Select>
+              </Field>
+              <Field label="Notes (optional)"><Input value={confirmationNotes} onChange={(e) => setConfirmationNotes(e.target.value)} placeholder="e.g. dated 2026-06-13" /></Field>
+            </div>
+            <div className="rounded-xl p-3 text-xs" style={{ background: "rgba(15,95,63,0.04)", border: "1px solid rgba(15,95,63,0.15)", color: "var(--muted)" }}>
+              On Generate, the agent will: (1) record the attestation, (2) build the restructured invoice PDF using the values you confirmed, (3) preserve the original in the audit trail, (4) download a copy to your machine. <strong style={{ color: "var(--ink)" }}>Nothing is sent to the customer or PSP automatically</strong> — you forward the PDF as needed.
+            </div>
+            <div className="flex justify-between">
+              <SecondaryBtn onClick={() => setStep(5)}><ArrowLeft size={12} /> Back</SecondaryBtn>
+              <PrimaryBtn onClick={completeRestructure} disabled={!canFinish}>
+                {generating ? <><Loader2 className="animate-spin" size={12} /> Generating…</> : <><Sparkles size={12} /> Generate restructured invoice</>}
+              </PrimaryBtn>
+            </div>
+          </div>
+        )}
+      </div>
+    </Modal>
+  );
+}
+
+// List of past standalone proformas — rendered inside the Invoicing tab
+// underneath the existing invoice tools. Operator-scoped via RLS.
+function StandaloneProformasList({ refreshKey, onChanged }) {
+  const auth = useAuth();
+  const [rows, setRows] = useState([]);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!auth.user) return;
+    setLoading(true);
+    supabase.from("standalone_proformas")
+      .select("id, invoice_number, invoice_date, currency, target_amount, customer_name, supplier_name, restructured_invoice_url, created_at, scaling_method")
+      .order("created_at", { ascending: false })
+      .limit(50)
+      .then(({ data }) => {
+        setRows(data || []);
+        setLoading(false);
+      });
+  }, [auth.user?.id, refreshKey]);
+
+  if (loading) return <div className="text-xs" style={{ color: "var(--muted)" }}>Loading…</div>;
+  if (rows.length === 0) return <div className="rounded-xl p-4 text-xs text-center" style={{ background: "var(--bone)", border: "1px dashed var(--line)", color: "var(--muted)" }}>No standalone restructured invoices yet. Click "+ New restructured invoice" above to create one.</div>;
+
+  return (
+    <div className="space-y-2">
+      {rows.map((r) => (
+        <div key={r.id} className="rounded-xl p-3 flex items-center justify-between gap-3" style={{ background: "white", border: "1px solid var(--line)" }}>
+          <div className="min-w-0 flex-1">
+            <div className="flex items-baseline gap-2 flex-wrap">
+              <span className="font-mono text-[11px] font-semibold">{r.invoice_number}</span>
+              <span className="font-mono text-[10px]" style={{ color: "var(--muted)" }}>{r.invoice_date}</span>
+              <span className="rounded-full px-2 py-0.5 font-mono text-[9px] uppercase tracking-wider" style={{ background: "var(--bone)", color: "var(--muted)" }}>{r.scaling_method.replace(/_/g, " ")}</span>
+            </div>
+            <div className="text-sm mt-0.5" style={{ color: "var(--ink)" }}>{r.supplier_name || "—"} → {r.customer_name}</div>
+            <div className="font-mono text-[11px]" style={{ color: "var(--muted)" }}>{r.currency} {parseFloat(r.target_amount || 0).toLocaleString()}</div>
+          </div>
+          {r.restructured_invoice_url && (
+            <a href={safeUrl(r.restructured_invoice_url)} target="_blank" rel="noreferrer" className="font-mono text-[10px] uppercase tracking-wider underline" style={{ color: "var(--emerald)" }}>Open PDF</a>
+          )}
+        </div>
+      ))}
+    </div>
   );
 }
 
