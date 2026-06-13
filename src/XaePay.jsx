@@ -1,4 +1,4 @@
-import React, { useState, useEffect, createContext, useContext } from "react";
+import React, { useState, useEffect, createContext, useContext, Suspense } from "react";
 import {
   MessageCircle, Shield, FileText, CheckCircle2, AlertTriangle, ArrowRight,
   ArrowUpRight, Upload, Search, Bell, ChevronRight, Menu, X, Package, Receipt,
@@ -10,12 +10,23 @@ import {
 import { supabase, sendWhatsAppText, sendWhatsAppTemplate, fetchCedarRate, submitCustomerToCedar, submitRecipientToCedar, submitReceiverAccountToCedar, submitCedarTransaction, approveCedarQuote, confirmCedarDeposit, cancelCedarTransaction, uploadCedarFile, uploadFileBoth, uploadInvoicePdf, uploadInvoicePaymentProof, uploadReceiptPdf, uploadRecipientReceiptPdf, uploadBrandLogo, uploadRegulatoryReportFile, pickServiceProviderForQuote, runComplianceReview, runComplianceWatchman, submitDocumentToCedar, runAgentQuoteReview, runAgentKycChase, runAgentPaymentMatch, runAgentReportDraft, runAgentInvoiceReview, extractProformaInvoice, uploadProformaOriginalInvoice, uploadProformaRestructuredInvoice, sendEmail, safeUrl, logAuditEvent, getPlatformSettingInt } from "./lib/supabase.js";
 import { generateQuotePdf, uploadQuotePdf, downloadQuotePdf } from "./lib/pdf.js";
 import { generateCompliancePackPdf, downloadCompliancePackPdf, generateTransactionConfirmationPdf, downloadTransactionConfirmationPdf, generateInvoicePdf, downloadInvoicePdf, generateReceiptPdf, downloadReceiptPdf, generateRecipientReceiptPdf, downloadRecipientReceiptPdf, generateMonthlyTransactionReportPdf, downloadRegulatoryReportPdf, buildTransactionsCsv, generateQuarterlyCustomerActivityReportPdf, buildCustomerActivityCsv, generateProformaRestructuredPdf, downloadProformaRestructuredPdf, generateSuspiciousTransactionReportPdf, buildSuspiciousTransactionCsv } from "./lib/pdf-doc.js";
-import { TermsOfService, PrivacyPolicy, DataDeletion, RefundPolicy, ServiceProviderMSA } from "./legal/LegalPages.jsx";
-import { OperatorsPage, CustomersPage, ProvidersPage, SendUsdToNgnPage } from "./legal/UserPages.jsx";
-import { CounselBriefPage } from "./legal/CounselBriefPage.jsx";
-import { PricingPage } from "./legal/PricingPage.jsx";
-import { ConnectivityCheckPage } from "./legal/ConnectivityCheckPage.jsx";
-import { AdminPortal } from "./admin/AdminPortal.jsx";
+// Route pages are lazy-loaded so the homepage bundle doesn't carry their
+// weight. Each only renders for a specific ?p= URL — they're cold paths
+// from the homepage's perspective. Pulling them out cuts ~hundreds of KB
+// of JS off first paint.
+const TermsOfService     = React.lazy(() => import("./legal/LegalPages.jsx").then(m => ({ default: m.TermsOfService })));
+const PrivacyPolicy      = React.lazy(() => import("./legal/LegalPages.jsx").then(m => ({ default: m.PrivacyPolicy })));
+const DataDeletion       = React.lazy(() => import("./legal/LegalPages.jsx").then(m => ({ default: m.DataDeletion })));
+const RefundPolicy       = React.lazy(() => import("./legal/LegalPages.jsx").then(m => ({ default: m.RefundPolicy })));
+const ServiceProviderMSA = React.lazy(() => import("./legal/LegalPages.jsx").then(m => ({ default: m.ServiceProviderMSA })));
+const OperatorsPage      = React.lazy(() => import("./legal/UserPages.jsx").then(m => ({ default: m.OperatorsPage })));
+const CustomersPage      = React.lazy(() => import("./legal/UserPages.jsx").then(m => ({ default: m.CustomersPage })));
+const ProvidersPage      = React.lazy(() => import("./legal/UserPages.jsx").then(m => ({ default: m.ProvidersPage })));
+const SendUsdToNgnPage   = React.lazy(() => import("./legal/UserPages.jsx").then(m => ({ default: m.SendUsdToNgnPage })));
+const CounselBriefPage   = React.lazy(() => import("./legal/CounselBriefPage.jsx").then(m => ({ default: m.CounselBriefPage })));
+const PricingPage        = React.lazy(() => import("./legal/PricingPage.jsx").then(m => ({ default: m.PricingPage })));
+const ConnectivityCheckPage = React.lazy(() => import("./legal/ConnectivityCheckPage.jsx").then(m => ({ default: m.ConnectivityCheckPage })));
+const AdminPortal        = React.lazy(() => import("./admin/AdminPortal.jsx").then(m => ({ default: m.AdminPortal })));
 import { useAuth } from "./lib/auth.js";
 
 // ─── Editable in one place ────────────────────────────────────────────────
@@ -650,20 +661,32 @@ function AppShell() {
     return () => window.removeEventListener("popstate", onPop);
   }, []);
 
-  // After all hooks: now we can branch.
-  if (legalRoute === "terms")          return <TermsOfService />;
-  if (legalRoute === "privacy")        return <PrivacyPolicy />;
-  if (legalRoute === "refunds")        return <RefundPolicy />;
-  if (legalRoute === "data-deletion")  return <DataDeletion />;
-  if (legalRoute === "msa")            return <ServiceProviderMSA />;
-  if (legalRoute === "operators")      return <OperatorsPage />;
-  if (legalRoute === "customers")      return <CustomersPage />;
-  if (legalRoute === "providers")      return <ProvidersPage />;
-  if (legalRoute === "send-usd-ngn")   return <SendUsdToNgnPage />;
-  if (legalRoute === "counsel-brief")  return <CounselBriefPage />;
-  if (legalRoute === "pricing")        return <PricingPage />;
-  if (legalRoute === "admin")          return <AdminPortal />;
-  if (legalRoute === "connectivity-check") return <ConnectivityCheckPage />;
+  // After all hooks: now we can branch. Route pages are lazy-loaded; we
+  // pick the component from the map and wrap once in Suspense so the chunk
+  // streams in on demand instead of being eagerly bundled into the homepage.
+  const LAZY_ROUTES = {
+    "terms":               TermsOfService,
+    "privacy":             PrivacyPolicy,
+    "refunds":             RefundPolicy,
+    "data-deletion":       DataDeletion,
+    "msa":                 ServiceProviderMSA,
+    "operators":           OperatorsPage,
+    "customers":           CustomersPage,
+    "providers":           ProvidersPage,
+    "send-usd-ngn":        SendUsdToNgnPage,
+    "counsel-brief":       CounselBriefPage,
+    "pricing":             PricingPage,
+    "admin":               AdminPortal,
+    "connectivity-check":  ConnectivityCheckPage,
+  };
+  const LazyRoute = LAZY_ROUTES[legalRoute];
+  if (LazyRoute) {
+    return (
+      <Suspense fallback={<div className="fixed inset-0 flex items-center justify-center" style={{ background: "var(--paper)" }}><Loader2 size={20} className="animate-spin" style={{ color: "var(--muted)" }} /></div>}>
+        <LazyRoute />
+      </Suspense>
+    );
+  }
   if (quoteRoute) return <QuoteApprovalPage quote={quoteRoute} />;
   if (onboardRoute) return <CustomerOnboardPage invite={onboardRoute} />;
 
