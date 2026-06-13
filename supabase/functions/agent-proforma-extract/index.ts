@@ -61,6 +61,32 @@ Output ONLY valid JSON with this exact shape, no preamble:
   "bank_details": "string or null (full beneficiary bank details if visible)"
 }`;
 
+  // Download the invoice file. Claude rejects PDFs when sent as type=image,
+  // so we fetch the file, sniff its mime type, and send as `document` for
+  // PDFs or `image` for images. Same pattern compliance-review already uses.
+  let base64 = "";
+  let mimeType = "application/octet-stream";
+  let isImage = false;
+  try {
+    const fileRes = await fetch(invoiceUrl);
+    if (!fileRes.ok) return json(502, { error: "Couldn't download invoice", status: fileRes.status });
+    const blob = await fileRes.blob();
+    const bytes = new Uint8Array(await blob.arrayBuffer());
+    mimeType = blob.type || "application/octet-stream";
+    isImage = mimeType.startsWith("image/");
+    const isPdf = mimeType === "application/pdf" || mimeType === "application/x-pdf";
+    if (!isImage && !isPdf) mimeType = "application/pdf"; // best-effort default
+    // Base64-encode the bytes (chunked to avoid stack overflow on large files).
+    let binary = "";
+    const chunkSize = 0x8000;
+    for (let i = 0; i < bytes.length; i += chunkSize) {
+      binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
+    }
+    base64 = btoa(binary);
+  } catch (err) {
+    return json(502, { error: "Couldn't fetch invoice file", detail: String(err) });
+  }
+
   try {
     const aRes = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
@@ -71,7 +97,10 @@ Output ONLY valid JSON with this exact shape, no preamble:
         messages: [{
           role: "user",
           content: [
-            { type: "image", source: { type: "url", url: invoiceUrl } },
+            {
+              type: isImage ? "image" : "document",
+              source: { type: "base64", media_type: mimeType, data: base64 },
+            },
             { type: "text", text: prompt },
           ],
         }],
