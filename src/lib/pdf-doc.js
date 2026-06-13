@@ -1046,14 +1046,20 @@ function buildProformaRestructuredPage(doc, args) {
   drawParty("Consignee / UBO", consignee?.name, consignee?.address, consignee?.contact, consignee?.tax_id)(MARGIN_L + 2 * (colW + 4));
   y += 56;
 
-  // Line items table
+  // Line items table — column geometry. Wider gap on the right so long
+  // descriptions don't bleed into QTY. AMOUNT keeps the far-right edge.
+  const COL_QTY    = PAGE_W - MARGIN_L - 75;
+  const COL_UNIT   = PAGE_W - MARGIN_L - 40;
+  const COL_AMOUNT = PAGE_W - MARGIN_L;
+  const DESC_MAX_W = COL_QTY - MARGIN_L - 6;
+
   doc.setFont("helvetica", "bold");
   doc.setFontSize(8);
   doc.setTextColor(MUTED);
   doc.text("DESCRIPTION", MARGIN_L, y);
-  doc.text("QTY", PAGE_W - MARGIN_L - 60, y, { align: "right" });
-  doc.text("UNIT", PAGE_W - MARGIN_L - 35, y, { align: "right" });
-  doc.text("AMOUNT", PAGE_W - MARGIN_L, y, { align: "right" });
+  doc.text("QTY", COL_QTY, y, { align: "right" });
+  doc.text("UNIT", COL_UNIT, y, { align: "right" });
+  doc.text("AMOUNT", COL_AMOUNT, y, { align: "right" });
   y += 2;
   doc.setDrawColor(LINE);
   doc.line(MARGIN_L, y, PAGE_W - MARGIN_L, y);
@@ -1067,34 +1073,59 @@ function buildProformaRestructuredPage(doc, args) {
       doc.addPage();
       y = 25;
     }
-    doc.text(String(it.description || "—").slice(0, 70), MARGIN_L, y, { maxWidth: PAGE_W - MARGIN_L - 70 });
+    // Description: hard-truncate to fit the column. Long supplier descriptions
+    // (e.g. 4.00-8 76F 6PR AUTO 150 (E4) TVS PAIR/40139090...) were bleeding
+    // into the QTY number, so we cap by character count AND clip by width.
+    const desc = String(it.description || "—").slice(0, 45);
+    doc.text(desc, MARGIN_L, y, { maxWidth: DESC_MAX_W });
     doc.setFont("courier", "normal");
-    doc.text(String(it.quantity ?? "—"), PAGE_W - MARGIN_L - 60, y, { align: "right" });
-    doc.text(String(it.unit_price != null ? fmtMoney(it.unit_price, totals?.currency) : "—"), PAGE_W - MARGIN_L - 35, y, { align: "right" });
-    doc.text(String(it.amount != null ? fmtMoney(it.amount, totals?.currency) : "—"), PAGE_W - MARGIN_L, y, { align: "right" });
+    doc.text(String(it.quantity ?? "—"), COL_QTY, y, { align: "right" });
+    doc.text(String(it.unit_price != null ? fmtMoney(it.unit_price, totals?.currency) : "—"), COL_UNIT, y, { align: "right" });
+    doc.text(String(it.amount != null ? fmtMoney(it.amount, totals?.currency) : "—"), COL_AMOUNT, y, { align: "right" });
     doc.setFont("helvetica", "normal");
     y += 6;
   });
 
   y += 4;
   doc.setDrawColor(LINE);
-  doc.line(PAGE_W - MARGIN_L - 70, y, PAGE_W - MARGIN_L, y);
+  doc.line(COL_QTY - 5, y, COL_AMOUNT, y);
   y += 6;
 
-  // Totals
+  // Totals — clarified labels so the WIRE AMOUNT is unambiguous and
+  // doesn't get confused with the sum of line items. When scaling method
+  // is payment_terms_only, the line items sum to the original supplier
+  // total but the amount to be paid is the operator-confirmed target.
   const totalRow = (label, value, bold) => {
     doc.setFont(bold ? "helvetica" : "helvetica", bold ? "bold" : "normal");
     doc.setFontSize(bold ? 11 : 9);
     doc.setTextColor(bold ? INK : MUTED);
-    doc.text(label, PAGE_W - MARGIN_L - 40, y);
+    doc.text(label, COL_UNIT - 30, y);
     doc.setFont("courier", bold ? "bold" : "normal");
-    doc.text(String(value), PAGE_W - MARGIN_L, y, { align: "right" });
+    doc.text(String(value), COL_AMOUNT, y, { align: "right" });
     y += bold ? 7 : 5;
   };
-  if (totals?.subtotal != null) totalRow("Subtotal", fmtMoney(totals.subtotal, totals?.currency));
+  if (totals?.subtotal != null) totalRow("Subtotal (line items)", fmtMoney(totals.subtotal, totals?.currency));
   if (totals?.tax != null) totalRow("Tax", fmtMoney(totals.tax, totals?.currency));
   if (totals?.shipping != null) totalRow("Shipping", fmtMoney(totals.shipping, totals?.currency));
-  totalRow("TOTAL", fmtMoney(totals?.total ?? 0, totals?.currency), true);
+  totalRow("Total amount to be paid", fmtMoney(totals?.total ?? 0, totals?.currency), true);
+
+  // If amount to be paid doesn't match the math, surface the gap and point
+  // the reader at the payment terms below. This is the compliance hook —
+  // the operator's explanation lives in payment_terms.
+  const itemsTotal = (totals?.subtotal || 0) + (totals?.tax || 0) + (totals?.shipping || 0);
+  const wireTotal = totals?.total || 0;
+  const gap = wireTotal - itemsTotal;
+  if (Math.abs(gap) > 0.5) {
+    doc.setFont("helvetica", "italic");
+    doc.setFontSize(7.5);
+    doc.setTextColor(MUTED);
+    const note = gap > 0
+      ? `Wire amount exceeds line-item total by ${fmtMoney(gap, totals?.currency)} — see payment terms below.`
+      : `Wire amount is ${fmtMoney(-gap, totals?.currency)} less than line-item total — see payment terms below.`;
+    doc.text(note, COL_AMOUNT, y, { align: "right", maxWidth: 80 });
+    y += 5;
+    doc.setFont("helvetica", "normal");
+  }
 
   y += 4;
 
@@ -1134,7 +1165,64 @@ function buildProformaRestructuredPage(doc, args) {
     y += 4;
     doc.setFont("helvetica", "normal");
     doc.text(String(originalInvoice.bank_details).slice(0, 400), MARGIN_L, y, { maxWidth: PAGE_W - 2 * MARGIN_L });
+    y += 14;
   }
+
+  // Signature block — both parties sign off on the restructured doc.
+  // Push to a new page if there isn't room left so the signatures aren't
+  // crammed against the footer.
+  if (y > 235) { doc.addPage(); y = 25; }
+  y += 6;
+  doc.setDrawColor(LINE);
+  doc.line(MARGIN_L, y, PAGE_W - MARGIN_L, y);
+  y += 8;
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(9);
+  doc.setTextColor(INK);
+  doc.text("Acknowledgment & sign-off", MARGIN_L, y);
+  y += 4;
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(7.5);
+  doc.setTextColor(MUTED);
+  doc.text(
+    "Both parties acknowledge the restructure: the buyer of record is acting as contractual trade partner on the consignee's behalf; the consignee is the ultimate beneficial owner of the goods.",
+    MARGIN_L, y,
+    { maxWidth: PAGE_W - 2 * MARGIN_L }
+  );
+  y += 10;
+
+  // Two-column signature blocks
+  const sigColW = (PAGE_W - 2 * MARGIN_L - 8) / 2;
+  const drawSignatureBlock = (label, name, x) => {
+    doc.setDrawColor(LINE);
+    doc.setFillColor("#fafaf8");
+    doc.roundedRect(x, y, sigColW, 38, 2, 2, "FD");
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(7.5);
+    doc.setTextColor(EMERALD);
+    doc.text(label.toUpperCase(), x + 4, y + 6);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(9);
+    doc.setTextColor(INK);
+    doc.text(String(name || "").slice(0, 40), x + 4, y + 12);
+
+    // Signature line
+    doc.setDrawColor(INK);
+    doc.line(x + 4, y + 24, x + sigColW - 4, y + 24);
+    doc.setFontSize(7);
+    doc.setTextColor(MUTED);
+    doc.text("Signature", x + 4, y + 28);
+
+    // Date line
+    doc.setDrawColor(INK);
+    doc.line(x + 4, y + 34, x + sigColW / 2 - 2, y + 34);
+    doc.setFontSize(7);
+    doc.setTextColor(MUTED);
+    doc.text("Date", x + 4, y + 37);
+  };
+  drawSignatureBlock("Buyer of record (operator)", buyer?.name || operatorName, MARGIN_L);
+  drawSignatureBlock("Consignee / UBO (end customer)", consignee?.name, MARGIN_L + sigColW + 8);
+  y += 44;
 }
 
 export function generateProformaRestructuredPdf(args) {
