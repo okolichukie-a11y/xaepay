@@ -5697,28 +5697,35 @@ function CustomerDocumentsTab({ customerId }) {
 }
 
 // Customer Recipients tab — list of recipients the customer has used in
-// past quotes. Read-only view of `recipients` rows added by this customer.
+// past quotes, plus a standalone "+ Add recipient" workflow so they can
+// pre-add suppliers/family members without needing to start a quote first.
 function CustomerRecipientsTab({ customerId }) {
   const [recipients, setRecipients] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [addOpen, setAddOpen] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0);
+
   useEffect(() => {
     if (!customerId) return;
     setLoading(true);
     supabase.from("recipients")
-      .select("id, recipient_type, full_name, legal_business_name, bank_name, bank_account_number, contact_phone, created_at, provider_kyc_status")
+      .select("id, recipient_type, full_name, legal_business_name, bank_name, bank_account_number, bank_account_currency, contact_phone, country, created_at, provider_kyc_status")
       .eq("added_by_customer_id", customerId)
       .order("created_at", { ascending: false })
       .then(({ data }) => {
         setRecipients(data || []);
         setLoading(false);
       });
-  }, [customerId]);
+  }, [customerId, refreshKey]);
 
   return (
     <section className="space-y-4">
-      <div>
-        <h2 className="font-display text-xl font-semibold">Recipients</h2>
-        <p className="text-sm mt-1" style={{ color: "var(--muted)" }}>People and businesses you've sent money to. Add a new recipient when you request your next quote.</p>
+      <div className="flex items-baseline justify-between gap-2 flex-wrap">
+        <div>
+          <h2 className="font-display text-xl font-semibold">Recipients</h2>
+          <p className="text-sm mt-1" style={{ color: "var(--muted)" }}>People and businesses you send money to. Add them here once, reuse them on any quote.</p>
+        </div>
+        <PrimaryBtn onClick={() => setAddOpen(true)}><Plus size={14} /> Add recipient</PrimaryBtn>
       </div>
       {loading ? (
         <div className="text-sm" style={{ color: "var(--muted)" }}>Loading…</div>
@@ -5727,7 +5734,7 @@ function CustomerRecipientsTab({ customerId }) {
           <div className="p-10 text-center">
             <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full" style={{ background: "var(--bone-2)" }}><Briefcase size={20} style={{ color: "var(--muted)" }} /></div>
             <h3 className="font-display text-lg font-semibold">No recipients yet</h3>
-            <p className="mt-1.5 text-sm" style={{ color: "var(--muted)" }}>Request your first quote and your recipient details will be saved here for next time.</p>
+            <p className="mt-1.5 text-sm" style={{ color: "var(--muted)" }}>Click <strong style={{ color: "var(--ink)" }}>Add recipient</strong> above to save your first supplier, family member, or business — or request a quote and the recipient details will be saved here automatically.</p>
           </div>
         </Card>
       ) : (
@@ -5741,8 +5748,9 @@ function CustomerRecipientsTab({ customerId }) {
                     <div className="text-sm font-semibold">{name}</div>
                     <span className="rounded-full px-2 py-0.5 font-mono text-[9px] uppercase tracking-wider" style={{ background: "var(--bone)", color: "var(--muted)" }}>{r.recipient_type || "—"}</span>
                   </div>
-                  {r.bank_name && <div className="font-mono text-[11px]" style={{ color: "var(--muted)" }}>{r.bank_name} · {r.bank_account_number}</div>}
+                  {r.bank_name && <div className="font-mono text-[11px]" style={{ color: "var(--muted)" }}>{r.bank_name} · {r.bank_account_number} {r.bank_account_currency ? `(${r.bank_account_currency})` : ""}</div>}
                   {r.contact_phone && <div className="font-mono text-[11px]" style={{ color: "var(--muted)" }}>{r.contact_phone}</div>}
+                  {r.country && <div className="font-mono text-[11px]" style={{ color: "var(--muted)" }}>{r.country}</div>}
                   <div className="font-mono text-[10px]" style={{ color: "var(--muted)" }}>Added {relativeTime(r.created_at)}</div>
                 </div>
               </Card>
@@ -5750,7 +5758,99 @@ function CustomerRecipientsTab({ customerId }) {
           })}
         </div>
       )}
+      <CustomerAddRecipientModal open={addOpen} customerId={customerId} onClose={() => setAddOpen(false)} onAdded={() => { setAddOpen(false); setRefreshKey((k) => k + 1); }} />
     </section>
+  );
+}
+
+// Modal for the customer to add a new recipient standalone. Same fields the
+// quote-request flow captures, but decoupled so customers can pre-stage
+// suppliers / family members before they need to send money.
+function CustomerAddRecipientModal({ open, customerId, onClose, onAdded }) {
+  const { push } = useToast();
+  const [recipientType, setRecipientType] = useState("individual");
+  const [name, setName] = useState("");
+  const [bankName, setBankName] = useState("");
+  const [accountNumber, setAccountNumber] = useState("");
+  const [currency, setCurrency] = useState("USD");
+  const [country, setCountry] = useState("");
+  const [phone, setPhone] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const isInd = recipientType === "individual";
+
+  const reset = () => {
+    setRecipientType("individual");
+    setName(""); setBankName(""); setAccountNumber(""); setCurrency("USD"); setCountry(""); setPhone("");
+  };
+
+  const canSave = !!name && !!bankName && !!accountNumber && !!currency && !saving;
+
+  const save = async () => {
+    if (!canSave || !customerId) return;
+    setSaving(true);
+    const { error } = await supabase.from("recipients").insert({
+      recipient_type: recipientType,
+      full_name: isInd ? name : null,
+      legal_business_name: !isInd ? name : null,
+      bank_name: bankName,
+      bank_account_number: accountNumber,
+      bank_account_currency: currency,
+      contact_phone: (phone || "").replace(/[^\d+]/g, "") || null,
+      country: country || null,
+      added_by_customer_id: customerId,
+      created_by: null,
+    });
+    setSaving(false);
+    if (error) { push(`Couldn't add recipient: ${error.message}`, "warn"); return; }
+    push("Recipient saved", "success");
+    reset();
+    onAdded && onAdded();
+  };
+
+  if (!open) return null;
+
+  return (
+    <Modal open={true} onClose={onClose} title="Add recipient" size="lg">
+      <div className="space-y-4">
+        <Field label="Recipient type">
+          <div className="flex gap-2">
+            {[{ id: "individual", label: "Individual" }, { id: "business", label: "Business" }].map((opt) => (
+              <button key={opt.id} type="button" onClick={() => setRecipientType(opt.id)} className="flex-1 rounded-lg px-3 py-2 text-sm font-semibold transition" style={{ background: recipientType === opt.id ? "var(--ink)" : "var(--bone)", color: recipientType === opt.id ? "var(--lime)" : "var(--muted)", border: `1px solid ${recipientType === opt.id ? "var(--ink)" : "var(--line)"}` }}>{opt.label}</button>
+            ))}
+          </div>
+        </Field>
+        <Field label={isInd ? "Full legal name" : "Legal business name"}>
+          <Input value={name} onChange={(e) => setName(e.target.value)} placeholder={isInd ? "As shown on bank record" : "As registered"} />
+        </Field>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <Field label="Bank name"><Input value={bankName} onChange={(e) => setBankName(e.target.value)} placeholder="e.g. HSBC, GTBank" /></Field>
+          <Field label="Bank account number"><Input value={accountNumber} onChange={(e) => setAccountNumber(e.target.value)} placeholder="Local account number / IBAN" /></Field>
+          <Field label="Account currency">
+            <Select value={currency} onChange={(e) => setCurrency(e.target.value)}>
+              <option value="USD">USD</option>
+              <option value="EUR">EUR</option>
+              <option value="GBP">GBP</option>
+              <option value="CNY">CNY</option>
+              <option value="INR">INR</option>
+              <option value="NGN">NGN</option>
+              <option value="ZAR">ZAR</option>
+              <option value="GHS">GHS</option>
+              <option value="KES">KES</option>
+            </Select>
+          </Field>
+          <Field label="Country (optional)"><Input value={country} onChange={(e) => setCountry(e.target.value)} placeholder="e.g. United States, China" /></Field>
+          <Field label="Contact phone (optional)"><Input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+ country code" /></Field>
+        </div>
+        <div className="rounded-xl p-3 text-xs" style={{ background: "rgba(15,95,63,0.04)", border: "1px solid rgba(15,95,63,0.15)", color: "var(--muted)" }}>
+          Saved recipients are private to your account. You'll be able to pick this recipient from a list the next time you request a quote.
+        </div>
+        <div className="flex justify-between">
+          <SecondaryBtn onClick={onClose}>Cancel</SecondaryBtn>
+          <PrimaryBtn onClick={save} disabled={!canSave}>{saving ? <><Loader2 size={12} className="animate-spin" /> Saving…</> : <>Save recipient</>}</PrimaryBtn>
+        </div>
+      </div>
+    </Modal>
   );
 }
 
