@@ -4817,6 +4817,16 @@ function CustomerPortal({ session, customerRows }) {
   const [sectionCollapsed, setSectionCollapsed] = useState(() => {
     try { return JSON.parse(localStorage.getItem("xaepay_portal_sections") || '{"expiredQuotes":true,"pastQuotes":true}'); } catch { return { expiredQuotes: true, pastQuotes: true }; }
   });
+
+  // Tab navigation — persists across reloads so a customer who refreshes
+  // stays where they were. Default is 'dashboard' which holds the urgent
+  // action items + profile + activity overview.
+  const [activeTab, setActiveTab] = useState(() => {
+    try { return localStorage.getItem("xaepay_portal_tab") || "dashboard"; } catch { return "dashboard"; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem("xaepay_portal_tab", activeTab); } catch { /* noop */ }
+  }, [activeTab]);
   useEffect(() => {
     try { localStorage.setItem("xaepay_portal_sections", JSON.stringify(sectionCollapsed)); } catch { /* noop */ }
   }, [sectionCollapsed]);
@@ -5105,6 +5115,52 @@ function CustomerPortal({ session, customerRows }) {
         );
       })()}
 
+      {/* Tab navigation — splits the long single-scroll portal into
+          context-specific views. Dashboard stays the default; quotes,
+          invoices, issued, and recurring tabs are only visible when there
+          is data or it's relevant to the customer type. */}
+      {(() => {
+        const isBusiness = activeCustomer?.type === "business";
+        const hasRecurring = recurringRequests.length > 0;
+        const tabs = [
+          { id: "dashboard", label: "Dashboard", icon: BarChart3, show: true },
+          { id: "quotes",    label: "Quotes",    icon: Send,      show: true,           count: openQuotes.length + requestQuotes.length + inProgressQuotes.length },
+          { id: "invoices",  label: "Invoices",  icon: Receipt,   show: true,           count: invoices.filter((i) => i.status === "sent").length },
+          { id: "issued",    label: "Issued",    icon: FileText,  show: isBusiness },
+          { id: "recurring", label: "Recurring", icon: RefreshCw, show: hasRecurring },
+        ].filter((t) => t.show);
+        return (
+          <section className="mb-6 rise" style={{ animationDelay: "0.035s" }}>
+            <div className="flex gap-1 overflow-x-auto rounded-xl p-1" style={{ background: "var(--bone)", border: "1px solid var(--line)" }}>
+              {tabs.map((t) => {
+                const Icon = t.icon;
+                const active = activeTab === t.id;
+                return (
+                  <button
+                    key={t.id}
+                    onClick={() => setActiveTab(t.id)}
+                    className="flex-shrink-0 inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-semibold transition"
+                    style={{
+                      background: active ? "var(--ink)" : "transparent",
+                      color: active ? "var(--lime)" : "var(--muted)",
+                    }}
+                  >
+                    <Icon size={12} />
+                    {t.label}
+                    {t.count > 0 && (
+                      <span className="rounded-full px-1.5 py-0.5 font-mono text-[9px]" style={{ background: active ? "var(--lime)" : "var(--bone-2)", color: active ? "var(--ink)" : "var(--muted)" }}>
+                        {t.count}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </section>
+        );
+      })()}
+
+      {activeTab === "dashboard" && (<>
       {/* Activity overview — lifetime + recent counts derived from the quotes list. */}
       {(() => {
         const completedQuotes = quotes.filter((q) => {
@@ -5187,8 +5243,9 @@ function CustomerPortal({ session, customerRows }) {
           </div>
         </Card>
       </section>
+      </>)}
 
-      {invoices.filter((i) => i.status === "sent").length > 0 && (
+      {activeTab === "invoices" && invoices.filter((i) => i.status === "sent").length > 0 && (
         <section className="mb-8 rise" style={{ animationDelay: "0.048s" }}>
           <h2 className="font-display text-xl font-semibold mb-4">
             {invoices.filter((i) => i.status === "sent").length} invoice{invoices.filter((i) => i.status === "sent").length === 1 ? "" : "s"} to pay
@@ -5214,6 +5271,19 @@ function CustomerPortal({ session, customerRows }) {
         </section>
       )}
 
+      {activeTab === "invoices" && invoices.filter((i) => i.status === "sent").length === 0 && (
+        <section className="mb-8 rise" style={{ animationDelay: "0.048s" }}>
+          <Card>
+            <div className="p-10 text-center">
+              <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full" style={{ background: "var(--bone-2)" }}><Receipt size={20} style={{ color: "var(--muted)" }} /></div>
+              <h3 className="font-display text-lg font-semibold">No invoices to pay</h3>
+              <p className="mt-1.5 text-sm" style={{ color: "var(--muted)" }}>When your operator bills you, the invoice shows up here.</p>
+            </div>
+          </Card>
+        </section>
+      )}
+
+      {activeTab === "quotes" && (<>
       {requestQuotes.length > 0 && (
         <section className="mb-8 rise" style={{ animationDelay: "0.05s" }}>
           <h2 className="font-display text-xl font-semibold mb-4">
@@ -5351,12 +5421,14 @@ function CustomerPortal({ session, customerRows }) {
           )}
         </section>
       )}
+      </>)}
+
       {/* Recurring cross-border payments — Pro tier feature. Customer sets a
           schedule; each cycle, a new quote request auto-creates for the
           operator to price. Saves the customer from re-entering the same
           payment details every month (school fees, monthly supplier order,
           contractor retainer, etc.). */}
-      {recurringRequests.length > 0 || true ? (
+      {activeTab === "recurring" && (recurringRequests.length > 0 || true) ? (
         <section className="mb-10 rise" style={{ animationDelay: "0.095s" }}>
           <button type="button" onClick={() => toggleSection("recurringRequests")} className="w-full flex items-baseline justify-between mb-4 group">
             <h2 className="font-display text-xl font-semibold flex items-center gap-2">
@@ -5431,7 +5503,7 @@ function CustomerPortal({ session, customerRows }) {
           using the same payment-method picker and receipt flow operators use.
           Free tier: 3 invoices per calendar month. Defaults collapsed to keep
           the dashboard tight; expands when there are issued invoices. */}
-      {activeCustomer?.type === "business" && (() => {
+      {activeTab === "issued" && activeCustomer?.type === "business" && (() => {
         const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1).getTime();
         const thisMonthCount = issuedInvoices.filter((inv) => new Date(inv.created_at).getTime() >= monthStart).length;
         const FREE_LIMIT = freeInvoiceLimit;
