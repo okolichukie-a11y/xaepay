@@ -3211,28 +3211,13 @@ function CapabilityStrip() {
             <p className="mt-2 text-sm leading-relaxed" style={{ color: "var(--muted)" }}>AI-powered invoice review, RFI-prevention agent, recurring-quote runner, auto-generated regulatory reports.</p>
           </div>
 
-          {/* Row 4: Third-party trade documentation — compact card. */}
+          {/* Row 4: Third-party trade documentation. */}
           <div className="lg:col-span-3 rounded-2xl p-5 sm:p-6" style={{ background: "white", border: "1px solid var(--line)" }}>
-            <div className="grid gap-5 sm:grid-cols-[1fr_auto] items-center">
-              <div className="max-w-xl">
-                <div className="flex h-9 w-9 items-center justify-center rounded-lg mb-3" style={{ background: "var(--bone-2)", color: "var(--emerald)" }}><FileText size={16} /></div>
-                <h3 className="font-display text-lg font-semibold">Third-party trade documentation</h3>
-                <p className="mt-2 text-sm leading-relaxed" style={{ color: "var(--muted)" }}>
-                  Restructure supplier invoices so the operator is named buyer of record and the customer is the consignee + UBO. Both parties attest, the restructured PDF is signed off, the original is preserved in the audit trail.
-                </p>
-              </div>
-              <div className="hidden lg:flex flex-col items-end gap-2 font-mono text-[10px] uppercase tracking-wider" style={{ color: "var(--muted)" }}>
-                <div className="rounded-lg px-3 py-2" style={{ background: "var(--bone)", border: "1px solid var(--line)" }}>
-                  <span style={{ color: "var(--muted)" }}>Original</span>
-                  <div className="text-sm font-mono mt-1" style={{ color: "var(--ink)" }}>$64,540 · Supplier→Customer</div>
-                </div>
-                <ArrowRight size={14} style={{ color: "var(--emerald)" }} className="rotate-90" />
-                <div className="rounded-lg px-3 py-2" style={{ background: "rgba(15,95,63,0.06)", border: "1px solid rgba(15,95,63,0.25)" }}>
-                  <span style={{ color: "var(--emerald)" }}>Restructured</span>
-                  <div className="text-sm font-mono mt-1" style={{ color: "var(--ink)" }}>$20,000 · Operator→Supplier</div>
-                </div>
-              </div>
-            </div>
+            <div className="flex h-9 w-9 items-center justify-center rounded-lg mb-3" style={{ background: "var(--bone-2)", color: "var(--emerald)" }}><FileText size={16} /></div>
+            <h3 className="font-display text-lg font-semibold">Third-party trade documentation</h3>
+            <p className="mt-2 text-sm leading-relaxed max-w-xl" style={{ color: "var(--muted)" }}>
+              When an operator purchases on a customer's behalf as their disclosed agent, supporting documentation reflects the trade-partner relationship — both parties attest, original invoice preserved.
+            </p>
           </div>
         </div>
       </div>
