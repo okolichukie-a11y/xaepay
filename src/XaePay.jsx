@@ -4996,7 +4996,7 @@ function CustomerPortal({ session, customerRows }) {
   );
 
   return (
-    <div className="mx-auto max-w-5xl px-4 py-10 sm:px-6 lg:px-8 lg:py-14">
+    <div className="mx-auto max-w-7xl px-4 py-10 sm:px-6 lg:px-8 lg:py-14">
       <div className="mb-8 rise">
         <SectionEyebrow>Customer Portal</SectionEyebrow>
         <h1 className="font-display mt-3 text-3xl font-[450] tracking-tight sm:text-[40px]">
@@ -5115,50 +5115,56 @@ function CustomerPortal({ session, customerRows }) {
         );
       })()}
 
-      {/* Tab navigation — splits the long single-scroll portal into
-          context-specific views. Dashboard stays the default; quotes,
-          invoices, issued, and recurring tabs are only visible when there
-          is data or it's relevant to the customer type. */}
-      {(() => {
-        const isBusiness = activeCustomer?.type === "business";
-        const hasRecurring = recurringRequests.length > 0;
-        const tabs = [
-          { id: "dashboard", label: "Dashboard", icon: BarChart3, show: true },
-          { id: "quotes",    label: "Quotes",    icon: Send,      show: true,           count: openQuotes.length + requestQuotes.length + inProgressQuotes.length },
-          { id: "invoices",  label: "Invoices",  icon: Receipt,   show: true,           count: invoices.filter((i) => i.status === "sent").length },
-          { id: "issued",    label: "Issued",    icon: FileText,  show: isBusiness },
-          { id: "recurring", label: "Recurring", icon: RefreshCw, show: hasRecurring },
-        ].filter((t) => t.show);
-        return (
-          <section className="mb-6 rise" style={{ animationDelay: "0.035s" }}>
-            <div className="flex gap-1 overflow-x-auto rounded-xl p-1" style={{ background: "var(--bone)", border: "1px solid var(--line)" }}>
-              {tabs.map((t) => {
-                const Icon = t.icon;
-                const active = activeTab === t.id;
-                return (
-                  <button
-                    key={t.id}
-                    onClick={() => setActiveTab(t.id)}
-                    className="flex-shrink-0 inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-semibold transition"
-                    style={{
-                      background: active ? "var(--ink)" : "transparent",
-                      color: active ? "var(--lime)" : "var(--muted)",
-                    }}
-                  >
-                    <Icon size={12} />
-                    {t.label}
-                    {t.count > 0 && (
-                      <span className="rounded-full px-1.5 py-0.5 font-mono text-[9px]" style={{ background: active ? "var(--lime)" : "var(--bone-2)", color: active ? "var(--ink)" : "var(--muted)" }}>
-                        {t.count}
+      {/* Sidebar + content layout — same pattern as the operator dashboard
+          so customers get a consistent navigation model. All 8 tabs always
+          render so customers can discover features (tabs with no data
+          show an empty state instead of being hidden). */}
+      <div className="lg:flex lg:gap-8">
+        {(() => {
+          const tabs = [
+            { id: "dashboard",  label: "Dashboard",  icon: BarChart3 },
+            { id: "quotes",     label: "Quotes",     icon: Send,       count: openQuotes.length + requestQuotes.length + inProgressQuotes.length },
+            { id: "invoices",   label: "Invoices",   icon: Receipt,    count: invoices.filter((i) => i.status === "sent").length },
+            { id: "issued",     label: "Issued",     icon: FileText },
+            { id: "recurring",  label: "Recurring",  icon: RefreshCw },
+            { id: "documents",  label: "Documents",  icon: Paperclip },
+            { id: "recipients", label: "Recipients", icon: Briefcase },
+            { id: "profile",    label: "Profile",    icon: User },
+          ];
+          return (<>
+            <aside className="hidden lg:block lg:w-56 lg:flex-shrink-0">
+              <nav className="sticky top-24 space-y-1">
+                {tabs.map((t) => {
+                  const Icon = t.icon;
+                  const active = activeTab === t.id;
+                  return (
+                    <button key={t.id} onClick={() => setActiveTab(t.id)} className="flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2.5 text-left text-sm transition" style={active ? { background: "var(--ink)", color: "var(--bone)" } : { color: "var(--muted)" }}>
+                      <span className="inline-flex items-center gap-2.5">
+                        <Icon size={15} strokeWidth={1.75} />
+                        <span className="font-medium">{t.label}</span>
                       </span>
-                    )}
-                  </button>
-                );
-              })}
+                      {t.count > 0 && (
+                        <span className="rounded-full px-2 py-0.5 font-mono text-[9px]" style={{ background: active ? "var(--lime)" : "var(--bone-2)", color: active ? "var(--ink)" : "var(--muted)" }}>{t.count}</span>
+                      )}
+                    </button>
+                  );
+                })}
+              </nav>
+            </aside>
+
+            <div className="lg:hidden mb-6 flex gap-1 overflow-x-auto" style={{ borderBottom: "1px solid var(--line)" }}>
+              {tabs.map((t) => (
+                <button key={t.id} onClick={() => setActiveTab(t.id)} className="relative whitespace-nowrap px-4 py-3 text-sm font-medium transition flex-shrink-0" style={{ color: activeTab === t.id ? "var(--ink)" : "var(--muted)" }}>
+                  {t.label}
+                  {t.count > 0 && <span className="ml-1.5 rounded-full px-1.5 py-0.5 font-mono text-[9px]" style={{ background: "var(--bone-2)", color: "var(--muted)" }}>{t.count}</span>}
+                  {activeTab === t.id && <div className="absolute bottom-[-1px] left-0 right-0 h-[2px]" style={{ background: "var(--ink)" }} />}
+                </button>
+              ))}
             </div>
-          </section>
-        );
-      })()}
+          </>);
+        })()}
+
+        <div className="flex-1 fade-in min-w-0">
 
       {activeTab === "dashboard" && (<>
       {/* Activity overview — lifetime + recent counts derived from the quotes list. */}
@@ -5569,6 +5575,34 @@ function CustomerPortal({ session, customerRows }) {
         );
       })()}
 
+      {/* When Issued tab is active but the customer isn't business-type,
+          show an empty state explaining what the feature is. */}
+      {activeTab === "issued" && activeCustomer?.type !== "business" && (
+        <section className="mb-8 rise">
+          <Card>
+            <div className="p-10 text-center">
+              <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full" style={{ background: "var(--bone-2)" }}><FileText size={20} style={{ color: "var(--muted)" }} /></div>
+              <h3 className="font-display text-lg font-semibold">Issuing invoices is for business customers</h3>
+              <p className="mt-1.5 text-sm" style={{ color: "var(--muted)" }}>If your account is registered as a business, you can issue invoices to your downstream clients from here. Contact your operator to upgrade your account type.</p>
+            </div>
+          </Card>
+        </section>
+      )}
+
+      {/* Documents — read-only list of KYC docs the customer has uploaded. */}
+      {activeTab === "documents" && <CustomerDocumentsTab customerId={activeCustomerId} />}
+
+      {/* Recipients — list of people / businesses the customer has paid before. */}
+      {activeTab === "recipients" && <CustomerRecipientsTab customerId={activeCustomerId} />}
+
+      {/* Profile — full read-only profile view + change-info instructions. */}
+      {activeTab === "profile" && (
+        <CustomerProfileTab customer={activeCustomer} session={session} />
+      )}
+
+        </div>
+      </div>
+
       <CustomerRequestQuoteModal
         open={requestOpen}
         onClose={() => setRequestOpen(false)}
@@ -5603,6 +5637,195 @@ function CustomerPortal({ session, customerRows }) {
         })()}
       </Drawer>
     </div>
+  );
+}
+
+// Customer Documents tab — read-only list of KYC docs the customer has
+// uploaded. Source of truth is customer_documents (operator side fills
+// most of these via the customer drawer; customers can also upload via
+// the WhatsApp link their operator sent).
+function CustomerDocumentsTab({ customerId }) {
+  const [docs, setDocs] = useState([]);
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    if (!customerId) return;
+    setLoading(true);
+    supabase.from("customer_documents")
+      .select("id, doc_type, file_name, mime_type, issued_at, created_at, storage_path")
+      .eq("customer_id", customerId)
+      .order("created_at", { ascending: false })
+      .then(({ data }) => {
+        setDocs(data || []);
+        setLoading(false);
+      });
+  }, [customerId]);
+
+  return (
+    <section className="space-y-4">
+      <div>
+        <h2 className="font-display text-xl font-semibold">Documents</h2>
+        <p className="text-sm mt-1" style={{ color: "var(--muted)" }}>KYC documents you've uploaded. To add new docs, message your operator on WhatsApp or send them in person.</p>
+      </div>
+      {loading ? (
+        <div className="text-sm" style={{ color: "var(--muted)" }}>Loading…</div>
+      ) : docs.length === 0 ? (
+        <Card>
+          <div className="p-10 text-center">
+            <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full" style={{ background: "var(--bone-2)" }}><Paperclip size={20} style={{ color: "var(--muted)" }} /></div>
+            <h3 className="font-display text-lg font-semibold">No documents uploaded yet</h3>
+            <p className="mt-1.5 text-sm" style={{ color: "var(--muted)" }}>Your operator will upload KYC documents here as they collect them. Common docs include ID, proof of address, and business registration.</p>
+          </div>
+        </Card>
+      ) : (
+        <div className="space-y-2">
+          {docs.map((d) => (
+            <Card key={d.id}>
+              <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0 flex-1">
+                  <div className="font-mono text-[10px] uppercase tracking-wider" style={{ color: "var(--muted)" }}>{(d.doc_type || "—").replace(/_/g, " ")}</div>
+                  <div className="text-sm font-medium mt-0.5 truncate">{d.file_name || "—"}</div>
+                  <div className="font-mono text-[10px] mt-0.5" style={{ color: "var(--muted)" }}>Uploaded {relativeTime(d.created_at)}</div>
+                </div>
+                <span className="rounded-full px-2 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-wider" style={{ background: "rgba(15,95,63,0.10)", color: "var(--emerald)" }}>Stored</span>
+              </div>
+            </Card>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+// Customer Recipients tab — list of recipients the customer has used in
+// past quotes. Read-only view of `recipients` rows added by this customer.
+function CustomerRecipientsTab({ customerId }) {
+  const [recipients, setRecipients] = useState([]);
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    if (!customerId) return;
+    setLoading(true);
+    supabase.from("recipients")
+      .select("id, recipient_type, full_name, legal_business_name, bank_name, bank_account_number, contact_phone, created_at, provider_kyc_status")
+      .eq("added_by_customer_id", customerId)
+      .order("created_at", { ascending: false })
+      .then(({ data }) => {
+        setRecipients(data || []);
+        setLoading(false);
+      });
+  }, [customerId]);
+
+  return (
+    <section className="space-y-4">
+      <div>
+        <h2 className="font-display text-xl font-semibold">Recipients</h2>
+        <p className="text-sm mt-1" style={{ color: "var(--muted)" }}>People and businesses you've sent money to. Add a new recipient when you request your next quote.</p>
+      </div>
+      {loading ? (
+        <div className="text-sm" style={{ color: "var(--muted)" }}>Loading…</div>
+      ) : recipients.length === 0 ? (
+        <Card>
+          <div className="p-10 text-center">
+            <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full" style={{ background: "var(--bone-2)" }}><Briefcase size={20} style={{ color: "var(--muted)" }} /></div>
+            <h3 className="font-display text-lg font-semibold">No recipients yet</h3>
+            <p className="mt-1.5 text-sm" style={{ color: "var(--muted)" }}>Request your first quote and your recipient details will be saved here for next time.</p>
+          </div>
+        </Card>
+      ) : (
+        <div className="space-y-2">
+          {recipients.map((r) => {
+            const name = r.legal_business_name || r.full_name || "—";
+            return (
+              <Card key={r.id}>
+                <div className="space-y-1.5">
+                  <div className="flex items-baseline justify-between gap-2 flex-wrap">
+                    <div className="text-sm font-semibold">{name}</div>
+                    <span className="rounded-full px-2 py-0.5 font-mono text-[9px] uppercase tracking-wider" style={{ background: "var(--bone)", color: "var(--muted)" }}>{r.recipient_type || "—"}</span>
+                  </div>
+                  {r.bank_name && <div className="font-mono text-[11px]" style={{ color: "var(--muted)" }}>{r.bank_name} · {r.bank_account_number}</div>}
+                  {r.contact_phone && <div className="font-mono text-[11px]" style={{ color: "var(--muted)" }}>{r.contact_phone}</div>}
+                  <div className="font-mono text-[10px]" style={{ color: "var(--muted)" }}>Added {relativeTime(r.created_at)}</div>
+                </div>
+              </Card>
+            );
+          })}
+        </div>
+      )}
+    </section>
+  );
+}
+
+// Customer Profile tab — full read-only view of the customer's account
+// info. To update, customer messages their operator (same policy as the
+// dashboard-tab profile mini-card).
+function CustomerProfileTab({ customer, session }) {
+  if (!customer) return null;
+  const kyc = kycStatusLabel(customer.cedar_kyc_status || customer.kyc_status);
+  return (
+    <section className="space-y-4">
+      <div>
+        <h2 className="font-display text-xl font-semibold">Profile</h2>
+        <p className="text-sm mt-1" style={{ color: "var(--muted)" }}>Your account info. To update anything, message your operator on WhatsApp or in person — they'll update the record on their side.</p>
+      </div>
+
+      <Card>
+        <div className="grid gap-5 sm:grid-cols-2">
+          <div>
+            <div className="font-mono text-[10px] uppercase tracking-wider" style={{ color: "var(--muted)" }}>Name</div>
+            <div className="text-sm mt-1 font-medium">{customer.name || "—"}</div>
+          </div>
+          <div>
+            <div className="font-mono text-[10px] uppercase tracking-wider" style={{ color: "var(--muted)" }}>Email</div>
+            <div className="text-sm mt-1 font-mono">{customer.email || session?.email || "—"}</div>
+          </div>
+          <div>
+            <div className="font-mono text-[10px] uppercase tracking-wider" style={{ color: "var(--muted)" }}>Phone</div>
+            <div className="text-sm mt-1 font-mono">{customer.phone || "—"}</div>
+          </div>
+          <div>
+            <div className="font-mono text-[10px] uppercase tracking-wider" style={{ color: "var(--muted)" }}>Customer type</div>
+            <div className="text-sm mt-1">{customer.type || "—"}</div>
+          </div>
+          {customer.type === "business" && (
+            <>
+              <div>
+                <div className="font-mono text-[10px] uppercase tracking-wider" style={{ color: "var(--muted)" }}>Business name</div>
+                <div className="text-sm mt-1">{customer.business_name || "—"}</div>
+              </div>
+              <div>
+                <div className="font-mono text-[10px] uppercase tracking-wider" style={{ color: "var(--muted)" }}>Business address</div>
+                <div className="text-sm mt-1">{customer.business_address || "—"}</div>
+              </div>
+            </>
+          )}
+        </div>
+      </Card>
+
+      <Card>
+        <div className="grid gap-5 sm:grid-cols-3">
+          <div>
+            <div className="font-mono text-[10px] uppercase tracking-wider" style={{ color: "var(--muted)" }}>KYC status</div>
+            <div className="mt-1.5">
+              <span className="rounded-full px-2 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-wider" style={{ background: kyc.bg, color: kyc.color }}>{kyc.label}</span>
+            </div>
+          </div>
+          <div>
+            <div className="font-mono text-[10px] uppercase tracking-wider" style={{ color: "var(--muted)" }}>KYC tier</div>
+            <div className="text-sm mt-1">Tier {customer.kyc_tier ?? 0}</div>
+          </div>
+          <div>
+            <div className="font-mono text-[10px] uppercase tracking-wider" style={{ color: "var(--muted)" }}>Operator</div>
+            <div className="text-sm mt-1">{customer.bdc_name || "—"}</div>
+          </div>
+        </div>
+      </Card>
+
+      <Card>
+        <div className="text-xs" style={{ color: "var(--muted)" }}>
+          <div className="font-mono text-[10px] uppercase tracking-wider mb-2">Account history</div>
+          Joined {relativeTime(customer.created_at)}. {customer.cedar_business_id ? `PSP customer ID: ${customer.cedar_business_id}` : "Not yet onboarded to PSP."}
+        </div>
+      </Card>
+    </section>
   );
 }
 
