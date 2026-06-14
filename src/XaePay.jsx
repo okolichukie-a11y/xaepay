@@ -426,8 +426,70 @@ const decodeQuoteToken = (token) => {
   } catch { return null; }
 };
 
+// Top-level error boundary. If a rendering error escapes the tree (despite
+// the targeted DrawerErrorBoundary lower down), instead of the user seeing
+// a blank white page, we show a friendly "Something went wrong" screen
+// with a refresh button + the error text so the customer can report it.
+class AppErrorBoundary extends React.Component {
+  constructor(props) { super(props); this.state = { error: null }; }
+  static getDerivedStateFromError(error) { return { error }; }
+  componentDidCatch(error, info) {
+    // eslint-disable-next-line no-console
+    console.error("App crashed:", error, info);
+  }
+  render() {
+    if (this.state.error) {
+      const msg = String(this.state.error?.message || this.state.error);
+      const stack = (this.state.error?.stack || "").slice(0, 1200);
+      return (
+        <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", padding: "24px", background: "#fcfbf7", fontFamily: "system-ui, -apple-system, sans-serif" }}>
+          <div style={{ maxWidth: "560px", width: "100%", background: "white", borderRadius: "16px", padding: "32px", border: "1px solid #e5e7eb", boxShadow: "0 24px 48px -24px rgba(10,11,13,0.15)" }}>
+            <div style={{ fontFamily: "monospace", fontSize: "10px", textTransform: "uppercase", letterSpacing: "0.05em", color: "#9ca3af", marginBottom: "12px" }}>Something went wrong</div>
+            <h1 style={{ margin: 0, fontSize: "24px", color: "#0a0b0d", fontWeight: 600 }}>XaePay hit an error</h1>
+            <p style={{ marginTop: "12px", color: "#6b7280", fontSize: "14px", lineHeight: 1.5 }}>
+              The page didn't render correctly. Refresh and try again — most issues clear on retry. If it keeps happening, copy the error text below and message your operator on WhatsApp.
+            </p>
+            <pre style={{ background: "#fee2e2", padding: "12px", borderRadius: "8px", fontSize: "11px", whiteSpace: "pre-wrap", wordBreak: "break-word", color: "#991b1b", marginTop: "16px", marginBottom: "12px" }}>{msg}</pre>
+            {stack && (
+              <details>
+                <summary style={{ fontSize: "11px", color: "#6b7280", cursor: "pointer" }}>Show technical details</summary>
+                <pre style={{ background: "#f3f4f6", padding: "12px", borderRadius: "8px", fontSize: "10px", whiteSpace: "pre-wrap", wordBreak: "break-word", maxHeight: "240px", overflow: "auto", color: "#374151", marginTop: "8px" }}>{stack}</pre>
+              </details>
+            )}
+            <div style={{ display: "flex", gap: "8px", marginTop: "20px" }}>
+              <button onClick={() => window.location.reload()} style={{ background: "#0a0b0d", color: "#d4f570", border: "none", padding: "10px 20px", borderRadius: "10px", cursor: "pointer", fontWeight: 600, fontSize: "14px" }}>Refresh page</button>
+              <button onClick={() => window.location.href = "/"} style={{ background: "#fcfbf7", color: "#0a0b0d", border: "1px solid #e5e7eb", padding: "10px 20px", borderRadius: "10px", cursor: "pointer", fontWeight: 600, fontSize: "14px" }}>Go to home</button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+// 404 — rendered when ?p=<unknown> is passed. Same visual language as the
+// error boundary so the user feels they're still in XaePay, not lost.
+function NotFoundPage({ route }) {
+  return (
+    <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", padding: "24px" }} className="bg-[color:var(--paper)] font-ui">
+      <div className="max-w-lg w-full text-center">
+        <div className="font-mono text-[10px] uppercase tracking-wider mb-3" style={{ color: "var(--muted)" }}>404 · Page not found</div>
+        <h1 className="font-display text-3xl font-[500] tracking-tight" style={{ color: "var(--ink)" }}>That page doesn't exist</h1>
+        <p className="mt-3 text-sm" style={{ color: "var(--muted)" }}>
+          We couldn't find anything at <code className="font-mono text-xs px-1.5 py-0.5 rounded" style={{ background: "var(--bone)" }}>/?p={route}</code>. Check the link and try again, or head back to the homepage.
+        </p>
+        <div className="mt-6 flex gap-2 justify-center">
+          <a href="/" className="rounded-xl px-4 py-2 text-sm font-semibold" style={{ background: "var(--ink)", color: "var(--lime)" }}>Go to homepage</a>
+          <a href="/?p=pricing" className="rounded-xl px-4 py-2 text-sm font-semibold" style={{ background: "var(--bone)", color: "var(--ink)", border: "1px solid var(--line)" }}>Pricing</a>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function XaePay() {
-  return (<><GlobalStyles /><ToastProvider><AppShell /></ToastProvider></>);
+  return (<AppErrorBoundary><GlobalStyles /><ToastProvider><AppShell /></ToastProvider></AppErrorBoundary>);
 }
 
 function AppShell() {
@@ -687,6 +749,10 @@ function AppShell() {
       </Suspense>
     );
   }
+  // ?p=<something> was set but doesn't match a known route → 404. Without
+  // this fallback the homepage would render even for nonsense URLs, which
+  // is disorienting for anyone following a broken link.
+  if (legalRoute) return <NotFoundPage route={legalRoute} />;
   if (quoteRoute) return <QuoteApprovalPage quote={quoteRoute} />;
   if (onboardRoute) return <CustomerOnboardPage invite={onboardRoute} />;
 
