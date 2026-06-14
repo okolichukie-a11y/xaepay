@@ -2803,113 +2803,76 @@ function Landing({ setView, onRequestAccess, onCustomerSignup, onWaitlist }) {
 function IntelligenceArchitectureBackground() {
   return (
     <svg
-      className="absolute inset-0 w-full h-full pointer-events-none"
+      // Hidden below the md breakpoint — on mobile the labels + lines were
+      // obstructing the centered title + path cards. The decorative
+      // background is desktop-only now.
+      className="absolute inset-0 w-full h-full pointer-events-none hidden md:block"
       viewBox="0 0 1200 800"
       preserveAspectRatio="xMidYMid slice"
       aria-hidden="true"
     >
       <defs>
         <radialGradient id="iab-hub-emerald" cx="50%" cy="50%">
-          <stop offset="0%" stopColor="#0f5f3f" stopOpacity="0.35" />
-          <stop offset="60%" stopColor="#0f5f3f" stopOpacity="0.08" />
+          <stop offset="0%" stopColor="#0f5f3f" stopOpacity="0.22" />
+          <stop offset="60%" stopColor="#0f5f3f" stopOpacity="0.05" />
           <stop offset="100%" stopColor="#0f5f3f" stopOpacity="0" />
         </radialGradient>
         <radialGradient id="iab-hub-lime" cx="50%" cy="50%">
-          <stop offset="0%" stopColor="#c5f24a" stopOpacity="0.40" />
-          <stop offset="60%" stopColor="#c5f24a" stopOpacity="0.10" />
+          <stop offset="0%" stopColor="#c5f24a" stopOpacity="0.25" />
+          <stop offset="60%" stopColor="#c5f24a" stopOpacity="0.06" />
           <stop offset="100%" stopColor="#c5f24a" stopOpacity="0" />
         </radialGradient>
         <linearGradient id="iab-path-grad" x1="0" y1="0" x2="1" y2="0">
           <stop offset="0%" stopColor="#0f5f3f" stopOpacity="0" />
-          <stop offset="50%" stopColor="#0f5f3f" stopOpacity="0.5" />
+          <stop offset="50%" stopColor="#0f5f3f" stopOpacity="0.3" />
           <stop offset="100%" stopColor="#0f5f3f" stopOpacity="0" />
         </linearGradient>
         <pattern id="iab-grid" width="40" height="40" patternUnits="userSpaceOnUse">
-          <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#0f5f3f" strokeOpacity="0.06" strokeWidth="1" />
+          <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#0f5f3f" strokeOpacity="0.04" strokeWidth="1" />
         </pattern>
       </defs>
 
       {/* Faint background grid for technical depth */}
       <rect width="1200" height="800" fill="url(#iab-grid)" />
 
-      {/* Two main hubs — NGN (left) and Foreign currency (right) */}
-      <g opacity="0.55">
-        {/* NGN hub */}
-        <circle cx="220" cy="400" r="120" fill="url(#iab-hub-emerald)" />
-        <circle cx="220" cy="400" r="48" fill="rgba(15,95,63,0.05)" stroke="rgba(15,95,63,0.30)" strokeWidth="1" />
-        <circle cx="220" cy="400" r="48" fill="none" stroke="rgba(15,95,63,0.45)" strokeWidth="1.5" strokeDasharray="3 6">
-          <animateTransform attributeName="transform" type="rotate" from="0 220 400" to="360 220 400" dur="40s" repeatCount="indefinite" />
-        </circle>
-        <text x="220" y="404" textAnchor="middle" fontFamily="ui-monospace, monospace" fontSize="14" fontWeight="600" fill="rgba(15,95,63,0.55)">NGN</text>
-
-        {/* Foreign currency hub */}
-        <circle cx="980" cy="400" r="120" fill="url(#iab-hub-emerald)" />
-        <circle cx="980" cy="400" r="48" fill="rgba(15,95,63,0.05)" stroke="rgba(15,95,63,0.30)" strokeWidth="1" />
-        <circle cx="980" cy="400" r="48" fill="none" stroke="rgba(15,95,63,0.45)" strokeWidth="1.5" strokeDasharray="3 6">
-          <animateTransform attributeName="transform" type="rotate" from="360 980 400" to="0 980 400" dur="40s" repeatCount="indefinite" />
-        </circle>
-        <text x="980" y="404" textAnchor="middle" fontFamily="ui-monospace, monospace" fontSize="14" fontWeight="600" fill="rgba(15,95,63,0.55)">FX</text>
-      </g>
-
-      {/* Intelligence layer — middle column of agent nodes */}
-      <g opacity="0.7">
-        {/* Compliance agent */}
-        <circle cx="600" cy="180" r="50" fill="url(#iab-hub-lime)" />
-        <circle cx="600" cy="180" r="22" fill="rgba(197,242,74,0.08)" stroke="rgba(197,242,74,0.5)" strokeWidth="1" />
-        <text x="600" y="183" textAnchor="middle" fontFamily="ui-monospace, monospace" fontSize="9" fontWeight="600" fill="rgba(15,95,63,0.65)">AI</text>
-
-        {/* Routing engine */}
-        <circle cx="600" cy="400" r="60" fill="url(#iab-hub-lime)" />
-        <circle cx="600" cy="400" r="26" fill="rgba(197,242,74,0.10)" stroke="rgba(197,242,74,0.55)" strokeWidth="1.5" />
-        <text x="600" y="404" textAnchor="middle" fontFamily="ui-monospace, monospace" fontSize="10" fontWeight="600" fill="rgba(15,95,63,0.65)">AGT</text>
-
-        {/* Document agent */}
-        <circle cx="600" cy="620" r="50" fill="url(#iab-hub-lime)" />
-        <circle cx="600" cy="620" r="22" fill="rgba(197,242,74,0.08)" stroke="rgba(197,242,74,0.5)" strokeWidth="1" />
-        <text x="600" y="623" textAnchor="middle" fontFamily="ui-monospace, monospace" fontSize="9" fontWeight="600" fill="rgba(15,95,63,0.65)">DOC</text>
-      </g>
-
-      {/* Peripheral nodes — operators and PSPs */}
+      {/* Two main hubs — corridor endpoints. No text labels; the visual
+          metaphor stays without the wordmark clutter. */}
       <g opacity="0.45">
-        {/* Operator nodes (left side) */}
-        <circle cx="80"  cy="200" r="16" fill="rgba(15,95,63,0.06)" stroke="rgba(15,95,63,0.4)" strokeWidth="1" />
-        <text x="80"  y="203" textAnchor="middle" fontFamily="ui-monospace, monospace" fontSize="8" fontWeight="600" fill="rgba(15,95,63,0.55)">OP</text>
-        <circle cx="80"  cy="600" r="16" fill="rgba(15,95,63,0.06)" stroke="rgba(15,95,63,0.4)" strokeWidth="1" />
-        <text x="80"  y="603" textAnchor="middle" fontFamily="ui-monospace, monospace" fontSize="8" fontWeight="600" fill="rgba(15,95,63,0.55)">OP</text>
-        <circle cx="320" cy="100" r="14" fill="rgba(15,95,63,0.06)" stroke="rgba(15,95,63,0.4)" strokeWidth="1" />
-        <circle cx="320" cy="700" r="14" fill="rgba(15,95,63,0.06)" stroke="rgba(15,95,63,0.4)" strokeWidth="1" />
-
-        {/* PSP nodes (right side) */}
-        <circle cx="1120" cy="200" r="16" fill="rgba(15,95,63,0.06)" stroke="rgba(15,95,63,0.4)" strokeWidth="1" />
-        <text x="1120" y="203" textAnchor="middle" fontFamily="ui-monospace, monospace" fontSize="8" fontWeight="600" fill="rgba(15,95,63,0.55)">PSP</text>
-        <circle cx="1120" cy="600" r="16" fill="rgba(15,95,63,0.06)" stroke="rgba(15,95,63,0.4)" strokeWidth="1" />
-        <text x="1120" y="603" textAnchor="middle" fontFamily="ui-monospace, monospace" fontSize="8" fontWeight="600" fill="rgba(15,95,63,0.55)">PSP</text>
-        <circle cx="880" cy="100" r="14" fill="rgba(15,95,63,0.06)" stroke="rgba(15,95,63,0.4)" strokeWidth="1" />
-        <circle cx="880" cy="700" r="14" fill="rgba(15,95,63,0.06)" stroke="rgba(15,95,63,0.4)" strokeWidth="1" />
+        <circle cx="220" cy="400" r="120" fill="url(#iab-hub-emerald)" />
+        <circle cx="220" cy="400" r="48" fill="rgba(15,95,63,0.04)" stroke="rgba(15,95,63,0.22)" strokeWidth="1" />
+        <circle cx="220" cy="400" r="48" fill="none" stroke="rgba(15,95,63,0.32)" strokeWidth="1" strokeDasharray="3 6">
+          <animateTransform attributeName="transform" type="rotate" from="0 220 400" to="360 220 400" dur="50s" repeatCount="indefinite" />
+        </circle>
+        <circle cx="980" cy="400" r="120" fill="url(#iab-hub-emerald)" />
+        <circle cx="980" cy="400" r="48" fill="rgba(15,95,63,0.04)" stroke="rgba(15,95,63,0.22)" strokeWidth="1" />
+        <circle cx="980" cy="400" r="48" fill="none" stroke="rgba(15,95,63,0.32)" strokeWidth="1" strokeDasharray="3 6">
+          <animateTransform attributeName="transform" type="rotate" from="360 980 400" to="0 980 400" dur="50s" repeatCount="indefinite" />
+        </circle>
       </g>
 
-      {/* Connecting corridor paths — each gets an animated packet */}
+      {/* Central intelligence node — single unlabeled glow at the center,
+          implies "something is processing here" without spelling out AI. */}
+      <g opacity="0.55">
+        <circle cx="600" cy="400" r="80" fill="url(#iab-hub-lime)" />
+        <circle cx="600" cy="400" r="26" fill="rgba(197,242,74,0.08)" stroke="rgba(197,242,74,0.4)" strokeWidth="1" />
+      </g>
+
+      {/* Connecting corridor paths — trimmed from 12 → 4. Just the core
+          left-hub → center → right-hub flow + crosslines that frame the
+          card without competing with it. */}
       {[
-        { id: "p-c1", d: "M 220 400 Q 410 280 600 180", dur: 8 },
-        { id: "p-c2", d: "M 980 400 Q 790 280 600 180", dur: 8, reverse: true },
-        { id: "p-c3", d: "M 220 400 Q 410 400 600 400", dur: 5 },
-        { id: "p-c4", d: "M 600 400 Q 790 400 980 400", dur: 5 },
-        { id: "p-c5", d: "M 220 400 Q 410 520 600 620", dur: 9 },
-        { id: "p-c6", d: "M 980 400 Q 790 520 600 620", dur: 9, reverse: true },
-        { id: "p-c7", d: "M 80 200 Q 150 300 220 400", dur: 7 },
-        { id: "p-c8", d: "M 80 600 Q 150 500 220 400", dur: 7 },
-        { id: "p-c9", d: "M 980 400 Q 1050 300 1120 200", dur: 7 },
-        { id: "p-c10", d: "M 980 400 Q 1050 500 1120 600", dur: 7 },
-        { id: "p-c11", d: "M 320 100 Q 460 140 600 180", dur: 6 },
-        { id: "p-c12", d: "M 880 100 Q 740 140 600 180", dur: 6 },
+        { id: "p-c3", d: "M 220 400 Q 410 400 600 400", dur: 6 },
+        { id: "p-c4", d: "M 600 400 Q 790 400 980 400", dur: 6 },
+        { id: "p-c1", d: "M 220 400 Q 410 280 600 200", dur: 9 },
+        { id: "p-c6", d: "M 980 400 Q 790 520 600 600", dur: 9, reverse: true },
       ].map((p, i) => (
-        <g key={p.id} opacity="0.45">
-          <path id={p.id} d={p.d} fill="none" stroke="rgba(15,95,63,0.18)" strokeWidth="1" />
-          <path d={p.d} fill="none" stroke="rgba(15,95,63,0.30)" strokeWidth="1" strokeDasharray="2 6">
-            <animate attributeName="stroke-dashoffset" from={p.reverse ? "0" : "0"} to={p.reverse ? "16" : "-16"} dur={`${p.dur * 0.6}s`} repeatCount="indefinite" />
+        <g key={p.id} opacity="0.35">
+          <path id={p.id} d={p.d} fill="none" stroke="rgba(15,95,63,0.14)" strokeWidth="1" />
+          <path d={p.d} fill="none" stroke="rgba(15,95,63,0.22)" strokeWidth="1" strokeDasharray="2 6">
+            <animate attributeName="stroke-dashoffset" from="0" to={p.reverse ? "16" : "-16"} dur={`${p.dur * 0.6}s`} repeatCount="indefinite" />
           </path>
           {/* Packet */}
-          <circle r="2.5" fill="rgba(15,95,63,0.7)">
+          <circle r="2" fill="rgba(15,95,63,0.55)">
             <animateMotion dur={`${p.dur}s`} repeatCount="indefinite" begin={`${(i * 0.6) % 4}s`} keyPoints={p.reverse ? "1;0" : "0;1"} keyTimes="0;1" calcMode="linear">
               <mpath href={`#${p.id}`} />
             </animateMotion>
@@ -2917,9 +2880,9 @@ function IntelligenceArchitectureBackground() {
         </g>
       ))}
 
-      {/* Slow horizontal scan line — sweeps across every 15s */}
-      <rect x="-100" y="0" width="60" height="800" fill="url(#iab-path-grad)" opacity="0.15">
-        <animate attributeName="x" from="-100" to="1300" dur="15s" repeatCount="indefinite" />
+      {/* Slow horizontal scan line */}
+      <rect x="-100" y="0" width="60" height="800" fill="url(#iab-path-grad)" opacity="0.10">
+        <animate attributeName="x" from="-100" to="1300" dur="18s" repeatCount="indefinite" />
       </rect>
     </svg>
   );
