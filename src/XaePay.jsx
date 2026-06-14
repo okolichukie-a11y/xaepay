@@ -5015,7 +5015,7 @@ function CustomerPortal({ session, customerRows }) {
     setLoading(true);
     const { data, error } = await supabase
       .from("quotes")
-      .select("id, customer_id, amount, currency, rate, ngn_total, beneficiary, destination, status, expires_at, created_at, cedar_request_status, cedar_payout_status, cedar_business_request_id, cedar_bank_details, cedar_quote_rate, cedar_deposit_amount_minor, cedar_deposit_currency, invoice_url, invoice_uploaded_at, invoice_uploaded_by, customer_deposit_slip_url, customer_deposit_slip_uploaded_at, review_decision, review_reason, review_tier, reviewed_at")
+      .select("id, customer_id, customer_name, amount, currency, rate, ngn_total, beneficiary, destination, status, expires_at, created_at, cedar_request_status, cedar_payout_status, cedar_business_request_id, cedar_bank_details, cedar_quote_rate, cedar_deposit_amount_minor, cedar_deposit_currency, invoice_url, invoice_uploaded_at, invoice_uploaded_by, customer_deposit_slip_url, customer_deposit_slip_uploaded_at, review_decision, review_reason, review_tier, reviewed_at, proforma_restructured, proforma_restructured_invoice_url, proforma_restructured_at, proforma_customer_acknowledged_at")
       .eq("customer_id", activeCustomerId)
       .order("created_at", { ascending: false });
     if (error) {
@@ -7348,6 +7348,7 @@ function CustomerQuoteCard({ q, onDecide, onInvoiceUploaded }) {
   const { push } = useToast();
   const [submitting, setSubmitting] = useState(null);
   const [uploading, setUploading] = useState(false);
+  const [acknowledging, setAcknowledging] = useState(false);
   const expiresAt = q.expires_at ? new Date(q.expires_at) : null;
   const expired = expiresAt && expiresAt < new Date();
   const hasInvoice = !!q.invoice_url;
@@ -7355,6 +7356,21 @@ function CustomerQuoteCard({ q, onDecide, onInvoiceUploaded }) {
     setSubmitting(action);
     await onDecide(q.id, action);
     setSubmitting(null);
+  };
+  // Customer acknowledgment of the restructured invoice. Only meaningful
+  // when the operator has restructured this quote as third-party trade.
+  // Records a timestamp + the customer's name as their digital sign-off.
+  const acknowledgeRestructure = async () => {
+    if (acknowledging || !q.id) return;
+    setAcknowledging(true);
+    const { error } = await supabase.from("quotes").update({
+      proforma_customer_acknowledged_at: new Date().toISOString(),
+      proforma_customer_acknowledgment_name: q.customer_name || null,
+    }).eq("id", q.id);
+    setAcknowledging(false);
+    if (error) { push(`Couldn't record acknowledgment: ${error.message}`, "warn"); return; }
+    push("Acknowledgment recorded · your operator has been notified.", "success");
+    onInvoiceUploaded && onInvoiceUploaded();
   };
   const uploadInvoice = async (file) => {
     if (!file) return;
@@ -7458,6 +7474,37 @@ function CustomerQuoteCard({ q, onDecide, onInvoiceUploaded }) {
               className="block w-full text-xs file:mr-3 file:rounded-lg file:border-0 file:bg-[color:var(--ink)] file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-[color:var(--bone)] hover:file:opacity-90"
             />
             {uploading && <div className="font-mono text-[10px]" style={{ color: "var(--muted)" }}>Uploading…</div>}
+          </div>
+        )}
+
+        {/* Restructured-as-trade section — only renders when the operator has
+            restructured this quote. Customer sees the new invoice + can sign
+            off; their acknowledgment is logged so the operator has on-record
+            consent that the customer agrees to the buyer-of-record swap. */}
+        {q.proforma_restructured && q.proforma_restructured_invoice_url && (
+          <div className="rounded-lg p-3 space-y-2.5" style={{ background: "rgba(15,95,63,0.04)", border: "1px solid rgba(15,95,63,0.2)" }}>
+            <div className="flex items-baseline justify-between gap-2 flex-wrap">
+              <div className="font-mono text-[10px] uppercase tracking-wider" style={{ color: "var(--emerald)" }}>Restructured as third-party trade</div>
+              <a href={safeUrl(q.proforma_restructured_invoice_url)} target="_blank" rel="noreferrer" className="font-medium underline text-xs" style={{ color: "var(--emerald)" }}>View new invoice PDF</a>
+            </div>
+            <div className="text-[11px]" style={{ color: "var(--muted)" }}>
+              Your operator has restructured this trade so they are the named buyer of record on the supplier invoice and you are the named consignee + ultimate beneficial owner of the goods. The original supplier invoice is preserved in the audit trail.
+            </div>
+            {q.proforma_customer_acknowledged_at ? (
+              <div className="flex items-center gap-2 text-xs pt-1.5" style={{ color: "var(--emerald)", borderTop: "1px solid rgba(15,95,63,0.15)" }}>
+                <CheckCircle2 size={12} />
+                <span className="font-medium">Acknowledged {new Date(q.proforma_customer_acknowledged_at).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })}</span>
+              </div>
+            ) : (
+              <button
+                onClick={acknowledgeRestructure}
+                disabled={acknowledging}
+                className="w-full rounded-lg px-3 py-2 text-xs font-semibold transition disabled:opacity-50"
+                style={{ background: "var(--emerald)", color: "var(--lime)" }}
+              >
+                {acknowledging ? <><Loader2 size={11} className="animate-spin inline" /> Recording…</> : "I acknowledge this restructure"}
+              </button>
+            )}
           </div>
         )}
 
@@ -10533,7 +10580,7 @@ function BDCAgent({ jumpToTransaction, hideToggle }) {
     if (!quoteId) return;
     const { data: q, error } = await supabase
       .from("quotes")
-      .select("id, customer_name, customer_phone, customer_id, beneficiary, destination, amount, currency, rate, ngn_total, rail, status, submitted_at, created_at, markup_pct, cost_basis_ngn, recipient_id, recipient_external_account_id, cedar_business_request_id, cedar_request_status, cedar_purpose, cedar_invoice_url, cedar_last_error, cedar_request_status_updated_at, cedar_bank_details, cedar_quote_rate, cedar_deposit_amount_minor, cedar_deposit_currency, cedar_payout_status, invoice_url, invoice_uploaded_at, invoice_uploaded_by, customer_deposit_slip_url, customer_deposit_slip_uploaded_at, review_decision, review_reason, review_details, review_tier, reviewed_at, operator_review_override, operator_review_override_at, operator_review_override_reason, invoice_total_amount, invoice_total_currency, invoice_payment_label, pdf_url, pdf_path, pdf_generated_at, purpose_note, recipient_receipt_pdf_url, recipient_receipt_pdf_path, recipient_receipt_issued_at, bdc_name, proforma_restructured, proforma_original_invoice_url, proforma_restructured_invoice_url, proforma_restructured_at, form_m_responsibility")
+      .select("id, customer_name, customer_phone, customer_id, beneficiary, destination, amount, currency, rate, ngn_total, rail, status, submitted_at, created_at, markup_pct, cost_basis_ngn, recipient_id, recipient_external_account_id, cedar_business_request_id, cedar_request_status, cedar_purpose, cedar_invoice_url, cedar_last_error, cedar_request_status_updated_at, cedar_bank_details, cedar_quote_rate, cedar_deposit_amount_minor, cedar_deposit_currency, cedar_payout_status, invoice_url, invoice_uploaded_at, invoice_uploaded_by, customer_deposit_slip_url, customer_deposit_slip_uploaded_at, review_decision, review_reason, review_details, review_tier, reviewed_at, operator_review_override, operator_review_override_at, operator_review_override_reason, invoice_total_amount, invoice_total_currency, invoice_payment_label, pdf_url, pdf_path, pdf_generated_at, purpose_note, recipient_receipt_pdf_url, recipient_receipt_pdf_path, recipient_receipt_issued_at, bdc_name, proforma_restructured, proforma_original_invoice_url, proforma_restructured_invoice_url, proforma_restructured_at, proforma_customer_acknowledged_at, form_m_responsibility")
       .eq("id", quoteId)
       .maybeSingle();
     if (error || !q) { push(`Couldn't load quote: ${error?.message || "not found"}`, "warn"); return; }
@@ -10599,6 +10646,7 @@ function BDCAgent({ jumpToTransaction, hideToggle }) {
       proforma_original_invoice_url: q.proforma_original_invoice_url,
       proforma_restructured_invoice_url: q.proforma_restructured_invoice_url,
       proforma_restructured_at: q.proforma_restructured_at,
+      proforma_customer_acknowledged_at: q.proforma_customer_acknowledged_at,
       form_m_responsibility: q.form_m_responsibility,
     });
   };
@@ -11135,21 +11183,41 @@ const TRADE_PARTNER_ATTESTATION_TEXT = `The named operator is acting as the cont
 function ProformaRestructureCard({ tx, onChanged }) {
   const [open, setOpen] = useState(false);
   const restructured = !!tx.proforma_restructured;
+  const ackAt = tx.proforma_customer_acknowledged_at;
   return (
     <div>
       <Label>Third-party trade restructure</Label>
       {restructured ? (
-        <div className="rounded-xl p-3 text-xs flex items-center justify-between" style={{ background: "rgba(15,95,63,0.06)", border: "1px solid rgba(15,95,63,0.2)" }}>
-          <div className="flex items-center gap-2" style={{ color: "var(--emerald)" }}>
-            <CheckCircle2 size={14} />
-            <div>
-              <div className="font-medium">Restructured as third-party trade</div>
-              <div className="font-mono text-[10px]" style={{ color: "var(--muted)" }}>Operator is named buyer · customer is consignee/UBO · Form M: {tx.form_m_responsibility || "—"}</div>
+        <div className="space-y-2">
+          <div className="rounded-xl p-3 text-xs flex items-center justify-between" style={{ background: "rgba(15,95,63,0.06)", border: "1px solid rgba(15,95,63,0.2)" }}>
+            <div className="flex items-center gap-2" style={{ color: "var(--emerald)" }}>
+              <CheckCircle2 size={14} />
+              <div>
+                <div className="font-medium">Restructured as third-party trade</div>
+                <div className="font-mono text-[10px]" style={{ color: "var(--muted)" }}>Operator is named buyer · customer is consignee/UBO · Form M: {tx.form_m_responsibility || "—"}</div>
+              </div>
             </div>
+            {tx.proforma_restructured_invoice_url && (
+              <a href={safeUrl(tx.proforma_restructured_invoice_url)} target="_blank" rel="noreferrer" className="font-medium underline" style={{ color: "var(--emerald)" }}>View</a>
+            )}
           </div>
-          {tx.proforma_restructured_invoice_url && (
-            <a href={safeUrl(tx.proforma_restructured_invoice_url)} target="_blank" rel="noreferrer" className="font-medium underline" style={{ color: "var(--emerald)" }}>View</a>
-          )}
+          {/* Customer acknowledgment status — pulled from the quote row,
+              updated by the customer in their portal when they sign off. */}
+          <div className="rounded-xl p-3 text-xs flex items-center gap-2" style={{ background: ackAt ? "rgba(15,95,63,0.04)" : "var(--bone)", border: `1px solid ${ackAt ? "rgba(15,95,63,0.15)" : "var(--line)"}` }}>
+            {ackAt ? (
+              <>
+                <CheckCircle2 size={12} style={{ color: "var(--emerald)" }} />
+                <span className="font-medium" style={{ color: "var(--emerald)" }}>Customer acknowledged</span>
+                <span className="font-mono text-[10px]" style={{ color: "var(--muted)" }}>· {new Date(ackAt).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })} {new Date(ackAt).toLocaleTimeString()}</span>
+              </>
+            ) : (
+              <>
+                <Loader2 size={12} style={{ color: "var(--muted)" }} className="animate-spin" />
+                <span style={{ color: "var(--muted)" }}>Awaiting customer acknowledgment</span>
+                <span className="font-mono text-[10px] ml-auto" style={{ color: "var(--muted)" }}>Customer sees it in their portal</span>
+              </>
+            )}
+          </div>
         </div>
       ) : (
         <div className="rounded-xl p-3 space-y-2" style={{ background: "var(--bone)", border: "1px dashed var(--line)" }}>
@@ -13662,7 +13730,7 @@ function BDCTransactions({ jumpToTransactionId, onJumpHandled } = {}) {
     setLoading(true);
     const { data, error } = await supabase
       .from("quotes")
-      .select("id, customer_name, customer_phone, customer_id, beneficiary, destination, amount, currency, rate, ngn_total, rail, status, submitted_at, created_at, markup_pct, cost_basis_ngn, recipient_id, recipient_external_account_id, cedar_business_request_id, cedar_request_status, cedar_purpose, cedar_invoice_url, cedar_last_error, cedar_request_status_updated_at, cedar_bank_details, cedar_quote_rate, cedar_deposit_amount_minor, cedar_deposit_currency, cedar_payout_status, invoice_url, invoice_uploaded_at, invoice_uploaded_by, customer_deposit_slip_url, customer_deposit_slip_uploaded_at, review_decision, review_reason, review_details, review_tier, reviewed_at, operator_review_override, operator_review_override_at, operator_review_override_reason, invoice_total_amount, invoice_total_currency, invoice_payment_label, pdf_url, pdf_path, pdf_generated_at, purpose_note, recipient_receipt_pdf_url, recipient_receipt_pdf_path, recipient_receipt_issued_at, bdc_name, proforma_restructured, proforma_original_invoice_url, proforma_restructured_invoice_url, proforma_restructured_at, form_m_responsibility")
+      .select("id, customer_name, customer_phone, customer_id, beneficiary, destination, amount, currency, rate, ngn_total, rail, status, submitted_at, created_at, markup_pct, cost_basis_ngn, recipient_id, recipient_external_account_id, cedar_business_request_id, cedar_request_status, cedar_purpose, cedar_invoice_url, cedar_last_error, cedar_request_status_updated_at, cedar_bank_details, cedar_quote_rate, cedar_deposit_amount_minor, cedar_deposit_currency, cedar_payout_status, invoice_url, invoice_uploaded_at, invoice_uploaded_by, customer_deposit_slip_url, customer_deposit_slip_uploaded_at, review_decision, review_reason, review_details, review_tier, reviewed_at, operator_review_override, operator_review_override_at, operator_review_override_reason, invoice_total_amount, invoice_total_currency, invoice_payment_label, pdf_url, pdf_path, pdf_generated_at, purpose_note, recipient_receipt_pdf_url, recipient_receipt_pdf_path, recipient_receipt_issued_at, bdc_name, proforma_restructured, proforma_original_invoice_url, proforma_restructured_invoice_url, proforma_restructured_at, proforma_customer_acknowledged_at, form_m_responsibility")
       .order("created_at", { ascending: false })
       .limit(50);
     if (error) {
