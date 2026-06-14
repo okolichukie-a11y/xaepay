@@ -3247,6 +3247,39 @@ function CapabilityStrip() {
             <h3 className="font-display text-lg font-semibold">AI compliance + reporting agents</h3>
             <p className="mt-2 text-sm leading-relaxed" style={{ color: "var(--muted)" }}>AI-powered invoice review, RFI-prevention agent, recurring-quote runner, auto-generated regulatory reports.</p>
           </div>
+
+          {/* Row 4: BIG (trade restructure) — flagship feature, full row width. */}
+          <div className="lg:col-span-3 rounded-2xl p-5 sm:p-6 relative overflow-hidden" style={{ background: "linear-gradient(135deg, rgba(15,95,63,0.04), rgba(197,242,74,0.06))", border: "1px solid rgba(15,95,63,0.2)" }}>
+            <div className="grid gap-5 sm:grid-cols-[1fr_auto] items-center h-full">
+              <div className="max-w-2xl">
+                <div className="flex items-center gap-2 mb-3">
+                  <div className="flex h-9 w-9 items-center justify-center rounded-lg" style={{ background: "var(--emerald)", color: "var(--lime)" }}><FileText size={16} /></div>
+                  <span className="font-mono text-[10px] uppercase tracking-wider rounded-full px-2 py-0.5" style={{ background: "var(--lime)", color: "var(--ink)" }}>New</span>
+                </div>
+                <h3 className="font-display text-xl font-semibold">Restructure invoices as third-party trade</h3>
+                <p className="mt-2 text-sm leading-relaxed" style={{ color: "var(--muted)" }}>
+                  When the operator pays a supplier on a customer's behalf, the original invoice doesn't always name the operator as buyer — which trips compliance. XaePay restructures it: operator becomes the named buyer of record, customer becomes the consignee + UBO, both parties attest, the AI agent extracts line items from the supplier PDF and lets you adjust target amount + payment terms to match the wire. The restructured PDF carries a signature block for both sides. Available standalone (Invoicing tab) or inside any quote workflow.
+                </p>
+                <div className="mt-4 flex gap-4 flex-wrap text-[11px]" style={{ color: "var(--muted)" }}>
+                  <span className="inline-flex items-center gap-1.5"><CheckCircle2 size={11} style={{ color: "var(--emerald)" }} /> AI extracts from supplier PDF</span>
+                  <span className="inline-flex items-center gap-1.5"><CheckCircle2 size={11} style={{ color: "var(--emerald)" }} /> Target-amount + line-item scaling</span>
+                  <span className="inline-flex items-center gap-1.5"><CheckCircle2 size={11} style={{ color: "var(--emerald)" }} /> Both-party attestation + signature block</span>
+                  <span className="inline-flex items-center gap-1.5"><CheckCircle2 size={11} style={{ color: "var(--emerald)" }} /> Audit trail preserves original</span>
+                </div>
+              </div>
+              <div className="hidden lg:flex flex-col items-end gap-2 font-mono text-[10px] uppercase tracking-wider" style={{ color: "var(--muted)" }}>
+                <div className="rounded-lg px-3 py-2" style={{ background: "white", border: "1px solid var(--line)" }}>
+                  <span style={{ color: "var(--muted)" }}>Original invoice</span>
+                  <div className="text-sm font-mono mt-1" style={{ color: "var(--ink)" }}>$64,540 · Supplier→Customer</div>
+                </div>
+                <ArrowRight size={14} style={{ color: "var(--emerald)" }} className="rotate-90" />
+                <div className="rounded-lg px-3 py-2" style={{ background: "rgba(15,95,63,0.06)", border: "1px solid var(--emerald)" }}>
+                  <span style={{ color: "var(--emerald)" }}>Restructured</span>
+                  <div className="text-sm font-mono mt-1" style={{ color: "var(--ink)" }}>$20,000 · Operator→Supplier</div>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </section>

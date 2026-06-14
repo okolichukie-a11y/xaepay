@@ -143,6 +143,42 @@ export function OperatorsPage() {
         <OperatorDayPanel />
       </Section>
 
+      <Section eyebrow="Trade-partner restructure" title="When the customer is paying through you, the invoice should say so" lede="Most supplier invoices name the end customer as the buyer — which trips PSP compliance the moment you (the operator) try to wire on their behalf. The Restructure-as-Trade flow rewrites the invoice cleanly so the wire goes through.">
+        <div className="rounded-2xl p-6 sm:p-8 relative overflow-hidden" style={{ background: "linear-gradient(135deg, rgba(15,95,63,0.04), rgba(197,242,74,0.08))", border: "1px solid rgba(15,95,63,0.2)" }}>
+          <div className="grid gap-6 lg:grid-cols-2 items-start">
+            <div>
+              <h3 className="font-display text-xl font-semibold">How it works</h3>
+              <ol className="mt-4 space-y-3 text-sm" style={{ color: "var(--ink)" }}>
+                <li className="flex gap-3"><span className="font-mono font-semibold flex-shrink-0" style={{ color: "var(--emerald)" }}>01</span><span><strong>Upload the original supplier invoice.</strong> AI extracts vendor, line items, amounts, dates, payment terms.</span></li>
+                <li className="flex gap-3"><span className="font-mono font-semibold flex-shrink-0" style={{ color: "var(--emerald)" }}>02</span><span><strong>Verify invoice basics.</strong> Compliance requires a real invoice number + a date within 90 days — fix or add if missing.</span></li>
+                <li className="flex gap-3"><span className="font-mono font-semibold flex-shrink-0" style={{ color: "var(--emerald)" }}>03</span><span><strong>Set target amount.</strong> If you're wiring more or less than the supplier's invoice (deposit, freight, partial), pick: scale quantities, scale unit prices, or document the gap in payment terms.</span></li>
+                <li className="flex gap-3"><span className="font-mono font-semibold flex-shrink-0" style={{ color: "var(--emerald)" }}>04</span><span><strong>Capture parties.</strong> You become buyer of record. Customer becomes consignee + UBO. Both attest. Form M responsibility recorded.</span></li>
+                <li className="flex gap-3"><span className="font-mono font-semibold flex-shrink-0" style={{ color: "var(--emerald)" }}>05</span><span><strong>Generate.</strong> Restructured PDF with signature block, original preserved in audit trail, compliance re-runs against the new doc.</span></li>
+              </ol>
+            </div>
+            <div className="space-y-3">
+              <div className="rounded-xl p-4" style={{ background: "white", border: "1px solid var(--line)" }}>
+                <div className="font-mono text-[10px] uppercase tracking-wider" style={{ color: "var(--muted)" }}>Available standalone</div>
+                <div className="mt-1 text-sm" style={{ color: "var(--ink)" }}>Operator dashboard → <strong>Invoicing</strong> tab → <strong>+ New restructured invoice</strong></div>
+                <div className="font-mono text-[10px] mt-1.5" style={{ color: "var(--muted)" }}>No quote, no onboarded customer required — pre-stage for any walk-in trade.</div>
+              </div>
+              <div className="rounded-xl p-4" style={{ background: "white", border: "1px solid var(--line)" }}>
+                <div className="font-mono text-[10px] uppercase tracking-wider" style={{ color: "var(--muted)" }}>Available inside any quote</div>
+                <div className="mt-1 text-sm" style={{ color: "var(--ink)" }}>Open quote drawer → <strong>Restructure as third-party trade</strong></div>
+                <div className="font-mono text-[10px] mt-1.5" style={{ color: "var(--muted)" }}>Target amount defaults to the quote amount; compliance re-runs after.</div>
+              </div>
+              <div className="rounded-xl p-4" style={{ background: "rgba(15,95,63,0.06)", border: "1px solid var(--emerald)" }}>
+                <div className="flex items-center gap-2">
+                  <ShieldCheck size={14} style={{ color: "var(--emerald)" }} />
+                  <span className="font-semibold text-sm" style={{ color: "var(--emerald)" }}>Audit-trail preserved</span>
+                </div>
+                <div className="text-xs mt-1.5" style={{ color: "var(--muted)" }}>Original invoice + restructured PDF + both-party attestation + Form M responsibility are all linked to the same record. Pull the bundle on demand.</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </Section>
+
       <Section eyebrow="How it works" title="Onboard once, transact forever">
         <FlowPipeline steps={[
           { n: "01", title: "Apply", body: "Five-step onboarding: license wrapper, business details, partner letter, risk disclosure. We verify within 1–3 business days.", footer: "One-time" },
