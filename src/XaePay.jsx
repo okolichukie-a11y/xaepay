@@ -9,7 +9,8 @@ import {
 } from "lucide-react";
 import { supabase, sendWhatsAppText, sendWhatsAppTemplate, fetchCedarRate, submitCustomerToCedar, submitRecipientToCedar, submitReceiverAccountToCedar, submitCedarTransaction, approveCedarQuote, confirmCedarDeposit, cancelCedarTransaction, uploadCedarFile, uploadFileBoth, uploadInvoicePdf, uploadInvoicePaymentProof, uploadReceiptPdf, uploadRecipientReceiptPdf, uploadBrandLogo, uploadRegulatoryReportFile, pickServiceProviderForQuote, runComplianceReview, runComplianceWatchman, submitDocumentToCedar, runAgentQuoteReview, runAgentKycChase, runAgentPaymentMatch, runAgentReportDraft, runAgentInvoiceReview, extractProformaInvoice, uploadProformaOriginalInvoice, uploadProformaRestructuredInvoice, uploadStandaloneProformaOriginal, uploadStandaloneProformaRestructured, sendEmail, safeUrl, logAuditEvent, getPlatformSettingInt } from "./lib/supabase.js";
 import { generateQuotePdf, uploadQuotePdf, downloadQuotePdf } from "./lib/pdf.js";
-import { generateCompliancePackPdf, downloadCompliancePackPdf, generateTransactionConfirmationPdf, downloadTransactionConfirmationPdf, generateInvoicePdf, downloadInvoicePdf, generateReceiptPdf, downloadReceiptPdf, generateRecipientReceiptPdf, downloadRecipientReceiptPdf, generateMonthlyTransactionReportPdf, downloadRegulatoryReportPdf, buildTransactionsCsv, generateQuarterlyCustomerActivityReportPdf, buildCustomerActivityCsv, generateProformaRestructuredPdf, downloadProformaRestructuredPdf, generateSuspiciousTransactionReportPdf, buildSuspiciousTransactionCsv } from "./lib/pdf-doc.js";
+import { generateCompliancePackPdf, downloadCompliancePackPdf, generateTransactionConfirmationPdf, downloadTransactionConfirmationPdf, generateInvoicePdf, downloadInvoicePdf, generateReceiptPdf, downloadReceiptPdf, generateRecipientReceiptPdf, downloadRecipientReceiptPdf, generateMonthlyTransactionReportPdf, downloadRegulatoryReportPdf, buildTransactionsCsv, generateQuarterlyCustomerActivityReportPdf, buildCustomerActivityCsv, generateProformaRestructuredPdf, downloadProformaRestructuredPdf, generateSuspiciousTransactionReportPdf, buildSuspiciousTransactionCsv, downloadCompliancePack } from "./lib/pdf-doc.js";
+import { assembleComplianceBundle, uploadComplianceBundle } from "./lib/compliance-bundle.js";
 // Route pages are lazy-loaded so the homepage bundle doesn't carry their
 // weight. Each only renders for a specific ?p= URL — they're cold paths
 // from the homepage's perspective. Pulling them out cuts ~hundreds of KB
@@ -10519,7 +10520,7 @@ function BDCAgent({ jumpToTransaction, hideToggle }) {
     if (!quoteId) return;
     const { data: q, error } = await supabase
       .from("quotes")
-      .select("id, customer_name, customer_phone, customer_id, beneficiary, destination, amount, currency, rate, ngn_total, rail, status, submitted_at, created_at, markup_pct, cost_basis_ngn, recipient_id, recipient_external_account_id, cedar_business_request_id, cedar_request_status, cedar_purpose, cedar_invoice_url, cedar_last_error, cedar_request_status_updated_at, cedar_bank_details, cedar_quote_rate, cedar_deposit_amount_minor, cedar_deposit_currency, cedar_payout_status, invoice_url, invoice_uploaded_at, invoice_uploaded_by, customer_deposit_slip_url, customer_deposit_slip_uploaded_at, review_decision, review_reason, review_details, review_tier, reviewed_at, operator_review_override, operator_review_override_at, operator_review_override_reason, invoice_total_amount, invoice_total_currency, invoice_payment_label, pdf_url, pdf_path, pdf_generated_at, purpose_note, recipient_receipt_pdf_url, recipient_receipt_pdf_path, recipient_receipt_issued_at, bdc_name, proforma_restructured, proforma_original_invoice_url, proforma_restructured_invoice_url, proforma_restructured_at, proforma_customer_acknowledged_at, form_m_responsibility")
+      .select("id, customer_name, customer_phone, customer_id, beneficiary, destination, amount, currency, rate, ngn_total, rail, status, submitted_at, created_at, markup_pct, cost_basis_ngn, recipient_id, recipient_external_account_id, cedar_business_request_id, cedar_request_status, cedar_purpose, cedar_invoice_url, cedar_last_error, cedar_request_status_updated_at, cedar_bank_details, cedar_quote_rate, cedar_deposit_amount_minor, cedar_deposit_currency, cedar_payout_status, invoice_url, invoice_uploaded_at, invoice_uploaded_by, customer_deposit_slip_url, customer_deposit_slip_uploaded_at, review_decision, review_reason, review_details, review_tier, reviewed_at, operator_review_override, operator_review_override_at, operator_review_override_reason, invoice_total_amount, invoice_total_currency, invoice_payment_label, pdf_url, pdf_path, pdf_generated_at, purpose_note, recipient_receipt_pdf_url, recipient_receipt_pdf_path, recipient_receipt_issued_at, bdc_name, proforma_restructured, proforma_original_invoice_url, proforma_restructured_invoice_url, proforma_restructured_at, proforma_customer_acknowledged_at, proforma_target_amount, proforma_payment_terms, proforma_invoice_number, proforma_invoice_date, proforma_line_items_original, proforma_line_items_adjusted, form_m_responsibility, compliance_bundle_url, compliance_bundle_path, compliance_bundle_generated_at, compliance_bundle_bank_details_url")
       .eq("id", quoteId)
       .maybeSingle();
     if (error || !q) { push(`Couldn't load quote: ${error?.message || "not found"}`, "warn"); return; }
@@ -10586,7 +10587,17 @@ function BDCAgent({ jumpToTransaction, hideToggle }) {
       proforma_restructured_invoice_url: q.proforma_restructured_invoice_url,
       proforma_restructured_at: q.proforma_restructured_at,
       proforma_customer_acknowledged_at: q.proforma_customer_acknowledged_at,
+      proforma_target_amount: q.proforma_target_amount,
+      proforma_payment_terms: q.proforma_payment_terms,
+      proforma_invoice_number: q.proforma_invoice_number,
+      proforma_invoice_date: q.proforma_invoice_date,
+      proforma_line_items_original: q.proforma_line_items_original,
+      proforma_line_items_adjusted: q.proforma_line_items_adjusted,
       form_m_responsibility: q.form_m_responsibility,
+      complianceBundleUrl: q.compliance_bundle_url,
+      complianceBundlePath: q.compliance_bundle_path,
+      complianceBundleGeneratedAt: q.compliance_bundle_generated_at,
+      complianceBundleBankDetailsUrl: q.compliance_bundle_bank_details_url,
     });
   };
 
@@ -11165,6 +11176,200 @@ function ProformaRestructureCard({ tx, onChanged }) {
         </div>
       )}
       {open && <ProformaRestructureModal tx={tx} onClose={() => setOpen(false)} onDone={() => { setOpen(false); onChanged && onChanged(); }} />}
+    </div>
+  );
+}
+
+// =============================================================================
+// ComplianceBundleCard — in the TxDrawer for quotes (and reused on the
+// standalone proforma list). Surfaces the bundle's contents inventory,
+// lets the operator upload an optional bank-details doc, then assembles
+// + downloads the single submission PDF. URL is persisted to the quote
+// row so re-download stays one click.
+// =============================================================================
+function ComplianceBundleCard({ tx, onChanged }) {
+  const { push } = useToast();
+  const auth = useAuth();
+  const [generating, setGenerating] = useState(false);
+  const [uploadingBankDetails, setUploadingBankDetails] = useState(false);
+  const [bankDetailsUrl, setBankDetailsUrl] = useState(tx.complianceBundleBankDetailsUrl || null);
+  const [attestation, setAttestation] = useState(null);
+
+  // Fetch the attestation if a restructure exists — needed for Exhibit D.
+  // No-op when there's no restructure.
+  useEffect(() => {
+    if (!tx?.dbId || !tx?.proforma_restructured) return;
+    supabase
+      .from("trade_partner_attestations")
+      .select("*")
+      .eq("quote_id", tx.dbId)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle()
+      .then(({ data }) => setAttestation(data));
+  }, [tx?.dbId, tx?.proforma_restructured]);
+
+  const hasRestructure = !!tx.proforma_restructured;
+  const hasBundle = !!tx.complianceBundleUrl;
+  const hasBankDetails = !!bankDetailsUrl;
+
+  const uploadBankDetails = async (file) => {
+    if (!file || !tx?.dbId) return;
+    setUploadingBankDetails(true);
+    const up = await uploadFileBoth(file, "compliance-bundle-bank-details");
+    setUploadingBankDetails(false);
+    if (!up.supabaseUrl) { push(`Upload failed: ${up.storageError || "unknown"}`, "warn"); return; }
+    const url = up.supabaseUrl;
+    setBankDetailsUrl(url);
+    await supabase.from("quotes").update({ compliance_bundle_bank_details_url: url }).eq("id", tx.dbId);
+    push("Bank details attached to the bundle.", "success");
+    onChanged && onChanged();
+  };
+
+  const generate = async () => {
+    if (generating || !tx?.dbId) return;
+    if (!tx.invoiceUrl) { push("No original invoice to bundle — customer hasn't uploaded one yet.", "warn"); return; }
+    setGenerating(true);
+    try {
+      const reference = `QU-${String(tx.dbId).slice(0, 8).toUpperCase()}`;
+      const operatorName = auth.user?.user_metadata?.company || auth.user?.user_metadata?.full_name || auth.user?.email || "Operator";
+
+      // Build the args for the restructured-invoice page when applicable.
+      // Mirrors what generateProformaRestructuredPdf expects.
+      let restructured = null;
+      if (hasRestructure) {
+        restructured = {
+          operatorName,
+          supplier: { name: tx.beneficiary || "—" },
+          buyer: { name: operatorName },
+          consignee: { name: tx.customerName || tx.customer || "—" },
+          lineItems: tx.proforma_line_items_adjusted || tx.proforma_line_items_original || [],
+          totals: { total: tx.proforma_target_amount || tx.amount, currency: tx.currency },
+          originalInvoice: {
+            invoice_number: tx.proforma_invoice_number,
+            invoice_date: tx.proforma_invoice_date,
+            payment_terms: tx.proforma_payment_terms,
+          },
+          formMResponsibility: tx.form_m_responsibility,
+        };
+      }
+
+      const blob = await assembleComplianceBundle({
+        reference,
+        parties: {
+          supplier: { name: tx.beneficiary || tx.destination || "—" },
+          operator: { name: operatorName },
+          customer: { name: tx.customerName || tx.customer || "—" },
+        },
+        amount: parseFloat(tx.amount) || 0,
+        currency: tx.currency || "USD",
+        operatorName,
+        originalInvoiceUrl: tx.invoiceUrl,
+        bankDetailsUrl,
+        restructured,
+        attestation,
+      });
+
+      const up = await uploadComplianceBundle(tx.dbId, blob);
+      if (!up.ok) throw new Error(up.error || "Upload failed");
+
+      await supabase.from("quotes").update({
+        compliance_bundle_url: up.url,
+        compliance_bundle_path: up.path,
+        compliance_bundle_generated_at: new Date().toISOString(),
+      }).eq("id", tx.dbId);
+
+      // Trigger a download for the operator.
+      downloadCompliancePack(blob, reference);
+
+      push("Bundle generated · downloaded · saved.", "success");
+      onChanged && onChanged();
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error("Compliance bundle failed:", err);
+      push(`Couldn't generate bundle: ${err?.message || err}`, "warn");
+    } finally {
+      setGenerating(false);
+    }
+  };
+
+  return (
+    <div>
+      <Label>Compliance bundle for bank submission</Label>
+      <div className="rounded-xl p-3 space-y-3" style={{ background: "var(--bone)", border: "1px solid var(--line)" }}>
+        <p className="text-xs" style={{ color: "var(--muted)" }}>
+          Single PDF to send your bank or PSP. Stitches cover sheet + original supplier invoice + (optional) restructured invoice + (optional) supplier bank details + (optional) attestation into one document. Eliminates the back-and-forth where they ask for the original after seeing the restructure.
+        </p>
+
+        {/* Contents checklist */}
+        <div className="space-y-1.5 text-xs">
+          <BundleItem ok={true} label="Cover sheet" sub="XaePay-generated" />
+          <BundleItem ok={!!tx.invoiceUrl} label="Exhibit A — Original supplier invoice" sub={tx.invoiceUrl ? "Customer upload · preserved unchanged" : "Required · customer hasn't uploaded yet"} />
+          <BundleItem ok={hasRestructure} optional label="Exhibit B — Restructured trade-partner invoice" sub={hasRestructure ? "Operator named buyer of record" : "Skipped · no restructure on this quote"} />
+          <BundleItem ok={hasBankDetails} optional label="Exhibit C — Supplier bank details" sub={hasBankDetails ? "Attached · preserved unchanged" : "Optional · upload if your supplier sent separately"} />
+          <BundleItem ok={hasRestructure && !!attestation} optional label="Exhibit D — Attestation page" sub={hasRestructure && attestation ? "Both parties acknowledged" : hasRestructure ? "Pending attestation lookup" : "Skipped · no restructure on this quote"} />
+        </div>
+
+        {/* Optional bank-details upload */}
+        {!hasBankDetails && tx.invoiceUrl && (
+          <div className="rounded-lg p-2.5" style={{ background: "white", border: "1px dashed var(--line)" }}>
+            <div className="text-[11px] mb-1.5" style={{ color: "var(--muted)" }}>Supplier sent bank details on a separate document?</div>
+            <input
+              type="file"
+              accept="image/*,application/pdf"
+              onChange={(e) => uploadBankDetails(e.target.files?.[0])}
+              disabled={uploadingBankDetails}
+              className="block w-full text-xs file:mr-3 file:rounded-lg file:border-0 file:bg-[color:var(--ink)] file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-[color:var(--bone)] hover:file:opacity-90"
+            />
+            {uploadingBankDetails && <div className="font-mono text-[10px] mt-1" style={{ color: "var(--muted)" }}>Uploading…</div>}
+          </div>
+        )}
+
+        {/* Soft warning when generating without restructure */}
+        {!hasRestructure && (
+          <div className="rounded-lg p-2.5 text-[11px] flex items-start gap-2" style={{ background: "#fef3c7", border: "1px solid rgba(146,64,14,0.2)", color: "#92400e" }}>
+            <AlertTriangle size={11} className="mt-0.5 flex-shrink-0" />
+            <div>
+              No trade-partner restructure on this quote — the bundle uses lighter disclosed-agency cover language. For high-scrutiny banks, run <strong>Restructure as third-party trade</strong> first and then regenerate.
+            </div>
+          </div>
+        )}
+
+        {/* Generate / re-generate button + last-generated timestamp */}
+        <div className="flex items-center justify-between gap-2 pt-1">
+          <div className="font-mono text-[10px]" style={{ color: "var(--muted)" }}>
+            {tx.complianceBundleGeneratedAt
+              ? `Last generated ${relativeTime(tx.complianceBundleGeneratedAt)}`
+              : "Not generated yet"}
+          </div>
+          <div className="flex gap-2">
+            {hasBundle && (
+              <a href={safeUrl(tx.complianceBundleUrl)} target="_blank" rel="noreferrer" className="rounded-lg px-3 py-1.5 font-mono text-[10px] uppercase tracking-wider inline-flex items-center gap-1" style={{ background: "var(--bone-2)", color: "var(--ink)", border: "1px solid var(--line)" }}>
+                <Download size={11} /> Last bundle
+              </a>
+            )}
+            <PrimaryBtn onClick={generate} disabled={generating || !tx.invoiceUrl}>
+              {generating ? <><Loader2 size={12} className="animate-spin" /> Generating…</> : <><Sparkles size={12} /> {hasBundle ? "Re-generate bundle" : "Generate bundle"}</>}
+            </PrimaryBtn>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// One row in the bundle contents checklist. Green when included, grey
+// when skipped/missing, red when blocking (required and absent).
+function BundleItem({ ok, optional, label, sub }) {
+  const Icon = ok ? CheckCircle2 : optional ? Loader2 : AlertTriangle;
+  const color = ok ? "var(--emerald)" : optional ? "var(--muted)" : "#991b1b";
+  return (
+    <div className="flex items-start gap-2">
+      <Icon size={12} className="mt-0.5 flex-shrink-0" style={{ color }} />
+      <div className="flex-1 min-w-0">
+        <div className="font-medium" style={{ color: "var(--ink)" }}>{label}</div>
+        <div className="text-[10px]" style={{ color: "var(--muted)" }}>{sub}</div>
+      </div>
     </div>
   );
 }
@@ -13702,7 +13907,7 @@ function BDCTransactions({ jumpToTransactionId, onJumpHandled } = {}) {
     setLoading(true);
     const { data, error } = await supabase
       .from("quotes")
-      .select("id, customer_name, customer_phone, customer_id, beneficiary, destination, amount, currency, rate, ngn_total, rail, status, submitted_at, created_at, markup_pct, cost_basis_ngn, recipient_id, recipient_external_account_id, cedar_business_request_id, cedar_request_status, cedar_purpose, cedar_invoice_url, cedar_last_error, cedar_request_status_updated_at, cedar_bank_details, cedar_quote_rate, cedar_deposit_amount_minor, cedar_deposit_currency, cedar_payout_status, invoice_url, invoice_uploaded_at, invoice_uploaded_by, customer_deposit_slip_url, customer_deposit_slip_uploaded_at, review_decision, review_reason, review_details, review_tier, reviewed_at, operator_review_override, operator_review_override_at, operator_review_override_reason, invoice_total_amount, invoice_total_currency, invoice_payment_label, pdf_url, pdf_path, pdf_generated_at, purpose_note, recipient_receipt_pdf_url, recipient_receipt_pdf_path, recipient_receipt_issued_at, bdc_name, proforma_restructured, proforma_original_invoice_url, proforma_restructured_invoice_url, proforma_restructured_at, proforma_customer_acknowledged_at, form_m_responsibility")
+      .select("id, customer_name, customer_phone, customer_id, beneficiary, destination, amount, currency, rate, ngn_total, rail, status, submitted_at, created_at, markup_pct, cost_basis_ngn, recipient_id, recipient_external_account_id, cedar_business_request_id, cedar_request_status, cedar_purpose, cedar_invoice_url, cedar_last_error, cedar_request_status_updated_at, cedar_bank_details, cedar_quote_rate, cedar_deposit_amount_minor, cedar_deposit_currency, cedar_payout_status, invoice_url, invoice_uploaded_at, invoice_uploaded_by, customer_deposit_slip_url, customer_deposit_slip_uploaded_at, review_decision, review_reason, review_details, review_tier, reviewed_at, operator_review_override, operator_review_override_at, operator_review_override_reason, invoice_total_amount, invoice_total_currency, invoice_payment_label, pdf_url, pdf_path, pdf_generated_at, purpose_note, recipient_receipt_pdf_url, recipient_receipt_pdf_path, recipient_receipt_issued_at, bdc_name, proforma_restructured, proforma_original_invoice_url, proforma_restructured_invoice_url, proforma_restructured_at, proforma_customer_acknowledged_at, proforma_target_amount, proforma_payment_terms, proforma_invoice_number, proforma_invoice_date, proforma_line_items_original, proforma_line_items_adjusted, form_m_responsibility, compliance_bundle_url, compliance_bundle_path, compliance_bundle_generated_at, compliance_bundle_bank_details_url")
       .order("created_at", { ascending: false })
       .limit(50);
     if (error) {
@@ -14160,6 +14365,14 @@ function TxDrawer({ tx, onClose, onRefresh }) {
         {/* Proforma restructure — operator can act as trade-partner buyer of record on customer's behalf. Requires existing invoice + attestation. */}
         {tx.dbId && tx.invoiceUrl && (
           <ProformaRestructureCard tx={tx} onChanged={() => onRefresh && onRefresh()} />
+        )}
+
+        {/* Compliance bundle — single-PDF bank submission artifact. Only
+            visible when there's an invoice attached (no bundle without
+            an original). Adapts content based on whether restructure +
+            bank details exist. */}
+        {tx.dbId && tx.invoiceUrl && (
+          <ComplianceBundleCard tx={tx} onChanged={() => onRefresh && onRefresh()} />
         )}
 
         {/* Invoice — primary uploader is the customer (via portal); operator can upload here on customer's behalf. Required before customer can approve. */}

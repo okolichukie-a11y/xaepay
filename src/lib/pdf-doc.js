@@ -2089,3 +2089,312 @@ export function buildTransactionsCsv(transactions) {
 }
 
 export const _refForFilename = ref;
+
+// =============================================================================
+// COMPLIANCE BUNDLE
+//
+// Single multi-page PDF that operators submit to the bank/PSP for a
+// cross-border wire. Eliminates the back-and-forth where the bank
+// asks for the original after seeing only the restructured invoice.
+//
+// Structure adapts to what exists on the transaction:
+//
+//   - Cover sheet (always)                             ← built here
+//   - Exhibit A: Original supplier invoice (always)    ← customer upload
+//   - Exhibit B: Restructured trade-partner invoice    ← when proforma_restructured=true
+//   - Exhibit C: Supplier bank details (optional)      ← optional operator upload
+//   - Exhibit D: Attestation page                      ← when restructured (built here)
+//
+// When restructured: full chain of custody for the buyer-of-record swap.
+// When not restructured: cover language softens to disclosed-agency
+// without the formal buyer substitution. Operator decides per their
+// bank's expectations.
+//
+// Merging is done by pdf-lib in the browser. Original docs are embedded
+// as-is (preserves fidelity — banks trust unmodified originals more than
+// re-renders).
+// =============================================================================
+
+// Cover sheet — page 1 of every bundle. Adapts language based on whether
+// a restructure is part of the bundle.
+function buildComplianceBundleCoverPage(doc, args) {
+  const { reference, parties, amount, currency, hasRestructure, hasBankDetails, generatedAt, operatorName } = args;
+  let y = 22;
+
+  // Top stripe
+  doc.setFillColor(INK);
+  doc.rect(0, 0, PAGE_W, 14, "F");
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(8);
+  doc.setTextColor("#c5f24a");
+  doc.text("COMPLIANCE BUNDLE · BANK SUBMISSION", MARGIN, 9);
+  doc.setFont("helvetica", "normal");
+  doc.setTextColor("#ffffff");
+  doc.text(`Generated ${fmtDateTime(generatedAt)}`, PAGE_W - MARGIN, 9, { align: "right" });
+
+  y = 26;
+
+  // Title block
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(24);
+  doc.setTextColor(INK);
+  doc.text("Cross-border payment", MARGIN, y);
+  y += 7;
+  doc.setFont("courier", "normal");
+  doc.setFontSize(11);
+  doc.setTextColor(MUTED);
+  doc.text(reference || "—", MARGIN, y);
+  y += 12;
+
+  // Wire amount panel
+  doc.setFillColor(INK);
+  doc.roundedRect(MARGIN, y, CONTENT_W, 22, 2, 2, "F");
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(8);
+  doc.setTextColor("#c5f24a");
+  doc.text("AMOUNT BEING WIRED", MARGIN + 6, y + 8);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(20);
+  doc.setTextColor("#ffffff");
+  doc.text(`${currency || "USD"} ${(amount || 0).toLocaleString()}`, MARGIN + 6, y + 18);
+  y += 30;
+
+  // Parties block — three short cards, name + role only on cover
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(9);
+  doc.setTextColor(INK);
+  doc.text("Parties", MARGIN, y);
+  y += 5;
+  const colW = (CONTENT_W - 8) / 3;
+  const partyCard = (label, name, role, x) => {
+    doc.setDrawColor(LINE);
+    doc.setFillColor("#fafaf8");
+    doc.roundedRect(x, y, colW, 32, 2, 2, "FD");
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(7.5);
+    doc.setTextColor(EMERALD);
+    doc.text(label.toUpperCase(), x + 4, y + 6);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(9);
+    doc.setTextColor(INK);
+    const nameLines = doc.splitTextToSize(String(name || "—"), colW - 8).slice(0, 2);
+    doc.text(nameLines, x + 4, y + 13);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(7.5);
+    doc.setTextColor(MUTED);
+    const roleLines = doc.splitTextToSize(role, colW - 8).slice(0, 2);
+    doc.text(roleLines, x + 4, y + 25);
+  };
+  partyCard("Supplier", parties?.supplier?.name, "Goods/services issued original invoice", MARGIN);
+  partyCard(
+    "Operator",
+    parties?.operator?.name || operatorName,
+    hasRestructure ? "Buyer of record · disclosed trade-partner" : "Disclosed payment agent on customer's behalf",
+    MARGIN + colW + 4,
+  );
+  partyCard("Customer", parties?.customer?.name, hasRestructure ? "Consignee · ultimate beneficial owner" : "Principal · ultimate beneficial owner", MARGIN + 2 * (colW + 4));
+  y += 38;
+
+  // Index of exhibits
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(9);
+  doc.setTextColor(INK);
+  doc.text("This bundle contains", MARGIN, y);
+  y += 5;
+  const exhibits = [
+    { letter: "A", label: "Original supplier invoice", sub: "Issued by supplier · preserved unchanged" },
+  ];
+  if (hasRestructure) {
+    exhibits.push({ letter: "B", label: "Restructured trade-partner invoice", sub: "Operator named buyer of record · XaePay-generated" });
+  }
+  if (hasBankDetails) {
+    exhibits.push({ letter: "C", label: "Supplier bank details", sub: "Issued by supplier separately · preserved unchanged" });
+  }
+  if (hasRestructure) {
+    exhibits.push({ letter: "D", label: "Attestation", sub: "Both parties acknowledge · XaePay-generated" });
+  }
+  exhibits.forEach((ex) => {
+    doc.setDrawColor(LINE);
+    doc.setFillColor("#ffffff");
+    doc.roundedRect(MARGIN, y, CONTENT_W, 12, 1.5, 1.5, "FD");
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(11);
+    doc.setTextColor(EMERALD);
+    doc.text(ex.letter, MARGIN + 5, y + 8);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(9.5);
+    doc.setTextColor(INK);
+    doc.text(ex.label, MARGIN + 14, y + 5.5);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(7.5);
+    doc.setTextColor(MUTED);
+    doc.text(ex.sub, MARGIN + 14, y + 9.5);
+    y += 14;
+  });
+
+  // Disclosure paragraph — adapts to whether restructure is included
+  y += 4;
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(9);
+  doc.setTextColor(INK);
+  doc.text("Disclosure", MARGIN, y);
+  y += 5;
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(8);
+  doc.setTextColor(MUTED);
+  const disclosure = hasRestructure
+    ? `This bundle documents a cross-border payment where ${parties?.operator?.name || operatorName} is acting as the disclosed trade-partner buyer on behalf of ${parties?.customer?.name || "the named customer"} for the goods/services described in the original supplier invoice attached as Exhibit A. The restructured invoice (Exhibit B) records the buyer-of-record substitution per the trade-partner attestation (Exhibit D). The original invoice is preserved unchanged in the audit trail. Both parties have executed the attestation prior to this submission.`
+    : `This bundle documents a cross-border payment made by ${parties?.operator?.name || operatorName} on behalf of ${parties?.customer?.name || "the named customer"} as their disclosed agent. ${parties?.customer?.name || "The customer"} is the principal and ultimate beneficial owner of the goods/services described in the original supplier invoice attached as Exhibit A. The original invoice is preserved unchanged in the audit trail.`;
+  const discLines = doc.splitTextToSize(disclosure, CONTENT_W);
+  doc.text(discLines, MARGIN, y);
+  y += discLines.length * 3.6 + 4;
+
+  // Footer note (above the standard XaePay footer line)
+  if (y < PAGE_H - 40) {
+    y = PAGE_H - 40;
+    doc.setDrawColor(LINE);
+    doc.line(MARGIN, y, PAGE_W - MARGIN, y);
+    y += 5;
+    doc.setFont("helvetica", "italic");
+    doc.setFontSize(7);
+    doc.setTextColor(MUTED);
+    doc.text("Subsequent pages reproduce the source documents listed above and the attestation page where applicable.", MARGIN, y);
+  }
+}
+
+// Attestation page — appears as the last page of the bundle when a
+// restructure is present. Pulls from the attestation row recorded at
+// restructure time. Designed to stand alone as a legal artifact.
+function buildComplianceBundleAttestationPage(doc, args) {
+  const { reference, parties, attestation } = args;
+  let y = 22;
+
+  doc.setFillColor(INK);
+  doc.rect(0, 0, PAGE_W, 14, "F");
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(8);
+  doc.setTextColor("#c5f24a");
+  doc.text("EXHIBIT D · ATTESTATION", MARGIN, 9);
+  doc.setFont("helvetica", "normal");
+  doc.setTextColor("#ffffff");
+  doc.text(reference || "—", PAGE_W - MARGIN, 9, { align: "right" });
+
+  y = 26;
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(22);
+  doc.setTextColor(INK);
+  doc.text("Trade-partner attestation", MARGIN, y);
+  y += 10;
+
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(9.5);
+  doc.setTextColor(INK);
+  const attText = attestation?.attestation_text || "Both parties acknowledge that the operator is acting as the contractual trade partner and buyer of record for the underlying supplier invoice. The named end customer is the consignee and ultimate beneficial owner of the goods. Both parties acknowledge that the operator pays the supplier on the customer's behalf as part of a documented trade relationship.";
+  const attLines = doc.splitTextToSize(attText, CONTENT_W);
+  doc.text(attLines, MARGIN, y);
+  y += attLines.length * 4.5 + 8;
+
+  doc.setDrawColor(LINE);
+  doc.line(MARGIN, y, PAGE_W - MARGIN, y);
+  y += 8;
+
+  // Two-column signature blocks
+  const sigColW = (CONTENT_W - 8) / 2;
+  const drawSig = (label, name, role, signedAt, x) => {
+    doc.setDrawColor(LINE);
+    doc.setFillColor("#fafaf8");
+    doc.roundedRect(x, y, sigColW, 56, 2, 2, "FD");
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(8);
+    doc.setTextColor(EMERALD);
+    doc.text(label.toUpperCase(), x + 4, y + 6);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(10);
+    doc.setTextColor(INK);
+    const nameLines = doc.splitTextToSize(String(name || "—"), sigColW - 8).slice(0, 2);
+    doc.text(nameLines, x + 4, y + 13);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8);
+    doc.setTextColor(MUTED);
+    doc.text(role, x + 4, y + 24);
+    if (signedAt) doc.text(`Attested ${fmtDateTime(signedAt)}`, x + 4, y + 30);
+
+    // Signature line
+    doc.setDrawColor(INK);
+    doc.line(x + 4, y + 44, x + sigColW - 4, y + 44);
+    doc.setFontSize(7);
+    doc.setTextColor(MUTED);
+    doc.text("Wet signature (or e-sign)", x + 4, y + 48);
+
+    // Date line
+    doc.setDrawColor(INK);
+    doc.line(x + 4, y + 54, x + sigColW / 2, y + 54);
+    doc.setFontSize(7);
+    doc.text("Date", x + 4, y + 57);
+  };
+  drawSig(
+    "Buyer of record (operator)",
+    attestation?.operator_signer_name || parties?.operator?.name,
+    "Acting as disclosed trade-partner buyer",
+    attestation?.operator_attested_at,
+    MARGIN,
+  );
+  drawSig(
+    "Consignee / UBO (customer)",
+    attestation?.customer_signer_name || parties?.customer?.name,
+    "Ultimate beneficial owner of goods",
+    attestation?.customer_attested_at,
+    MARGIN + sigColW + 8,
+  );
+  y += 64;
+
+  // Method of customer confirmation
+  if (attestation?.notes || attestation?.customer_signer_email || attestation?.customer_signer_phone) {
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(8);
+    doc.setTextColor(MUTED);
+    doc.text("CUSTOMER CONTACT ON RECORD", MARGIN, y);
+    y += 4;
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(9);
+    doc.setTextColor(INK);
+    const contact = [attestation?.customer_signer_email, attestation?.customer_signer_phone].filter(Boolean).join(" · ");
+    if (contact) { doc.text(contact, MARGIN, y); y += 5; }
+    if (attestation?.notes) {
+      const noteLines = doc.splitTextToSize(attestation.notes, CONTENT_W);
+      doc.text(noteLines, MARGIN, y);
+      y += noteLines.length * 4;
+    }
+  }
+}
+
+// Public builder — returns a jsPDF doc containing just the cover sheet.
+// The merge step (below) takes this doc + the other exhibits and stitches
+// them into a single final PDF via pdf-lib.
+export function generateComplianceBundleCoverPdf(args) {
+  const doc = new jsPDF({ unit: "mm", format: "a4" });
+  buildComplianceBundleCoverPage(doc, args);
+  drawFooter(doc, doc.internal.getNumberOfPages(), 0);
+  return doc;
+}
+
+// Public builder for the attestation page (only used when restructure
+// is part of the bundle).
+export function generateComplianceBundleAttestationPdf(args) {
+  const doc = new jsPDF({ unit: "mm", format: "a4" });
+  buildComplianceBundleAttestationPage(doc, args);
+  drawFooter(doc, doc.internal.getNumberOfPages(), 0);
+  return doc;
+}
+
+export function downloadCompliancePack(blob, reference) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `XaePay-Compliance-Bundle-${reference || "doc"}.pdf`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
