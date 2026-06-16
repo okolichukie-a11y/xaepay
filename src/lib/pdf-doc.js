@@ -1020,31 +1020,65 @@ function buildProformaRestructuredPage(doc, args) {
   doc.text(`Restructured ${fmtDate(new Date().toISOString())} · Buyer-of-record substitution per trade-partner agreement`, MARGIN_L, y);
   y += 12;
 
-  // Three-column parties block
+  // Three-column parties block. Fields are highly variable in length, so
+  // each one wraps independently and the cursor moves down by the actual
+  // lines drawn (not a fixed offset). Box stays 54mm tall — anything that
+  // exceeds the budget is truncated to keep all three boxes the same
+  // height. Order: label → name (adaptive font) → address → contact →
+  // tax id. Anything missing collapses upward.
+  const PARTY_BOX_H = 54;
   const colW = (PAGE_W - 2 * MARGIN_L - 8) / 3;
   const drawParty = (label, name, address, contact, taxId, accentColor) => (x) => {
     doc.setDrawColor(LINE);
     doc.setFillColor("#fafaf8");
-    doc.roundedRect(x, y, colW, 50, 2, 2, "FD");
+    doc.roundedRect(x, y, colW, PARTY_BOX_H, 2, 2, "FD");
+
+    const innerX = x + 4;
+    const innerW = colW - 8;
+    const boxBottom = y + PARTY_BOX_H - 2;
+    let cy = y + 6; // current y inside the box
+
+    // Label (always)
     doc.setFont("helvetica", "bold");
     doc.setFontSize(8);
     doc.setTextColor(accentColor || EMERALD);
-    doc.text(label.toUpperCase(), x + 4, y + 6);
+    doc.text(label.toUpperCase(), innerX, cy);
+    cy += 7;
+
+    // Name — adaptive font + wrap to max 2 lines
+    const nameStr = String(name || "—");
+    const nameFontSize = nameStr.length > 32 ? 8 : nameStr.length > 22 ? 9 : 10;
     doc.setFont("helvetica", "bold");
-    doc.setFontSize(10);
+    doc.setFontSize(nameFontSize);
     doc.setTextColor(INK);
-    doc.text(String(name || "—").slice(0, 35), x + 4, y + 13);
+    const nameLines = doc.splitTextToSize(nameStr, innerW).slice(0, 2);
+    doc.text(nameLines, innerX, cy);
+    cy += nameLines.length * (nameFontSize * 0.45) + 2;
+
+    // Helper for the remaining muted-text rows. Wraps to maxLines, drops
+    // anything that won't fit in what's left of the box.
     doc.setFont("helvetica", "normal");
     doc.setFontSize(8);
     doc.setTextColor(MUTED);
-    if (address) doc.text(String(address).slice(0, 80), x + 4, y + 19, { maxWidth: colW - 8 });
-    if (contact) doc.text(String(contact).slice(0, 50), x + 4, y + 34, { maxWidth: colW - 8 });
-    if (taxId) doc.text(`Tax ID: ${String(taxId).slice(0, 30)}`, x + 4, y + 42, { maxWidth: colW - 8 });
+    const drawRow = (text, maxLines) => {
+      if (!text) return;
+      if (cy + 3 > boxBottom) return;
+      const lines = doc.splitTextToSize(String(text), innerW).slice(0, maxLines);
+      const remainingMm = boxBottom - cy;
+      const linesThatFit = Math.min(lines.length, Math.floor(remainingMm / 3.2));
+      if (linesThatFit <= 0) return;
+      doc.text(lines.slice(0, linesThatFit), innerX, cy);
+      cy += linesThatFit * 3.2 + 0.5;
+    };
+
+    drawRow(address, 2);
+    drawRow(contact, 2);
+    drawRow(taxId ? `Tax ID: ${taxId}` : null, 1);
   };
   drawParty("Supplier", supplier?.name, supplier?.address, supplier?.contact, supplier?.tax_id)(MARGIN_L);
   drawParty("Buyer (Trade Partner)", buyer?.name || operatorName, buyer?.address, buyer?.contact, buyer?.tax_id, INK)(MARGIN_L + colW + 4);
   drawParty("Consignee / UBO", consignee?.name, consignee?.address, consignee?.contact, consignee?.tax_id)(MARGIN_L + 2 * (colW + 4));
-  y += 56;
+  y += PARTY_BOX_H + 6;
 
   // Line items table — column geometry. Wider gap on the right so long
   // descriptions don't bleed into QTY. AMOUNT keeps the far-right edge.
@@ -1129,8 +1163,10 @@ function buildProformaRestructuredPage(doc, args) {
 
   y += 4;
 
-  // Footer block — disclosures
-  if (y > 230) { doc.addPage(); y = 25; }
+  // Footer block — disclosures. Page-break before drawing if there isn't
+  // enough room for disclosures + signature block + footer margin.
+  // Disclosure body wraps to ~4 lines worst case, plus optional rows.
+  if (y > PAGE_H - 130) { doc.addPage(); y = 25; }
   doc.setDrawColor(LINE);
   doc.line(MARGIN_L, y, PAGE_W - MARGIN_L, y);
   y += 6;
@@ -1143,20 +1179,26 @@ function buildProformaRestructuredPage(doc, args) {
   doc.setFontSize(8);
   doc.setTextColor(MUTED);
   const discText = `This is a restructured invoice. The original supplier invoice (ref ${originalInvoice?.invoice_number || "—"}, dated ${originalInvoice?.invoice_date ? fmtDate(originalInvoice.invoice_date) : "—"}) named ${originalInvoice?.bill_to_name || "the consignee"} as the buyer. ${buyer?.name || operatorName} is acting as contractual trade-partner buyer on behalf of ${consignee?.name || "the consignee"}, who is the ultimate beneficial owner of the goods. Both parties have executed a trade-partner attestation prior to this restructure.`;
-  doc.text(discText, MARGIN_L, y, { maxWidth: PAGE_W - 2 * MARGIN_L });
-  y += 22;
+  // Render disclosure text with measured height so subsequent rows don't
+  // crash into it when the disclosure wraps to more lines than expected.
+  const discLines = doc.splitTextToSize(discText, PAGE_W - 2 * MARGIN_L);
+  doc.text(discLines, MARGIN_L, y);
+  y += discLines.length * 3.6 + 3;
   if (originalInvoice?.payment_terms) {
-    doc.text(`Payment terms: ${originalInvoice.payment_terms}`, MARGIN_L, y);
-    y += 5;
+    const ptLines = doc.splitTextToSize(`Payment terms: ${originalInvoice.payment_terms}`, PAGE_W - 2 * MARGIN_L);
+    doc.text(ptLines, MARGIN_L, y);
+    y += ptLines.length * 3.6 + 1;
   }
   if (originalInvoice?.incoterms) {
-    doc.text(`Incoterms: ${originalInvoice.incoterms}`, MARGIN_L, y);
-    y += 5;
+    const icLines = doc.splitTextToSize(`Incoterms: ${originalInvoice.incoterms}`, PAGE_W - 2 * MARGIN_L);
+    doc.text(icLines, MARGIN_L, y);
+    y += icLines.length * 3.6 + 1;
   }
   if (formMResponsibility) {
     const fmLabel = formMResponsibility === "operator" ? `${buyer?.name || operatorName} (operator) opens Form M` : formMResponsibility === "customer" ? `${consignee?.name || "Consignee"} (end customer) opens Form M` : "Form M not applicable";
-    doc.text(`Form M: ${fmLabel}`, MARGIN_L, y);
-    y += 5;
+    const fmLines = doc.splitTextToSize(`Form M: ${fmLabel}`, PAGE_W - 2 * MARGIN_L);
+    doc.text(fmLines, MARGIN_L, y);
+    y += fmLines.length * 3.6 + 1;
   }
   if (originalInvoice?.bank_details) {
     y += 3;
@@ -1164,14 +1206,18 @@ function buildProformaRestructuredPage(doc, args) {
     doc.text("Supplier bank details (as on original)", MARGIN_L, y);
     y += 4;
     doc.setFont("helvetica", "normal");
-    doc.text(String(originalInvoice.bank_details).slice(0, 400), MARGIN_L, y, { maxWidth: PAGE_W - 2 * MARGIN_L });
-    y += 14;
+    const bankLines = doc.splitTextToSize(String(originalInvoice.bank_details).slice(0, 400), PAGE_W - 2 * MARGIN_L);
+    doc.text(bankLines, MARGIN_L, y);
+    y += bankLines.length * 3.6 + 4;
   }
 
   // Signature block — both parties sign off on the restructured doc.
   // Push to a new page if there isn't room left so the signatures aren't
-  // crammed against the footer.
-  if (y > 235) { doc.addPage(); y = 25; }
+  // crammed against the "Generated by XaePay" footer (which lives at
+  // PAGE_H-12). Pre-signature content (line + title + body) is ~28mm,
+  // signature boxes are 38mm tall, plus 10mm bottom margin to the footer
+  // line — total 76mm needed below the current y.
+  if (y > PAGE_H - 80) { doc.addPage(); y = 25; }
   y += 6;
   doc.setDrawColor(LINE);
   doc.line(MARGIN_L, y, PAGE_W - MARGIN_L, y);

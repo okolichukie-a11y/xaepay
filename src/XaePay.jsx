@@ -11196,7 +11196,22 @@ function ProformaRestructureModal({ tx, onClose, onDone }) {
   const [paymentTerms, setPaymentTerms] = useState("");
   const dateCheck = checkInvoiceDate(invoiceDate);
 
-  const operatorName = auth.user?.user_metadata?.company || auth.user?.user_metadata?.full_name || auth.user?.email || "Operator";
+  // Operator company name for the BUYER slot on the restructured PDF.
+  // Prefer the registered business name from operator_profiles → fall
+  // back through user metadata → email is last resort (still avoid
+  // shipping a plain email as the buyer entity if at all possible).
+  const [operatorProfileName, setOperatorProfileName] = useState("");
+  useEffect(() => {
+    if (!auth.user) return;
+    supabase.from("operator_profiles").select("business_name, business_address, business_phone, business_email").eq("auth_user_id", auth.user.id).maybeSingle().then(({ data }) => {
+      if (data?.business_name) setOperatorProfileName(data.business_name);
+      if (data?.business_address && !operatorAddress) setOperatorAddress(data.business_address);
+      const c = [data?.business_phone, data?.business_email].filter(Boolean).join(" · ");
+      if (c && !operatorContact) setOperatorContact(c);
+    });
+    /* eslint-disable-next-line react-hooks/exhaustive-deps */
+  }, [auth.user?.id]);
+  const operatorName = operatorProfileName || auth.user?.user_metadata?.company || auth.user?.user_metadata?.full_name || auth.user?.email || "Operator";
 
   useEffect(() => {
     if (!tx?.invoiceUrl) return;
@@ -11523,9 +11538,13 @@ function checkInvoiceDate(dateStr) {
 function StandaloneProformaModal({ open, onClose, onDone }) {
   const { push } = useToast();
   const auth = useAuth();
-  const operatorName = auth.user?.user_metadata?.company || auth.user?.user_metadata?.full_name || auth.user?.email || "Operator";
 
   const [step, setStep] = useState(1);
+  // Pull the operator's business name from operator_profiles so the
+  // restructured invoice's BUYER slot shows "Acme Operator Ltd" instead
+  // of "okoli.chukie@gmail.com" when user_metadata.company isn't set.
+  const [operatorProfileName, setOperatorProfileName] = useState("");
+  const operatorName = operatorProfileName || auth.user?.user_metadata?.company || auth.user?.user_metadata?.full_name || auth.user?.email || "Operator";
 
   // Step 1: upload + extract
   const [originalUrl, setOriginalUrl] = useState("");
@@ -11557,6 +11576,20 @@ function StandaloneProformaModal({ open, onClose, onDone }) {
   const [operatorAddress, setOperatorAddress] = useState("");
   const [operatorContact, setOperatorContact] = useState("");
   const [formMResp, setFormMResp] = useState("operator");
+
+  // Hydrate operator details from operator_profiles on mount so the
+  // BUYER fields on the restructured doc are filled with the operator's
+  // registered business info rather than the user's email.
+  useEffect(() => {
+    if (!auth.user) return;
+    supabase.from("operator_profiles").select("business_name, business_address, business_phone, business_email").eq("auth_user_id", auth.user.id).maybeSingle().then(({ data }) => {
+      if (data?.business_name) setOperatorProfileName(data.business_name);
+      if (data?.business_address) setOperatorAddress((v) => v || data.business_address);
+      const c = [data?.business_phone, data?.business_email].filter(Boolean).join(" · ");
+      if (c) setOperatorContact((v) => v || c);
+    });
+    /* eslint-disable-next-line react-hooks/exhaustive-deps */
+  }, [auth.user?.id]);
 
   // Step 6: attestation
   const [customerSignerEmail, setCustomerSignerEmail] = useState("");
