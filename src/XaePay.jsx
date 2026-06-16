@@ -12163,19 +12163,22 @@ function StandaloneProformasList({ refreshKey, onChanged }) {
   const auth = useAuth();
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [bundleProforma, setBundleProforma] = useState(null);
 
-  useEffect(() => {
+  const fetchRows = () => {
     if (!auth.user) return;
     setLoading(true);
     supabase.from("standalone_proformas")
-      .select("id, invoice_number, invoice_date, currency, target_amount, customer_name, supplier_name, restructured_invoice_url, created_at, scaling_method")
+      .select("*")
       .order("created_at", { ascending: false })
       .limit(50)
       .then(({ data }) => {
         setRows(data || []);
         setLoading(false);
       });
-  }, [auth.user?.id, refreshKey]);
+  };
+
+  useEffect(() => { fetchRows(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [auth.user?.id, refreshKey]);
 
   if (loading) return <div className="text-xs" style={{ color: "var(--muted)" }}>Loading…</div>;
   if (rows.length === 0) return <div className="rounded-xl p-4 text-xs text-center" style={{ background: "var(--bone)", border: "1px dashed var(--line)", color: "var(--muted)" }}>No standalone restructured invoices yet. Click "+ New restructured invoice" above to create one.</div>;
@@ -12183,22 +12186,213 @@ function StandaloneProformasList({ refreshKey, onChanged }) {
   return (
     <div className="space-y-2">
       {rows.map((r) => (
-        <div key={r.id} className="rounded-xl p-3 flex items-center justify-between gap-3" style={{ background: "white", border: "1px solid var(--line)" }}>
-          <div className="min-w-0 flex-1">
-            <div className="flex items-baseline gap-2 flex-wrap">
-              <span className="font-mono text-[11px] font-semibold">{r.invoice_number}</span>
-              <span className="font-mono text-[10px]" style={{ color: "var(--muted)" }}>{r.invoice_date}</span>
-              <span className="rounded-full px-2 py-0.5 font-mono text-[9px] uppercase tracking-wider" style={{ background: "var(--bone)", color: "var(--muted)" }}>{r.scaling_method.replace(/_/g, " ")}</span>
+        <div key={r.id} className="rounded-xl p-3" style={{ background: "white", border: "1px solid var(--line)" }}>
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0 flex-1">
+              <div className="flex items-baseline gap-2 flex-wrap">
+                <span className="font-mono text-[11px] font-semibold">{r.invoice_number}</span>
+                <span className="font-mono text-[10px]" style={{ color: "var(--muted)" }}>{r.invoice_date}</span>
+                <span className="rounded-full px-2 py-0.5 font-mono text-[9px] uppercase tracking-wider" style={{ background: "var(--bone)", color: "var(--muted)" }}>{(r.scaling_method || "").replace(/_/g, " ")}</span>
+                {r.compliance_bundle_url && (
+                  <span className="rounded-full px-2 py-0.5 font-mono text-[9px] uppercase tracking-wider" style={{ background: "rgba(15,95,63,0.08)", color: "var(--emerald)" }}>Bundle ready</span>
+                )}
+              </div>
+              <div className="text-sm mt-0.5" style={{ color: "var(--ink)" }}>{r.supplier_name || "—"} → {r.customer_name}</div>
+              <div className="font-mono text-[11px]" style={{ color: "var(--muted)" }}>{r.currency} {parseFloat(r.target_amount || 0).toLocaleString()}</div>
             </div>
-            <div className="text-sm mt-0.5" style={{ color: "var(--ink)" }}>{r.supplier_name || "—"} → {r.customer_name}</div>
-            <div className="font-mono text-[11px]" style={{ color: "var(--muted)" }}>{r.currency} {parseFloat(r.target_amount || 0).toLocaleString()}</div>
+            <div className="flex flex-col items-end gap-1.5 flex-shrink-0">
+              {r.restructured_invoice_url && (
+                <a href={safeUrl(r.restructured_invoice_url)} target="_blank" rel="noreferrer" className="font-mono text-[10px] uppercase tracking-wider underline" style={{ color: "var(--emerald)" }}>Open PDF</a>
+              )}
+              <button onClick={() => setBundleProforma(r)} className="font-mono text-[10px] uppercase tracking-wider rounded-md px-2 py-1 inline-flex items-center gap-1" style={{ background: "var(--ink)", color: "var(--lime)" }}>
+                <FileText size={10} /> {r.compliance_bundle_url ? "Bundle" : "Generate bundle"}
+              </button>
+            </div>
           </div>
-          {r.restructured_invoice_url && (
-            <a href={safeUrl(r.restructured_invoice_url)} target="_blank" rel="noreferrer" className="font-mono text-[10px] uppercase tracking-wider underline" style={{ color: "var(--emerald)" }}>Open PDF</a>
-          )}
         </div>
       ))}
+      <StandaloneProformaBundleModal
+        proforma={bundleProforma}
+        onClose={() => setBundleProforma(null)}
+        onChanged={() => { fetchRows(); onChanged && onChanged(); }}
+      />
     </div>
+  );
+}
+
+// Compliance-bundle modal for a standalone proforma row. Same submission
+// artifact as the TxDrawer's ComplianceBundleCard, just driven from the
+// standalone_proformas row shape instead of a quote.
+function StandaloneProformaBundleModal({ proforma, onClose, onChanged }) {
+  const { push } = useToast();
+  const auth = useAuth();
+  const [generating, setGenerating] = useState(false);
+  const [uploadingBankDetails, setUploadingBankDetails] = useState(false);
+  const [bankDetailsUrl, setBankDetailsUrl] = useState(null);
+
+  // Reset local upload state when the modal opens against a new row.
+  useEffect(() => {
+    setBankDetailsUrl(proforma?.compliance_bundle_bank_details_url || null);
+  }, [proforma?.id]);
+
+  if (!proforma) return null;
+
+  const hasRestructure = true; // every standalone_proforma is a restructure by definition
+  const hasBankDetails = !!bankDetailsUrl;
+  const hasBundle = !!proforma.compliance_bundle_url;
+  const reference = `PRF-${String(proforma.id).slice(0, 8).toUpperCase()}`;
+
+  const uploadBankDetails = async (file) => {
+    if (!file) return;
+    setUploadingBankDetails(true);
+    const up = await uploadFileBoth(file, "compliance-bundle-bank-details");
+    setUploadingBankDetails(false);
+    if (!up.supabaseUrl) { push(`Upload failed: ${up.storageError || "unknown"}`, "warn"); return; }
+    const url = up.supabaseUrl;
+    setBankDetailsUrl(url);
+    await supabase.from("standalone_proformas").update({ compliance_bundle_bank_details_url: url }).eq("id", proforma.id);
+    push("Bank details attached.", "success");
+    onChanged && onChanged();
+  };
+
+  const generate = async () => {
+    if (generating) return;
+    if (!proforma.original_invoice_url) { push("No original invoice on file for this restructure.", "warn"); return; }
+    setGenerating(true);
+    try {
+      const operatorName = proforma.operator_signer_name
+        || auth.user?.user_metadata?.company
+        || auth.user?.user_metadata?.full_name
+        || auth.user?.email
+        || "Operator";
+
+      // Build the restructured-page args from the row's saved data.
+      const restructured = {
+        operatorName,
+        supplier: {
+          name: proforma.supplier_name,
+          address: proforma.supplier_address,
+          contact: proforma.supplier_contact,
+          tax_id: proforma.supplier_tax_id,
+        },
+        buyer: {
+          name: operatorName,
+          address: proforma.operator_address,
+          contact: proforma.operator_contact,
+        },
+        consignee: {
+          name: proforma.customer_name,
+          address: proforma.customer_address,
+          contact: proforma.customer_email || proforma.customer_phone,
+        },
+        lineItems: proforma.line_items_adjusted || proforma.line_items_original || [],
+        totals: { total: proforma.target_amount, currency: proforma.currency },
+        originalInvoice: {
+          invoice_number: proforma.invoice_number,
+          invoice_date: proforma.invoice_date,
+          payment_terms: proforma.payment_terms,
+        },
+        formMResponsibility: proforma.form_m_responsibility,
+      };
+
+      // Attestation is inline on the standalone_proforma row.
+      const attestation = {
+        attestation_text: proforma.attestation_text,
+        operator_signer_name: proforma.operator_signer_name,
+        operator_attested_at: proforma.operator_attested_at,
+        customer_signer_name: proforma.customer_signer_name,
+        customer_signer_email: proforma.customer_signer_email,
+        customer_signer_phone: proforma.customer_signer_phone,
+        customer_attested_at: proforma.customer_attested_at,
+        notes: proforma.notes,
+      };
+
+      const blob = await assembleComplianceBundle({
+        reference,
+        parties: {
+          supplier: { name: proforma.supplier_name },
+          operator: { name: operatorName },
+          customer: { name: proforma.customer_name },
+        },
+        amount: parseFloat(proforma.target_amount) || 0,
+        currency: proforma.currency || "USD",
+        operatorName,
+        originalInvoiceUrl: proforma.original_invoice_url,
+        bankDetailsUrl,
+        restructured,
+        attestation,
+      });
+
+      const up = await uploadComplianceBundle(proforma.id, blob);
+      if (!up.ok) throw new Error(up.error || "Upload failed");
+
+      await supabase.from("standalone_proformas").update({
+        compliance_bundle_url: up.url,
+        compliance_bundle_path: up.path,
+        compliance_bundle_generated_at: new Date().toISOString(),
+      }).eq("id", proforma.id);
+
+      downloadCompliancePack(blob, reference);
+      push("Bundle generated · downloaded · saved.", "success");
+      onChanged && onChanged();
+      onClose();
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error("Standalone bundle failed:", err);
+      push(`Couldn't generate bundle: ${err?.message || err}`, "warn");
+    } finally {
+      setGenerating(false);
+    }
+  };
+
+  return (
+    <Modal open={!!proforma} onClose={onClose} title={`Compliance bundle · ${reference}`} size="lg">
+      <div className="space-y-4">
+        <p className="text-xs" style={{ color: "var(--muted)" }}>
+          Single PDF for bank submission. Cover sheet + original invoice + restructured trade-partner invoice + (optional) supplier bank details + attestation page.
+        </p>
+        <div className="space-y-1.5 text-xs">
+          <BundleItem ok={true} label="Cover sheet" sub="XaePay-generated" />
+          <BundleItem ok={!!proforma.original_invoice_url} label="Exhibit A — Original supplier invoice" sub={proforma.original_invoice_url ? "Operator upload · preserved unchanged" : "Missing"} />
+          <BundleItem ok={hasRestructure} label="Exhibit B — Restructured trade-partner invoice" sub="Operator named buyer of record" />
+          <BundleItem ok={hasBankDetails} optional label="Exhibit C — Supplier bank details" sub={hasBankDetails ? "Attached · preserved unchanged" : "Optional · upload if your supplier sent separately"} />
+          <BundleItem ok={true} label="Exhibit D — Attestation page" sub="Both parties acknowledged" />
+        </div>
+
+        {!hasBankDetails && (
+          <div className="rounded-lg p-2.5" style={{ background: "var(--bone)", border: "1px dashed var(--line)" }}>
+            <div className="text-[11px] mb-1.5" style={{ color: "var(--muted)" }}>Supplier sent bank details separately?</div>
+            <input
+              type="file"
+              accept="image/*,application/pdf"
+              onChange={(e) => uploadBankDetails(e.target.files?.[0])}
+              disabled={uploadingBankDetails}
+              className="block w-full text-xs file:mr-3 file:rounded-lg file:border-0 file:bg-[color:var(--ink)] file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-[color:var(--bone)] hover:file:opacity-90"
+            />
+            {uploadingBankDetails && <div className="font-mono text-[10px] mt-1" style={{ color: "var(--muted)" }}>Uploading…</div>}
+          </div>
+        )}
+
+        <div className="flex items-center justify-between gap-2 pt-2" style={{ borderTop: "1px solid var(--line)" }}>
+          <div className="font-mono text-[10px]" style={{ color: "var(--muted)" }}>
+            {proforma.compliance_bundle_generated_at
+              ? `Last generated ${relativeTime(proforma.compliance_bundle_generated_at)}`
+              : "Not generated yet"}
+          </div>
+          <div className="flex gap-2">
+            {hasBundle && (
+              <a href={safeUrl(proforma.compliance_bundle_url)} target="_blank" rel="noreferrer" className="rounded-lg px-3 py-1.5 font-mono text-[10px] uppercase tracking-wider inline-flex items-center gap-1" style={{ background: "var(--bone-2)", color: "var(--ink)", border: "1px solid var(--line)" }}>
+                <Download size={11} /> Last bundle
+              </a>
+            )}
+            <SecondaryBtn onClick={onClose}>Close</SecondaryBtn>
+            <PrimaryBtn onClick={generate} disabled={generating || !proforma.original_invoice_url}>
+              {generating ? <><Loader2 size={12} className="animate-spin" /> Generating…</> : <><Sparkles size={12} /> {hasBundle ? "Re-generate" : "Generate bundle"}</>}
+            </PrimaryBtn>
+          </div>
+        </div>
+      </div>
+    </Modal>
   );
 }
 
