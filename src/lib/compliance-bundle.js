@@ -101,10 +101,14 @@ export async function assembleComplianceBundle(args) {
     bankDetailsUrl,                  // optional
     restructured,                    // { args for generateProformaRestructuredPdf } | null
     attestation,                     // { operator_signer_name, customer_signer_name, ... } | null
+    supportingDocuments,             // optional [{label, url}, ...]
   } = args;
 
   const hasRestructure = !!restructured;
   const hasBankDetails = !!bankDetailsUrl;
+  const supportingDocs = Array.isArray(supportingDocuments)
+    ? supportingDocuments.filter((d) => d && d.url)
+    : [];
 
   // 1. Generate the XaePay-built pages (cover + optional attestation).
   const coverDoc = generateComplianceBundleCoverPdf({
@@ -116,6 +120,7 @@ export async function assembleComplianceBundle(args) {
     hasBankDetails,
     generatedAt: new Date().toISOString(),
     operatorName,
+    supportingDocuments: supportingDocs,
   });
   const coverBytes = await jsPdfToBytes(coverDoc);
 
@@ -158,7 +163,19 @@ export async function assembleComplianceBundle(args) {
   // Exhibit C — bank details (optional)
   if (bankDetailsFile) await appendFileToBundle(bundle, bankDetailsFile);
 
-  // Exhibit D — attestation (when restructure exists)
+  // Supporting documents — appended in operator-supplied order. Each
+  // already has a label that the cover sheet referenced (D, E, F, …).
+  for (const d of supportingDocs) {
+    try {
+      const f = await fetchFileBytes(d.url);
+      await appendFileToBundle(bundle, f);
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.warn(`Couldn't append supporting doc "${d.label}":`, err?.message);
+    }
+  }
+
+  // Final exhibit — attestation (when restructure exists)
   if (attestationBytes) {
     const src = await PDFDocument.load(attestationBytes);
     (await bundle.copyPages(src, src.getPageIndices())).forEach((p) => bundle.addPage(p));

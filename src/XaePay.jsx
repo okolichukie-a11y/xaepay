@@ -10520,7 +10520,7 @@ function BDCAgent({ jumpToTransaction, hideToggle }) {
     if (!quoteId) return;
     const { data: q, error } = await supabase
       .from("quotes")
-      .select("id, customer_name, customer_phone, customer_id, beneficiary, destination, amount, currency, rate, ngn_total, rail, status, submitted_at, created_at, markup_pct, cost_basis_ngn, recipient_id, recipient_external_account_id, cedar_business_request_id, cedar_request_status, cedar_purpose, cedar_invoice_url, cedar_last_error, cedar_request_status_updated_at, cedar_bank_details, cedar_quote_rate, cedar_deposit_amount_minor, cedar_deposit_currency, cedar_payout_status, invoice_url, invoice_uploaded_at, invoice_uploaded_by, customer_deposit_slip_url, customer_deposit_slip_uploaded_at, review_decision, review_reason, review_details, review_tier, reviewed_at, operator_review_override, operator_review_override_at, operator_review_override_reason, invoice_total_amount, invoice_total_currency, invoice_payment_label, pdf_url, pdf_path, pdf_generated_at, purpose_note, recipient_receipt_pdf_url, recipient_receipt_pdf_path, recipient_receipt_issued_at, bdc_name, proforma_restructured, proforma_original_invoice_url, proforma_restructured_invoice_url, proforma_restructured_at, proforma_customer_acknowledged_at, proforma_target_amount, proforma_payment_terms, proforma_invoice_number, proforma_invoice_date, proforma_line_items_original, proforma_line_items_adjusted, form_m_responsibility, compliance_bundle_url, compliance_bundle_path, compliance_bundle_generated_at, compliance_bundle_bank_details_url")
+      .select("id, customer_name, customer_phone, customer_id, beneficiary, destination, amount, currency, rate, ngn_total, rail, status, submitted_at, created_at, markup_pct, cost_basis_ngn, recipient_id, recipient_external_account_id, cedar_business_request_id, cedar_request_status, cedar_purpose, cedar_invoice_url, cedar_last_error, cedar_request_status_updated_at, cedar_bank_details, cedar_quote_rate, cedar_deposit_amount_minor, cedar_deposit_currency, cedar_payout_status, invoice_url, invoice_uploaded_at, invoice_uploaded_by, customer_deposit_slip_url, customer_deposit_slip_uploaded_at, review_decision, review_reason, review_details, review_tier, reviewed_at, operator_review_override, operator_review_override_at, operator_review_override_reason, invoice_total_amount, invoice_total_currency, invoice_payment_label, pdf_url, pdf_path, pdf_generated_at, purpose_note, recipient_receipt_pdf_url, recipient_receipt_pdf_path, recipient_receipt_issued_at, bdc_name, proforma_restructured, proforma_original_invoice_url, proforma_restructured_invoice_url, proforma_restructured_at, proforma_customer_acknowledged_at, proforma_target_amount, proforma_payment_terms, proforma_invoice_number, proforma_invoice_date, proforma_line_items_original, proforma_line_items_adjusted, form_m_responsibility, compliance_bundle_url, compliance_bundle_path, compliance_bundle_generated_at, compliance_bundle_bank_details_url, proforma_supporting_documents")
       .eq("id", quoteId)
       .maybeSingle();
     if (error || !q) { push(`Couldn't load quote: ${error?.message || "not found"}`, "warn"); return; }
@@ -10598,6 +10598,7 @@ function BDCAgent({ jumpToTransaction, hideToggle }) {
       complianceBundlePath: q.compliance_bundle_path,
       complianceBundleGeneratedAt: q.compliance_bundle_generated_at,
       complianceBundleBankDetailsUrl: q.compliance_bundle_bank_details_url,
+      proforma_supporting_documents: q.proforma_supporting_documents,
     });
   };
 
@@ -11268,6 +11269,7 @@ function ComplianceBundleCard({ tx, onChanged }) {
         bankDetailsUrl,
         restructured,
         attestation,
+        supportingDocuments: Array.isArray(tx.proforma_supporting_documents) ? tx.proforma_supporting_documents : [],
       });
 
       const up = await uploadComplianceBundle(tx.dbId, blob);
@@ -11759,6 +11761,21 @@ function StandaloneProformaModal({ open, onClose, onDone }) {
   const [extracted, setExtracted] = useState(null);
   const [extractError, setExtractError] = useState("");
   const tempId = React.useMemo(() => crypto.randomUUID(), []);
+  // Supporting documents — separate uploads for bank payment details,
+  // packing list, contract, etc. Each carries a label so the compliance
+  // bundle cover sheet can index them by name. Persisted to the
+  // standalone_proformas row's `supporting_documents` jsonb on save.
+  const [supportingDocs, setSupportingDocs] = useState([]); // {label, url, path, uploaded_at, uploading?}
+  const [pendingDocLabel, setPendingDocLabel] = useState("Bank payment details");
+  const [pendingDocCustomLabel, setPendingDocCustomLabel] = useState("");
+  const SUPPORTING_DOC_LABELS = [
+    "Bank payment details",
+    "Packing list",
+    "Bill of lading",
+    "Contract / purchase order",
+    "Customs declaration",
+    "Other",
+  ];
 
   // Step 2: invoice basics
   const [invoiceNumber, setInvoiceNumber] = useState("");
@@ -11802,6 +11819,31 @@ function StandaloneProformaModal({ open, onClose, onDone }) {
   const [confirmationMethod, setConfirmationMethod] = useState("written_agreement");
   const [confirmationNotes, setConfirmationNotes] = useState("");
   const [generating, setGenerating] = useState(false);
+
+  // Upload a supporting document with its operator-picked label. Uses
+  // the same cedar-files bucket but a /proforma-supporting/ path prefix.
+  const uploadSupportingDoc = async (file, label) => {
+    if (!file || !label) return;
+    const tempEntry = { label, uploading: true };
+    setSupportingDocs((arr) => [...arr, tempEntry]);
+    try {
+      const up = await uploadFileBoth(file, "proforma-supporting");
+      if (!up.supabaseUrl) {
+        setSupportingDocs((arr) => arr.filter((d) => d !== tempEntry));
+        push(`Upload failed: ${up.storageError || "unknown"}`, "warn");
+        return;
+      }
+      const entry = { label, url: up.supabaseUrl, uploaded_at: new Date().toISOString() };
+      setSupportingDocs((arr) => arr.map((d) => (d === tempEntry ? entry : d)));
+    } catch (err) {
+      setSupportingDocs((arr) => arr.filter((d) => d !== tempEntry));
+      push(`Upload failed: ${err?.message || err}`, "warn");
+    }
+  };
+
+  const removeSupportingDoc = (idx) => {
+    setSupportingDocs((arr) => arr.filter((_, i) => i !== idx));
+  };
 
   const handleUpload = async (file) => {
     if (!file) return;
@@ -11916,6 +11958,10 @@ function StandaloneProformaModal({ open, onClose, onDone }) {
         customer_signer_phone: customerSignerPhone || null,
         confirmation_method: confirmationMethod,
         notes: confirmationNotes || null,
+        // Persist supporting docs (bank details, packing list, etc.)
+        // collected during step 1. Stored as an array of {label, url,
+        // uploaded_at} on the row; surfaces in the compliance bundle.
+        supporting_documents: supportingDocs.filter((d) => d.url && !d.uploading),
       });
       if (insErr) throw insErr;
 
@@ -11987,6 +12033,57 @@ function StandaloneProformaModal({ open, onClose, onDone }) {
                 </div>
               </div>
             )}
+
+            {/* Supporting documents — multi-upload for things like bank
+                payment details on a separate page, packing list, contract,
+                customs declaration. Each carries a label so they appear by
+                name in the compliance bundle cover sheet. Optional. */}
+            {extracted && (
+              <div className="rounded-xl p-3 space-y-3" style={{ background: "white", border: "1px solid var(--line)" }}>
+                <div>
+                  <div className="font-mono text-[10px] uppercase tracking-wider" style={{ color: "var(--muted)" }}>Supporting documents (optional)</div>
+                  <p className="text-[11px] mt-1" style={{ color: "var(--muted)" }}>If your supplier sent bank payment details, packing list, contract, or any other docs separately, attach them here. Each one will be labelled and included in the compliance bundle for the bank.</p>
+                </div>
+                {supportingDocs.length > 0 && (
+                  <div className="space-y-1.5">
+                    {supportingDocs.map((d, i) => (
+                      <div key={i} className="rounded-lg p-2 flex items-center justify-between gap-2 text-xs" style={{ background: "var(--bone)", border: "1px solid var(--line)" }}>
+                        <div className="min-w-0 flex-1 flex items-center gap-2">
+                          {d.uploading ? <Loader2 size={11} className="animate-spin flex-shrink-0" style={{ color: "var(--muted)" }} /> : <CheckCircle2 size={11} className="flex-shrink-0" style={{ color: "var(--emerald)" }} />}
+                          <span className="font-medium" style={{ color: "var(--ink)" }}>{d.label}</span>
+                          {d.url && <a href={safeUrl(d.url)} target="_blank" rel="noreferrer" className="font-mono text-[10px] underline" style={{ color: "var(--emerald)" }}>view</a>}
+                        </div>
+                        {!d.uploading && (
+                          <button type="button" onClick={() => removeSupportingDoc(i)} className="font-mono text-[10px]" style={{ color: "var(--muted)" }}>remove</button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <div className="grid gap-2 sm:grid-cols-[1fr_auto]">
+                  <div>
+                    <Select value={pendingDocLabel} onChange={(e) => setPendingDocLabel(e.target.value)}>
+                      {SUPPORTING_DOC_LABELS.map((l) => <option key={l} value={l}>{l}</option>)}
+                    </Select>
+                    {pendingDocLabel === "Other" && (
+                      <Input value={pendingDocCustomLabel} onChange={(e) => setPendingDocCustomLabel(e.target.value)} placeholder="Describe the document" className="mt-1.5" />
+                    )}
+                  </div>
+                  <input
+                    type="file"
+                    accept="image/*,application/pdf"
+                    onChange={(e) => {
+                      const f = e.target.files?.[0];
+                      const lbl = pendingDocLabel === "Other" ? (pendingDocCustomLabel.trim() || "Other") : pendingDocLabel;
+                      if (f) uploadSupportingDoc(f, lbl);
+                      e.target.value = "";
+                    }}
+                    className="text-xs file:mr-3 file:rounded-lg file:border-0 file:bg-[color:var(--ink)] file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-[color:var(--bone)] hover:file:opacity-90"
+                  />
+                </div>
+              </div>
+            )}
+
             <div className="flex justify-between">
               <SecondaryBtn onClick={onClose}>Cancel</SecondaryBtn>
               <PrimaryBtn onClick={() => setStep(2)} disabled={!extracted}>Continue <ArrowRight size={12} /></PrimaryBtn>
@@ -12321,6 +12418,7 @@ function StandaloneProformaBundleModal({ proforma, onClose, onChanged }) {
         bankDetailsUrl,
         restructured,
         attestation,
+        supportingDocuments: Array.isArray(proforma.supporting_documents) ? proforma.supporting_documents : [],
       });
 
       const up = await uploadComplianceBundle(proforma.id, blob);
@@ -14101,7 +14199,7 @@ function BDCTransactions({ jumpToTransactionId, onJumpHandled } = {}) {
     setLoading(true);
     const { data, error } = await supabase
       .from("quotes")
-      .select("id, customer_name, customer_phone, customer_id, beneficiary, destination, amount, currency, rate, ngn_total, rail, status, submitted_at, created_at, markup_pct, cost_basis_ngn, recipient_id, recipient_external_account_id, cedar_business_request_id, cedar_request_status, cedar_purpose, cedar_invoice_url, cedar_last_error, cedar_request_status_updated_at, cedar_bank_details, cedar_quote_rate, cedar_deposit_amount_minor, cedar_deposit_currency, cedar_payout_status, invoice_url, invoice_uploaded_at, invoice_uploaded_by, customer_deposit_slip_url, customer_deposit_slip_uploaded_at, review_decision, review_reason, review_details, review_tier, reviewed_at, operator_review_override, operator_review_override_at, operator_review_override_reason, invoice_total_amount, invoice_total_currency, invoice_payment_label, pdf_url, pdf_path, pdf_generated_at, purpose_note, recipient_receipt_pdf_url, recipient_receipt_pdf_path, recipient_receipt_issued_at, bdc_name, proforma_restructured, proforma_original_invoice_url, proforma_restructured_invoice_url, proforma_restructured_at, proforma_customer_acknowledged_at, proforma_target_amount, proforma_payment_terms, proforma_invoice_number, proforma_invoice_date, proforma_line_items_original, proforma_line_items_adjusted, form_m_responsibility, compliance_bundle_url, compliance_bundle_path, compliance_bundle_generated_at, compliance_bundle_bank_details_url")
+      .select("id, customer_name, customer_phone, customer_id, beneficiary, destination, amount, currency, rate, ngn_total, rail, status, submitted_at, created_at, markup_pct, cost_basis_ngn, recipient_id, recipient_external_account_id, cedar_business_request_id, cedar_request_status, cedar_purpose, cedar_invoice_url, cedar_last_error, cedar_request_status_updated_at, cedar_bank_details, cedar_quote_rate, cedar_deposit_amount_minor, cedar_deposit_currency, cedar_payout_status, invoice_url, invoice_uploaded_at, invoice_uploaded_by, customer_deposit_slip_url, customer_deposit_slip_uploaded_at, review_decision, review_reason, review_details, review_tier, reviewed_at, operator_review_override, operator_review_override_at, operator_review_override_reason, invoice_total_amount, invoice_total_currency, invoice_payment_label, pdf_url, pdf_path, pdf_generated_at, purpose_note, recipient_receipt_pdf_url, recipient_receipt_pdf_path, recipient_receipt_issued_at, bdc_name, proforma_restructured, proforma_original_invoice_url, proforma_restructured_invoice_url, proforma_restructured_at, proforma_customer_acknowledged_at, proforma_target_amount, proforma_payment_terms, proforma_invoice_number, proforma_invoice_date, proforma_line_items_original, proforma_line_items_adjusted, form_m_responsibility, compliance_bundle_url, compliance_bundle_path, compliance_bundle_generated_at, compliance_bundle_bank_details_url, proforma_supporting_documents")
       .order("created_at", { ascending: false })
       .limit(50);
     if (error) {

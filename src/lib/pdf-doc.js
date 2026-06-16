@@ -2118,7 +2118,7 @@ export const _refForFilename = ref;
 // Cover sheet — page 1 of every bundle. Adapts language based on whether
 // a restructure is part of the bundle.
 function buildComplianceBundleCoverPage(doc, args) {
-  const { reference, parties, amount, currency, hasRestructure, hasBankDetails, generatedAt, operatorName } = args;
+  const { reference, parties, amount, currency, hasRestructure, hasBankDetails, generatedAt, operatorName, supportingDocuments = [] } = args;
   let y = 22;
 
   // Top stripe
@@ -2201,18 +2201,23 @@ function buildComplianceBundleCoverPage(doc, args) {
   doc.setTextColor(INK);
   doc.text("This bundle contains", MARGIN, y);
   y += 5;
-  const exhibits = [
-    { letter: "A", label: "Original supplier invoice", sub: "Issued by supplier · preserved unchanged" },
+  // Auto-letter the exhibits in the order they actually appear in the
+  // bundle so a long supporting-docs list shifts the attestation letter
+  // accordingly (D → E, F, G…).
+  const exhibitsRaw = [
+    { include: true,            label: "Original supplier invoice",                sub: "Issued by supplier · preserved unchanged" },
+    { include: hasRestructure,  label: "Restructured trade-partner invoice",       sub: "Operator named buyer of record · XaePay-generated" },
+    { include: hasBankDetails,  label: "Supplier bank details",                    sub: "Issued by supplier separately · preserved unchanged" },
   ];
-  if (hasRestructure) {
-    exhibits.push({ letter: "B", label: "Restructured trade-partner invoice", sub: "Operator named buyer of record · XaePay-generated" });
-  }
-  if (hasBankDetails) {
-    exhibits.push({ letter: "C", label: "Supplier bank details", sub: "Issued by supplier separately · preserved unchanged" });
+  for (const d of supportingDocuments) {
+    exhibitsRaw.push({ include: true, label: d.label || "Supporting document", sub: "Operator upload · preserved unchanged" });
   }
   if (hasRestructure) {
-    exhibits.push({ letter: "D", label: "Attestation", sub: "Both parties acknowledge · XaePay-generated" });
+    exhibitsRaw.push({ include: true, label: "Attestation", sub: "Both parties acknowledge · XaePay-generated" });
   }
+  const exhibits = exhibitsRaw
+    .filter((ex) => ex.include)
+    .map((ex, i) => ({ ...ex, letter: String.fromCharCode(65 + i) })); // A, B, C…
   exhibits.forEach((ex) => {
     doc.setDrawColor(LINE);
     doc.setFillColor("#ffffff");
