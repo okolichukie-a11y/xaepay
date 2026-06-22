@@ -9431,6 +9431,20 @@ function InvoiceDrawer({ invoice, onClose, onChanged }) {
   const [items, setItems] = useState([]);
   const [claims, setClaims] = useState([]);
   const [busy, setBusy] = useState(false);
+  // Operator's brand profile for PDF regeneration. Declared up here (above
+  // the early `if (!invoice) return null;`) so hook order stays consistent
+  // across renders — moving it below the early return was a Rules-of-Hooks
+  // violation that triggered React error #310 when the drawer toggled
+  // between closed and open.
+  const [operatorBrand, setOperatorBrand] = useState(null);
+  useEffect(() => {
+    if (!invoice?.id) return;
+    supabase.auth.getUser().then(({ data }) => {
+      const uid = data?.user?.id;
+      if (!uid) return;
+      supabase.from("operator_profiles").select("*").eq("auth_user_id", uid).maybeSingle().then(({ data }) => setOperatorBrand(data || null));
+    });
+  }, [invoice?.id]);
 
   useEffect(() => {
     if (!invoice?.id) { setItems([]); setClaims([]); return; }
@@ -9545,18 +9559,6 @@ function InvoiceDrawer({ invoice, onClose, onChanged }) {
   if (!invoice) return null;
   const pill = INVOICE_STATUS_PILL[invoice.status] || INVOICE_STATUS_PILL.draft;
   const ccy = invoice.currency || "USD";
-
-  // Fetch operator's brand profile so PDF regeneration here also applies the
-  // branded header. No-op for individual operators.
-  const [operatorBrand, setOperatorBrand] = useState(null);
-  useEffect(() => {
-    if (!invoice?.id) return;
-    supabase.auth.getUser().then(({ data }) => {
-      const uid = data?.user?.id;
-      if (!uid) return;
-      supabase.from("operator_profiles").select("*").eq("auth_user_id", uid).maybeSingle().then(({ data }) => setOperatorBrand(data || null));
-    });
-  }, [invoice?.id]);
 
   const downloadPdf = async () => {
     try {
