@@ -642,7 +642,7 @@ function AppShell() {
                   business_name: payload.business_name || null,
                   bdc_user_id: defaultOperator.auth_user_id,
                   bdc_name: defaultOperator.business_name || "XaeccoX",
-                  kyc_status: "pending_review",
+                  kyc_status: "pending",
                   kyc_tier: 0,
                 });
               }
@@ -9160,7 +9160,7 @@ function CreateInvoiceModal({ open, onClose, onCreated }) {
         email: data.customerEmail || null,
         phone: data.customerPhone || null,
         type: data.customerType || "individual",
-        kyc_status: "pending_review",
+        kyc_status: "pending",
         kyc_tier: 0,
       }).select("id").single();
       if (custErr) {
